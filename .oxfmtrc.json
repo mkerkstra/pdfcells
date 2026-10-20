@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": false,
+  "singleQuote": true,
+  "jsxSingleQuote": true,
+  "trailingComma": "all",
+  "arrowParens": "avoid",
+  "bracketSpacing": true,
+  "endOfLine": "lf",
+  "sortImports": {
+    "partitionByNewline": false,
+    "partitionByComment": true,
+    "sortSideEffects": true,
+    "order": "asc",
+    "ignoreCase": true,
+    "newlinesBetween": true,
+    "internalPattern": ["@/"],
+    "groups": [
+      [
+        "side_effect_style",
+        "side_effect"
+      ],
+      ["builtin"],
+      ["external"],
+      ["internal"],
+      ["parent"],
+      ["sibling"],
+      ["index"]
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "*.json",
+        "*.jsonc"
+      ],
+      "options": {
+        "printWidth": 30
+      }
+    }
+  ],
+  "sortTailwindcss": {
+    "stylesheet": "./src/index.css",
+    "functions": [
+      "cn",
+      "clsx",
+      "cva"
+    ]
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "playwright-report",
+    "test-results",
+    "pnpm-lock.yaml",
+    "src/generated/**",
+    "public/assets/theme-init.js",
+    "public/brand/**"
+  ]
+}

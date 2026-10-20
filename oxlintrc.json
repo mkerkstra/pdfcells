@@ -1,0 +1,95 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "eslint",
+    "typescript",
+    "unicorn",
+    "oxc",
+    "react",
+    "react-perf",
+    "jsx-a11y",
+    "import",
+    "promise",
+    "vitest"
+  ],
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-non-null-asserted-nullish-coalescing": "error",
+    "typescript/ban-ts-comment": [
+      "error",
+      {
+        "ts-expect-error": "allow-with-description",
+        "ts-ignore": true,
+        "ts-nocheck": true,
+        "minimumDescriptionLength": 10
+      }
+    ],
+    "typescript/no-unsafe-type-assertion": "error",
+    "eslint/no-unused-vars": "error",
+    "import/no-duplicates": "error",
+    "promise/no-return-wrap": "error",
+    "promise/param-names": "error",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/jsx-key": "error",
+    "react/jsx-no-duplicate-props": "error",
+    "react/jsx-no-target-blank": "error",
+    "react/no-danger": "error",
+    "react/no-danger-with-children": "error",
+    "react/no-find-dom-node": "error",
+    "react/no-string-refs": "error",
+    "vitest/no-disabled-tests": "error",
+    "vitest/no-focused-tests": "error",
+    "vitest/expect-expect": [
+      "warn",
+      {
+        "assertFunctionNames": [
+          "expect",
+          "expect*",
+          "assert*",
+          "checkA11y"
+        ]
+      }
+    ],
+    "vitest/valid-expect": "error",
+    "vitest/valid-title": "error",
+    "vitest/no-conditional-tests": "error",
+    "vitest/hoisted-apis-on-top": "error",
+    "vitest/require-awaited-expect-poll": "error",
+    "vitest/require-local-test-context-for-concurrent-snapshots": "error",
+    "vitest/warn-todo": "error",
+    "vitest/require-mock-type-parameters": "off",
+    "jest/expect-expect": "off",
+    "jest/no-conditional-expect": "off",
+    "jest/no-disabled-tests": "off",
+    "jest/require-to-throw-message": "off",
+    "jest/valid-expect": "off",
+    "jest/valid-title": "off",
+    "vitest/no-conditional-expect": "off",
+    "jsx-a11y/click-events-have-key-events": "off",
+    "jsx-a11y/label-has-associated-control": "off",
+    "jsx-a11y/media-has-caption": "off",
+    "jsx-a11y/no-autofocus": "off",
+    "jsx-a11y/no-noninteractive-tabindex": "off",
+    "jsx-a11y/no-static-element-interactions": "off",
+    "jsx-a11y/no-noninteractive-element-interactions": "off",
+    "jsx-a11y/control-has-associated-label": [
+      "warn",
+      {
+        "depth": 3
+      }
+    ],
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "import/default": "off"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "**/generated/**",
+    "*.config.ts",
+    "*.config.js",
+    "*.config.mjs"
+  ]
+}
