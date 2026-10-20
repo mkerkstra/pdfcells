@@ -199,6 +199,8 @@ export interface BlockStats {
   numericShare: number
   /** Columns inferColumn types as number or date. */
   typedCols: number
+  /** Per typed column: filled body cells and cells that don't fit the type. */
+  typedDetail: { filled: number; outliers: number }[]
   /** Letters over non-space characters, across body cells. */
   letterRatio: number
   /** Mean words per non-empty body cell. */
@@ -275,6 +277,16 @@ export function blockStats(table: LocalTable, words: Word[] = []): BlockStats {
     filled: cells.length,
     numericShare: cells.length ? cells.filter(isNum).length / cells.length : 0,
     typedCols: types.filter(t => t.kind !== 'text').length,
+    typedDetail: types.flatMap((t, c) =>
+      t.kind === 'text'
+        ? []
+        : [
+            {
+              filled: body.filter(r => (r[c] ?? '').trim() !== '').length,
+              outliers: t.outliers.length,
+            },
+          ],
+    ),
     letterRatio: chars.length ? letters / chars.length : 0,
     wordsPerCell: cells.length
       ? cells.reduce((n, c) => n + c.trim().split(/\s+/).length, 0) / cells.length
