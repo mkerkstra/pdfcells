@@ -22,7 +22,7 @@ export interface LocalTable {
   confidence: number
 }
 
-interface Line {
+export interface Line {
   words: Word[]
   y0: number
   y1: number
