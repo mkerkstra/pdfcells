@@ -36,12 +36,14 @@
     "@tanstack/react-query": "^5.104.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "libheif-js": "1.23.5",
     "lucide-react": "^1.56.0",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwind-merge": "^3.7.0",
     "tesseract.js": "^7.0.0",
+    "utif2": "4.1.0",
     "write-excel-file": "^4.1.1"
   }
 }
