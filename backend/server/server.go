@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/mkerkstra/pdfcells/backend/billing"
+	"github.com/mkerkstra/pdfcells/backend/inbound"
 	"github.com/mkerkstra/pdfcells/backend/store"
 )
 
@@ -34,6 +35,9 @@ type Config struct {
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripePriceIDs      string
+	ResendAPIKey        string
+	ResendWebhookSecret string
+	InboundForwardTo    string
 	AppURL              string
 	MarkupBps           int64
 	FreePagesPerDay     int
@@ -49,6 +53,9 @@ func ConfigFromEnv() Config {
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripePriceIDs:      os.Getenv("STRIPE_PRICE_IDS"),
+		ResendAPIKey:        os.Getenv("RESEND_API_KEY"),
+		ResendWebhookSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
+		InboundForwardTo:    os.Getenv("INBOUND_FORWARD_TO"),
 		AppURL:              envOr("APP_URL", "http://localhost:5173"),
 		MarkupBps:           int64(envInt("CREDIT_MARKUP_BPS", 1500)),
 		FreePagesPerDay:     envInt("FREE_PAGES_PER_DAY", 25),
@@ -69,6 +76,7 @@ type Server struct {
 	cfg     Config
 	log     *slog.Logger
 	billing *billing.Billing
+	inbound *inbound.Forwarder
 
 	storeMu sync.Mutex
 	store   *store.Store
@@ -87,6 +95,12 @@ func New(cfg Config) *Server {
 		}
 		s.billing = billing.New(cfg.StripeSecretKey, cfg.StripeWebhookSecret, cfg.AppURL, prices)
 	}
+	if cfg.ResendAPIKey != "" && cfg.ResendWebhookSecret != "" && cfg.InboundForwardTo != "" {
+		s.inbound = &inbound.Forwarder{
+			APIKey: cfg.ResendAPIKey, WebhookSecret: cfg.ResendWebhookSecret,
+			To: cfg.InboundForwardTo, From: "PDFCells support <support@pdfcells.com>",
+		}
+	}
 	return s
 }
 
@@ -97,6 +111,7 @@ func (s *Server) Router() http.Handler {
 		r.Get("/health", s.health)
 		r.Get("/config", s.config)
 		r.Post("/stripe/webhook", s.stripeWebhook)
+		r.Post("/inbound", s.inboundEmail)
 		r.Group(func(r chi.Router) {
 			if s.cfg.ClerkSecretKey != "" {
 				r.Use(clerkhttp.WithHeaderAuthorization())

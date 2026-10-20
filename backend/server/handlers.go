@@ -11,6 +11,7 @@ import (
 
 	"github.com/mkerkstra/pdfcells/backend/billing"
 	"github.com/mkerkstra/pdfcells/backend/extract"
+	"github.com/mkerkstra/pdfcells/backend/inbound"
 	"github.com/mkerkstra/pdfcells/backend/pricing"
 	"github.com/mkerkstra/pdfcells/backend/store"
 )
@@ -270,5 +271,38 @@ func (s *Server) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		s.log.Info("refund", "payment_intent", f.PaymentIntent, "reversed_micros", reversed)
 	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// inboundEmail forwards mail received at @pdfcells.com (Resend receiving).
+func (s *Server) inboundEmail(w http.ResponseWriter, r *http.Request) {
+	if s.inbound == nil {
+		writeErr(w, http.StatusServiceUnavailable, "inbound_disabled", "inbound email is not configured")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_body", "could not read body")
+		return
+	}
+	if err := s.inbound.Verify(r.Header, body); err != nil {
+		writeErr(w, http.StatusUnauthorized, "bad_signature", "webhook signature did not verify")
+		return
+	}
+	id, err := inbound.EmailID(body)
+	if errors.Is(err, inbound.ErrIgnored) {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_event", "unreadable webhook event")
+		return
+	}
+	if err := s.inbound.Forward(r.Context(), id); err != nil {
+		// Non-2xx makes Resend retry; the idempotency key prevents duplicates.
+		s.internal(w, r, "could not forward inbound email", err)
+		return
+	}
+	s.log.Info("inbound forwarded", "email_id", id)
 	w.WriteHeader(http.StatusOK)
 }
