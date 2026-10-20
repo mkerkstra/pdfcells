@@ -122,8 +122,14 @@ function findBlocks(lines: SegLine[]): SegLine[][] {
     // tail of the last row's cell and belong to the table.
     const left = Math.min(...cur.flatMap(l => l.segs.map(s => s.x0)))
     const indent = (l: SegLine) => (l.segs[0]?.x0 ?? left) - left > pitch
-    while (cur.length && (cur.at(-1)?.segs.length ?? 0) < 2 && !indent(cur.at(-1) as SegLine)) cur.pop()
-    while (cur.length && (cur.at(-1)?.segs.length ?? 0) < 2 && cur.filter(l => l.segs.length >= 2).length < 2) cur.pop()
+    while (cur.length && (cur.at(-1)?.segs.length ?? 0) < 2 && !indent(cur.at(-1) as SegLine))
+      cur.pop()
+    while (
+      cur.length &&
+      (cur.at(-1)?.segs.length ?? 0) < 2 &&
+      cur.filter(l => l.segs.length >= 2).length < 2
+    )
+      cur.pop()
     if (cur.filter(l => l.segs.length >= 2).length >= 2) blocks.push(cur)
     cur = []
     singles = 0

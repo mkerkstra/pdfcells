@@ -53,7 +53,10 @@ export function validate(t: Table): Issue[] {
   // previous total (or the header).
   // Percentages (growth, margin) never sum to a total row.
   const percentColumn = types.map((_, c) => {
-    const vals = t.rows.slice(t.headerRows).map(r => (r[c] ?? '').trim()).filter(Boolean)
+    const vals = t.rows
+      .slice(t.headerRows)
+      .map(r => (r[c] ?? '').trim())
+      .filter(Boolean)
     return vals.length > 0 && vals.filter(v => v.endsWith('%')).length >= vals.length / 2
   })
   let start = t.headerRows
