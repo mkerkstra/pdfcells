@@ -1,6 +1,6 @@
 # Test corpus
 
-Each PDF targets one way real-world documents go wrong. `src/corpus.test.ts` runs every file through the real pdf.js → triage → layout path in Node and checks hand-written expectations. Regenerate (deterministic):
+Each file targets one way real-world documents go wrong. `src/corpus.test.ts` runs every file through the real pdf.js → triage → layout path in Node and checks hand-written expectations. Regenerate (deterministic):
 
 ```sh
 uv run --with reportlab --with pillow --with pypdfium2 --with numpy python fixtures/make_fixtures.py fixtures
@@ -25,6 +25,13 @@ Content is deterministic (fixed seeds). The original fixtures embed creation tim
 | `scanned-bad.pdf` | 110 dpi fax-grade, 2.5° skew, heavy noise, JPEG q25 | AI |
 | `photo-invoice.pdf` | Phone photo: perspective warp, uneven lighting, tint | AI |
 | `broken-text-layer.pdf` | Scan with an invisible OCR layer of garbage glyphs | Broken text → AI |
+| `scanned-invoice.png` | The clean scan as a PNG | Image page → AI (OCR without AI access) |
+| `scanned-invoice-2p.tiff` | Two-page grayscale LZW TIFF, page 2 skewed 1.2° | Two image pages |
+| `photo-rotated.jpg` | Pixels stored sideways with EXIF Orientation 6 | Shown upright, image page |
+| `screenshot.gif`, `screenshot.webp` | Screenshot-sized crop of the invoice table | Image page |
+| `scanned-invoice.heic` | The PNG converted with macOS `sips -s format heic` (Pillow can't write HEIC, and sips output isn't byte-deterministic, so the committed file is the reference) | Image page, decoded with libheif |
+
+The PDFs embed a creation timestamp, so regenerating changes their bytes but not their content.
 
 ## Accuracy cross-checks
 

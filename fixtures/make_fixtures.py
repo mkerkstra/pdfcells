@@ -178,6 +178,40 @@ def scans():
     vec.unlink()
 
 
+# ---------------------------------------------------------------- images (not PDFs)
+def images():
+    """Photos, screenshots and multi-page TIFFs: every page is read from the image."""
+    vec = out / "_invoice_vector.pdf"
+    invoice_vector(vec)
+    page = render(vec, 150).filter(ImageFilter.GaussianBlur(0.5))
+    vec.unlink()
+
+    # Plain PNG of a scanned page.
+    page.save(str(out / "scanned-invoice.png"), optimize=True)
+
+    # Two-page grayscale TIFF (LZW): the clean page, then a slightly skewed copy.
+    p2 = page.rotate(1.2, fillcolor=255, resample=Image.BICUBIC)
+    page.save(str(out / "scanned-invoice-2p.tiff"), save_all=True, append_images=[p2], compression="tiff_lzw", dpi=(150, 150))
+
+    # Phone JPEG stored sideways with EXIF Orientation=6 (display = rotate 90° clockwise).
+    photo = page.convert("RGB").rotate(90, expand=True)
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    photo.save(str(out / "photo-rotated.jpg"), quality=80, exif=exif.tobytes())
+
+    # Screenshot-sized crop of the table, as GIF and lossless WebP.
+    shot = page.crop((80, 120, 1180, 760)).convert("RGB")
+    shot.convert("P", palette=Image.ADAPTIVE, colors=64).save(str(out / "screenshot.gif"))
+    shot.save(str(out / "screenshot.webp"), lossless=True)
+
+    # HEIC needs an encoder Pillow doesn't ship; macOS sips makes one (not byte-deterministic).
+    import shutil
+    import subprocess
+
+    if shutil.which("sips"):
+        subprocess.run(["sips", "-s", "format", "heic", str(out / "scanned-invoice.png"), "--out", str(out / "scanned-invoice.heic")], check=True, capture_output=True)
+
+
 def _perspective_coeffs(src, dst):
     m = []
     for (x, y), (u, v) in zip(dst, src):
@@ -592,7 +626,7 @@ def report_fy():
 if __name__ == "__main__":
     out.mkdir(parents=True, exist_ok=True)
     fixtures = {
-        "statement": statement, "scans": scans, "ruled_wrapped": ruled_wrapped, "eu_invoice": eu_invoice,
+        "statement": statement, "scans": scans, "images": images, "ruled_wrapped": ruled_wrapped, "eu_invoice": eu_invoice,
         "financial_report": financial_report, "mixed": mixed, "dense_wide": dense_wide, "side_by_side": side_by_side,
         "no_header": no_header, "protected": protected,
         "statement_dc": lambda: (statement_dc(False), statement_dc(True)), "invoice_lines": invoice_lines,
