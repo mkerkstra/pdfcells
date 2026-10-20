@@ -244,3 +244,45 @@ export function crossTableTies(doc: PageTables[]): DocCheckResult {
 function key(e: Entry): string {
   return `${e.page}:${e.table.id}:${e.row}:${e.col}`
 }
+
+/** A statement's account summary: whichever of the four labelled values the document prints. */
+export interface StatementSummary {
+  opening?: number
+  /** Total credits, always positive. */
+  credits?: number
+  /** Total debits, always positive. */
+  debits?: number
+  closing?: number
+  /** Opening + credits − debits = closing, when all four are printed. */
+  ties?: boolean
+  /** Decimals printed, for tolerances. */
+  dec: number
+}
+
+/** The labelled summary values across the document, skipping any role printed twice with different values. */
+export function statementSummary(doc: PageTables[]): StatementSummary {
+  const es = doc.flatMap(({ page, tables }) => tables.flatMap(t => entries(t, page)))
+  const pick = (role: Role): Entry | null => {
+    const e = single(es, role)
+    return e && e !== 'ambiguous' ? e : null
+  }
+  const [open, cred, deb, close] = (['opening', 'credits', 'debits', 'closing'] as const).map(pick)
+  const out: StatementSummary = {
+    dec: Math.max(0, ...[open, cred, deb, close].map(e => e?.dec ?? 0)),
+  }
+  if (open) out.opening = open.value
+  if (cred) out.credits = Math.abs(cred.value)
+  if (deb) out.debits = Math.abs(deb.value)
+  if (close) out.closing = close.value
+  if (open && cred && deb && close)
+    out.ties = result(
+      close,
+      [
+        { e: open, sign: 1 },
+        { e: { ...cred, value: Math.abs(cred.value) }, sign: 1 },
+        { e: { ...deb, value: Math.abs(deb.value) }, sign: -1 },
+      ],
+      'statement',
+    ).holds
+  return out
+}

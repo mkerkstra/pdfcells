@@ -7,18 +7,18 @@ import { cell, columnName, formatNumber, isBlank, raw, tolerance, type Grid } fr
 import type { CheckResult, Issue } from './model'
 
 /** How a row's amount cells move the balance. */
-interface Mover {
+export interface Mover {
   col: number
   /** +1 when a positive value in this column raises the balance. */
   sign: 1 | -1
 }
 
-interface Config {
+export interface BalanceConfig {
   balance: number
   movers: Mover[]
 }
 
-interface Pair {
+export interface Pair {
   prev: number
   row: number
   /** Rows (prev, row] whose amounts move the balance. */
@@ -35,7 +35,7 @@ const MIN_TIES = 3
 const MIN_SHARE = 0.7
 
 /** A row's net movement, 0 when its amount cells are blank, null when one holds text. */
-function movement(g: Grid, row: number, movers: Mover[]): number | null {
+export function movement(g: Grid, row: number, movers: Mover[]): number | null {
   let sum = 0
   for (const m of movers) {
     const v = cell(g, row, m.col)
@@ -45,7 +45,7 @@ function movement(g: Grid, row: number, movers: Mover[]): number | null {
   return sum
 }
 
-function pairs(g: Grid, cfg: Config, rows: number[]): Pair[] {
+function pairs(g: Grid, cfg: BalanceConfig, rows: number[]): Pair[] {
   const out: Pair[] = []
   const decimals = Math.max(
     g.colDecimals[cfg.balance] ?? 0,
@@ -111,9 +111,9 @@ function score(ps: Pair[]): { ties: number; counted: number } {
   return { ties, counted }
 }
 
-function configs(g: Grid): Config[] {
+function configs(g: Grid): BalanceConfig[] {
   const cols = g.numericCol.flatMap((ok, c) => (ok ? [c] : []))
-  const out: Config[] = []
+  const out: BalanceConfig[] = []
   for (const b of cols) {
     for (const a of cols) {
       if (a === b) continue
@@ -136,13 +136,18 @@ function configs(g: Grid): Config[] {
 }
 
 /** Every mover column must actually move the balance somewhere in the table. */
-function allMoversUsed(g: Grid, cfg: Config, ps: Pair[]): boolean {
+function allMoversUsed(g: Grid, cfg: BalanceConfig, ps: Pair[]): boolean {
   return cfg.movers.every(m => ps.some(p => p.span.some(r => (cell(g, r, m.col) ?? 0) !== 0)))
 }
 
-export function runningBalance(g: Grid): CheckResult {
+/**
+ * The balance column and the amount columns that move it, when the running
+ * balance pattern clearly holds for the table. The statement export reads its
+ * amounts through this, so the columns it exports are the ones checked here.
+ */
+export function balanceLayout(g: Grid): { cfg: BalanceConfig; ps: Pair[] } | null {
   const rows = g.body.filter(r => !g.totalRow[r])
-  let best: { cfg: Config; ps: Pair[]; ties: number } | null = null
+  let best: { cfg: BalanceConfig; ps: Pair[]; ties: number } | null = null
   for (const cfg of configs(g)) {
     const ps = pairs(g, cfg, rows)
     const { ties, counted } = score(ps)
@@ -151,6 +156,11 @@ export function runningBalance(g: Grid): CheckResult {
     // Prefer more ties; on a draw the simpler single-amount reading wins.
     if (!best || ties > best.ties) best = { cfg, ps, ties }
   }
+  return best && { cfg: best.cfg, ps: best.ps }
+}
+
+export function runningBalance(g: Grid): CheckResult {
+  const best = balanceLayout(g)
   if (!best) return { issues: [], ticks: [] }
   const { cfg, ps } = best
   const issues = pinpoint(g, cfg, ps)
@@ -168,7 +178,7 @@ export function runningBalance(g: Grid): CheckResult {
   }
 }
 
-function pinpoint(g: Grid, cfg: Config, ps: Pair[]): Issue[] {
+function pinpoint(g: Grid, cfg: BalanceConfig, ps: Pair[]): Issue[] {
   const t = g.table
   const B = cfg.balance
   const decimals = Math.max(
@@ -254,7 +264,7 @@ function pinpoint(g: Grid, cfg: Config, ps: Pair[]): Issue[] {
 
 function movementWords(
   g: Grid,
-  cfg: Config,
+  cfg: BalanceConfig,
   p: Pair,
   fmt: (v: number, col?: number) => string,
 ): { short: string; long: string; names: string } {
