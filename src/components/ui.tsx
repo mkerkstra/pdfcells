@@ -1,22 +1,33 @@
 import { cva, type VariantProps } from 'class-variance-authority'
 import { clsx, type ClassValue } from 'clsx'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { twMerge } from 'tailwind-merge'
+import { extendTailwindMerge } from 'tailwind-merge'
+
+// Teach tailwind-merge the custom type scale in index.css, or it reads
+// `text-cell` as a colour and drops `text-muted` next to it.
+const twMerge = extendTailwindMerge({
+  extend: { theme: { text: ['2xs', 'cell', 'display', 'display-lg'] } },
+})
 
 export function cn(...xs: ClassValue[]) {
   return twMerge(clsx(xs))
 }
 
+/** Shared look for text inputs and selects. */
+export const FIELD =
+  'rounded-md border border-rule bg-card text-ink transition-colors hover:border-muted/60 focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-45'
+
 const button = cva(
-  'inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-semibold whitespace-nowrap transition-[background-color,border-color,color,filter] disabled:pointer-events-none disabled:opacity-45',
+  'inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-semibold whitespace-nowrap transition-[background-color,border-color,color,filter] disabled:cursor-not-allowed disabled:opacity-45 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
         primary:
-          'bg-accent text-white shadow-[inset_0_-1px_0_rgb(0_0_0/0.18)] hover:brightness-110 dark:text-paper',
-        outline: 'border border-rule bg-card text-ink hover:border-accent hover:text-accent',
-        ghost: 'text-ink hover:bg-accent-soft',
-        danger: 'text-bad hover:bg-bad-soft',
+          'bg-accent text-white shadow-[inset_0_-1px_0_rgb(0_0_0/0.18)] enabled:hover:brightness-110 enabled:active:brightness-95 dark:text-paper',
+        outline:
+          'border border-rule bg-card text-ink enabled:hover:border-accent enabled:hover:text-accent',
+        ghost: 'text-ink enabled:hover:bg-accent-soft',
+        danger: 'text-bad enabled:hover:bg-bad-soft',
       },
       size: {
         sm: 'h-7 px-2.5 text-xs',
@@ -38,26 +49,37 @@ export function Button({
   return <button type='button' className={cn(button({ variant, size }), className)} {...props} />
 }
 
-const badge = cva('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium', {
-  variants: {
-    tone: {
-      neutral: 'bg-line/70 text-muted',
-      good: 'bg-accent-soft text-accent',
-      tick: 'bg-tick-soft text-tick',
-      warn: 'bg-warn-soft text-warn',
-      bad: 'bg-bad-soft text-bad',
+const badge = cva(
+  'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs font-medium whitespace-nowrap',
+  {
+    variants: {
+      tone: {
+        neutral: 'bg-line/70 text-muted',
+        good: 'bg-accent-soft text-accent',
+        tick: 'bg-tick-soft text-tick',
+        warn: 'bg-warn-soft text-warn',
+        bad: 'bg-bad-soft text-bad',
+      },
     },
+    defaultVariants: { tone: 'neutral' },
   },
-  defaultVariants: { tone: 'neutral' },
-})
+)
 
 export function Badge({
   tone,
   children,
   className,
-}: VariantProps<typeof badge> & { children: ReactNode; className?: string }) {
-  return <span className={cn(badge({ tone }), className)}>{children}</span>
+  title,
+}: VariantProps<typeof badge> & { children: ReactNode; className?: string; title?: string }) {
+  return (
+    <span className={cn(badge({ tone }), className)} title={title}>
+      {children}
+    </span>
+  )
 }
+
+/** Learnable name for the accountant's term, used wherever "Footed" appears. */
+export const FOOTED_TITLE = 'Footed: every total adds up to the rows above it'
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (

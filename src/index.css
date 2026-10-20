@@ -22,6 +22,37 @@
   --color-warn-soft: #f6ead2;
   --color-tick: #2456a3;
   --color-tick-soft: #dfe8f6;
+
+  /*
+   * Type scale. Every size in the app comes from here; no arbitrary values.
+   * 2xs badges and tags, xs meta and hints, cell the editable grid, sm UI
+   * body, base prose, lg lead, xl section heads, 2xl page titles, display
+   * the landing headline.
+   */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-cell: 0.8125rem;
+  --text-cell--line-height: 1.25rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.6;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.4;
+  --text-xl--letter-spacing: -0.01em;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.25;
+  --text-2xl--letter-spacing: -0.02em;
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
+  --text-display-lg: 3.25rem;
+  --text-display-lg--line-height: 1.05;
+  --text-display-lg--letter-spacing: -0.025em;
 }
 
 @layer base {
@@ -65,6 +96,12 @@ body {
   outline-offset: 2px;
 }
 
+input[type='checkbox'] {
+  accent-color: var(--color-accent);
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 /* The accounting double rule under a total. */
 .double-rule {
   border-bottom: 3px double var(--color-red);
@@ -96,10 +133,11 @@ body {
   margin: 0 auto;
   padding: 1rem 1rem 5rem;
   color: var(--color-muted);
-  font-size: 0.9375rem;
-  line-height: 1.65;
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
 }
 .about p {
+  max-width: 68ch;
   margin: 0.25rem 0 0;
 }
 .about h2 {
@@ -107,14 +145,15 @@ body {
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-rule);
   color: var(--color-ink);
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  line-height: var(--text-xl--line-height);
+  letter-spacing: var(--text-xl--letter-spacing);
 }
 .about h3 {
   margin: 1.25rem 0 0;
   color: var(--color-ink);
-  font-size: 1rem;
+  font-size: var(--text-base);
   font-weight: 600;
 }
 .about a {
@@ -122,7 +161,11 @@ body {
 }
 .about .fine {
   margin-top: 2rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+.about a:hover {
+  color: var(--color-accent);
 }
 
 /* Landing demo: one orchestrated fill-in on first paint. */

@@ -11,7 +11,7 @@ export function TierPicker({ className }: { className?: string }) {
     <div
       role='radiogroup'
       aria-label='AI quality'
-      className={cn('inline-flex rounded-md border border-line p-0.5', className)}
+      className={cn('inline-flex rounded-md border border-rule bg-card p-0.5', className)}
     >
       {config.tiers.map(t => (
         <button
@@ -22,8 +22,8 @@ export function TierPicker({ className }: { className?: string }) {
           onClick={() => setTier(t.id)}
           title={t.model}
           className={cn(
-            'rounded px-2.5 py-1 text-xs font-medium',
-            tier === t.id ? 'bg-accent text-white' : 'text-muted hover:text-ink',
+            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+            tier === t.id ? 'bg-accent text-white dark:text-paper' : 'text-muted hover:text-ink',
           )}
         >
           {TIER_LABEL[t.id]}

@@ -1,7 +1,7 @@
 import { FileUp, Lock } from 'lucide-react'
 import { useRef, useState } from 'react'
 
-import { Button, Spinner } from './ui'
+import { Button, FOOTED_TITLE, Spinner, Tick } from './ui'
 
 // A real slice of fixtures/statement.pdf, as the engine reads it.
 const SAMPLE = [
@@ -28,12 +28,12 @@ export function Landing({
   return (
     <main className='mx-auto grid w-full max-w-6xl flex-1 items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:py-20'>
       <div className='max-w-xl'>
-        <h1 className='text-[2.5rem] leading-[1.05] font-bold tracking-[-0.025em] text-balance sm:text-[3.25rem]'>
+        <h1 className='text-display font-bold text-balance sm:text-display-lg'>
           PDF tables into spreadsheets you can check.
         </h1>
-        <p className='mt-5 max-w-[34rem] text-lg leading-relaxed text-muted'>
-          Text-based PDFs are read exactly, scans go through OCR or AI, and every total is footed.
-          You can edit any cell before the Excel file is made.
+        <p className='mt-5 max-w-[34rem] text-lg text-pretty text-muted'>
+          PDFs with a text layer are read exactly. Scans are read with OCR or AI. Every total is
+          checked against its rows, and you can edit any cell before you download the Excel file.
         </p>
         <div className='mt-8 flex flex-wrap items-center gap-x-4 gap-y-3'>
           <Button
@@ -43,7 +43,7 @@ export function Landing({
             onClick={() => input.current?.click()}
           >
             {busy ? <Spinner /> : <FileUp className='size-5' />}
-            {busy ? 'Opening PDF' : 'Choose a PDF'}
+            {busy ? 'Opening the PDF' : 'Choose a PDF'}
           </Button>
           <span className='text-sm text-muted'>or drop one anywhere on this page</span>
           <input
@@ -62,7 +62,7 @@ export function Landing({
         {error && <p className='mt-4 text-sm text-bad'>{error}</p>}
         <p className='mt-8 flex items-start gap-2 text-sm text-muted'>
           <Lock className='mt-0.5 size-4 shrink-0 text-accent' />
-          The file is opened in your browser. Nothing is uploaded unless you choose AI for a page.
+          The PDF opens in your browser. Nothing is uploaded unless you choose AI for a page.
         </p>
       </div>
 
@@ -70,16 +70,16 @@ export function Landing({
 
       <ol className='grid gap-x-10 gap-y-6 border-t border-rule pt-8 text-sm lg:col-span-2 lg:grid-cols-3'>
         <Step n={1} title='Check every page'>
-          Each page is classified as text, scanned, broken text or blank, and gets the cheapest way
-          to read it. You see the cost before anything runs.
+          Each page is sorted into text, scanned, broken text or blank, and gets the cheapest method
+          that can read it. You see the cost before anything runs.
         </Step>
         <Step n={2} title='Correct what’s wrong'>
-          Totals that don’t add up and numbers that don’t look like numbers are flagged. Edit cells,
+          Totals that don’t add up and values that don’t fit their column are flagged. Edit cells,
           split or merge columns, or ask AI to fix a table.
         </Step>
         <Step n={3} title='Download real numbers'>
-          Amounts, percentages and dates become real Excel values, headers are frozen, and tables
-          that run across pages are joined.
+          Amounts, percentages and dates become real Excel values. Header rows are frozen, and
+          tables that run across pages are joined.
         </Step>
       </ol>
     </main>
@@ -92,9 +92,9 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
       <span className='flex size-7 shrink-0 items-center justify-center rounded-full border border-rule text-sm font-semibold text-accent'>
         {n}
       </span>
-      <div>
-        <div className='font-semibold text-ink'>{title}</div>
-        <p className='mt-1 leading-relaxed text-muted'>{children}</p>
+      <div className='max-w-[40ch]'>
+        <h2 className='font-semibold text-ink'>{title}</h2>
+        <p className='mt-1 text-muted'>{children}</p>
       </div>
     </li>
   )
@@ -104,14 +104,14 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 function LedgerDemo() {
   return (
     <figure
-      aria-label='Example: a statement read into rows, with the total footed'
+      aria-label='Example: a bank statement read into rows, with the total checked'
       className='ledger-demo relative'
     >
       <div className='overflow-hidden rounded-[10px] border border-rule bg-card shadow-[0_1px_0_var(--color-line),0_18px_40px_-24px_rgb(28_42_35/0.35)]'>
-        <div className='grid grid-cols-[2.25rem_7.75rem_minmax(0,1fr)_6.25rem] border-b border-rule bg-accent-soft/60 text-xs font-medium text-muted'>
+        <div className='grid grid-cols-[1.75rem_6rem_minmax(0,1fr)_5.25rem] border-b border-rule bg-accent-soft/60 text-xs font-medium text-muted sm:grid-cols-[2.25rem_7.75rem_minmax(0,1fr)_6.25rem]'>
           <span className='border-r border-line py-1.5' />
           {['A', 'B', 'C'].map(c => (
-            <span key={c} className='border-r border-line px-3 py-1.5 last:border-r-0'>
+            <span key={c} className='border-r border-line px-2 py-1.5 last:border-r-0 sm:px-3'>
               {c}
             </span>
           ))}
@@ -120,34 +120,28 @@ function LedgerDemo() {
         {SAMPLE.map((cells, i) => (
           <Row key={cells[1]} n={i + 2} cells={cells} delay={i} />
         ))}
-        <div className='ledger-total grid grid-cols-[2.25rem_7.75rem_minmax(0,1fr)_6.25rem] text-[0.9375rem]'>
+        <div className='ledger-total grid grid-cols-[1.75rem_6rem_minmax(0,1fr)_5.25rem] text-sm sm:grid-cols-[2.25rem_7.75rem_minmax(0,1fr)_6.25rem]'>
           <span className='border-r border-line py-2 text-center text-xs text-muted'>
             {SAMPLE.length + 2}
           </span>
-          <span className='px-3 py-2 font-semibold'>Total</span>
-          <span className='flex items-center px-3 py-2'>
-            <span className='ledger-tick inline-flex items-center gap-1 rounded-full bg-tick-soft px-2 py-0.5 text-xs font-semibold text-tick'>
-              <svg viewBox='0 0 16 16' className='size-3' aria-hidden>
-                <path
-                  d='M3 8.5 6.5 12 13 4.5'
-                  fill='none'
-                  stroke='currentColor'
-                  strokeWidth='2.2'
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                />
-              </svg>
+          <span className='px-2 py-2 font-semibold sm:px-3'>Total</span>
+          <span className='flex items-center px-2 py-2 sm:px-3'>
+            <span
+              title={FOOTED_TITLE}
+              className='ledger-tick inline-flex items-center gap-1 rounded-full bg-tick-soft px-2 py-0.5 text-xs font-semibold text-tick'
+            >
+              <Tick />
               Footed
             </span>
           </span>
-          <span className='relative px-3 py-2 text-right font-semibold'>
+          <span className='relative px-2 py-2 text-right font-semibold sm:px-3'>
             {TOTAL}
             <span className='ledger-rule absolute inset-x-2 bottom-1 border-b-[3px] border-double border-red' />
           </span>
         </div>
       </div>
       <figcaption className='mt-3 text-right text-xs text-muted'>
-        A bank statement page, read from its text with nothing uploaded
+        A bank statement page, read from its PDF text without uploading anything
       </figcaption>
     </figure>
   )
@@ -166,14 +160,14 @@ function Row({
 }) {
   return (
     <div
-      className='ledger-row grid grid-cols-[2.25rem_7.75rem_minmax(0,1fr)_6.25rem] border-b border-line text-[0.9375rem]'
+      className='ledger-row grid grid-cols-[1.75rem_6rem_minmax(0,1fr)_5.25rem] border-b border-line text-sm sm:grid-cols-[2.25rem_7.75rem_minmax(0,1fr)_6.25rem]'
       style={{ animationDelay: head ? '0ms' : `${250 + delay * 140}ms` }}
     >
       <span className='border-r border-line py-2 text-center text-xs text-muted'>{n}</span>
       {cells.map((c, i) => (
         <span
           key={i}
-          className={`truncate px-3 py-2 ${i === 2 ? 'text-right' : ''} ${head ? 'font-semibold' : ''}`}
+          className={`truncate px-2 py-2 sm:px-3 ${i === 2 ? 'text-right' : ''} ${head ? 'font-semibold' : ''}`}
         >
           {c}
         </span>
@@ -203,7 +197,7 @@ export function DropOverlay({ onFile }: { onFile: (f: File) => void }) {
       }}
     >
       {active && (
-        <div className='absolute inset-4 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent text-lg font-semibold text-accent'>
+        <div className='absolute inset-4 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-paper/80 text-lg font-semibold text-accent'>
           Drop the PDF to open it
         </div>
       )}
