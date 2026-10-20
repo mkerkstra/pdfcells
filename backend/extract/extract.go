@@ -54,6 +54,10 @@ func ModelFor(t Tier) (string, bool) {
 // MaxOutputTokens bounds one page's response; dense ledgers can run long.
 const MaxOutputTokens = 16_000
 
+// BaseURL is the only place page images and API keys are sent. A variable
+// only so tests can point it at a fake.
+var BaseURL = "https://api.anthropic.com/"
+
 // MaxImageBytes keeps the request well inside Vercel's 4.5 MB body limit
 // after base64 inflation.
 const MaxImageBytes = 3 << 20
@@ -73,6 +77,8 @@ type Request struct {
 	// Correction mode: the user's current tables plus what to change.
 	Current     []Table `json:"current,omitempty"`
 	Instruction string  `json:"instruction,omitempty"`
+	// MaxTokens overrides MaxOutputTokens (server-set; free pages get less).
+	MaxTokens int64 `json:"-"`
 }
 
 // Table is one extracted grid. Cells are strings; typing happens client-side
@@ -137,6 +143,9 @@ func (r *Request) EstimateInputTokens() (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("image could not be decoded: %w", err)
 	}
+	if cfg.Width*cfg.Height > maxPixels {
+		return 0, fmt.Errorf("page image has too many pixels (%dx%d)", cfg.Width, cfg.Height)
+	}
 	// Images cost ≈ w×h/750 tokens; double it to cover any resolution policy.
 	imageTokens := int64(cfg.Width*cfg.Height) / 750 * 2
 	textTokens := int64(len(r.TextLayer)) / 2
@@ -150,7 +159,13 @@ func (r *Request) EstimateInputTokens() (int64, error) {
 // Run calls Claude once and returns parsed tables.
 func Run(ctx context.Context, apiKey string, req Request) (*Result, error) {
 	spec := tiers[req.Tier]
-	client := anthropic.NewClient(option.WithAPIKey(apiKey), option.WithMaxRetries(2))
+	// Pin the endpoint: the SDK otherwise honours ANTHROPIC_BASE_URL, and a
+	// caller's own key (X-Anthropic-Key) must only ever go to Anthropic.
+	client := anthropic.NewClient(option.WithBaseURL(BaseURL), option.WithAPIKey(apiKey), option.WithMaxRetries(2))
+	maxTokens := int64(MaxOutputTokens)
+	if req.MaxTokens > 0 {
+		maxTokens = min(req.MaxTokens, maxTokens)
+	}
 
 	content := []anthropic.BetaContentBlockParamUnion{
 		anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
@@ -162,7 +177,7 @@ func Run(ctx context.Context, apiKey string, req Request) (*Result, error) {
 
 	params := anthropic.BetaMessageNewParams{
 		Model:     spec.Model,
-		MaxTokens: MaxOutputTokens,
+		MaxTokens: maxTokens,
 		System:    []anthropic.BetaTextBlockParam{{Text: systemPrompt}},
 		Messages:  []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(content...)},
 		OutputConfig: anthropic.BetaOutputConfigParam{
