@@ -44,7 +44,7 @@ func ConfigFromEnv() Config {
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
 		DatabaseURLDirect:   os.Getenv("DATABASE_URL_UNPOOLED"),
 		ClerkSecretKey:      os.Getenv("CLERK_SECRET_KEY"),
-		ClerkPublishableKey: os.Getenv("CLERK_PUBLISHABLE_KEY"),
+		ClerkPublishableKey: envOr("CLERK_PUBLISHABLE_KEY", os.Getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")), // the Vercel Clerk integration uses the Next.js name
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		AppURL:              envOr("APP_URL", "http://localhost:5173"),
