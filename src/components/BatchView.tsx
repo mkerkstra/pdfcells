@@ -156,18 +156,20 @@ export function BatchView({
     })
   }, [state.items, attached, account.aiPossible, tick])
 
-  const readOnce = useRef(false)
+  // Files handed to the reader and not finished yet, so no file is read twice.
+  const inFlight = useRef(new Set<string>())
   const read = useCallback(
     async (items: BatchItem[]) => {
-      if (readOnce.current) return
-      readOnce.current = true
       dispatch({ type: 'started' })
       const jobs = items.flatMap(item => {
         const file = attached.get(item.id)
-        return file && item.status === 'checked'
-          ? [{ item, file, pages: toRead(item, choice) }]
-          : []
+        if (!file || item.status !== 'checked' || inFlight.current.has(item.id)) return []
+        inFlight.current.add(item.id)
+        return [{ item, file, pages: toRead(item, choice) }]
       })
+      if (jobs.length === 0) return
+      await readAll(jobs, account.tier, account.aiPossible, dispatch, hooks)
+      for (const j of jobs) inFlight.current.delete(j.item.id)
       await readAll(jobs, account.tier, account.aiPossible, dispatch, hooks)
       account.refreshMe()
     },
@@ -180,18 +182,20 @@ export function BatchView({
     it => (it.status === 'waiting' || it.status === 'checked') && attached.has(it.id),
   )
   const checkedAll = !items.some(it => it.status === 'waiting' && attached.has(it.id)) && !busy
+  const checkingNow = items.some(
+    it => it.status === 'checking' || (it.status === 'waiting' && attached.has(it.id)),
+  )
   const toReadNow = pagesToRead(items, choice)
 
-  // Nothing needs OCR or AI: go straight on, there's nothing to choose.
+  // Read without asking when there's nothing to choose (no page needs OCR or
+  // AI), or when the choice was already made (a resumed batch whose files
+  // were added again).
+  // read() skips files already in flight, so this may fire more than once.
+  const readable = items.some(it => it.status === 'checked' && attached.has(it.id))
   useEffect(() => {
-    if (
-      !state.started &&
-      checkedAll &&
-      toReadNow.needing === 0 &&
-      items.some(it => it.status === 'checked')
-    )
-      void read(stateRef.current.items)
-  }, [state.started, checkedAll, toReadNow.needing, items, read])
+    if (!readable) return
+    if (state.started || (checkedAll && toReadNow.needing === 0)) void read(stateRef.current.items)
+  }, [readable, state.started, checkedAll, toReadNow.needing, read])
 
   // Once every file is read, propose format groups (once).
   useEffect(() => {
@@ -200,9 +204,8 @@ export function BatchView({
     dispatch({ type: 'groups', groups: proposeGroups(items) })
   }, [state.grouped, busy, waitingFiles.length, items])
 
-  const missing = items.filter(
-    it => !attached.has(it.id) && (it.status === 'waiting' || it.status === 'checked'),
-  )
+  const missing = items.filter(it => !attached.has(it.id) && it.status !== 'error')
+  const unread = missing.filter(it => it.status === 'waiting' || it.status === 'checked').length
 
   const attach = (picked: File[]) => {
     const next = new Map(attached)
@@ -348,7 +351,7 @@ export function BatchView({
         <div className='min-w-0'>
           <h1 className='text-2xl font-bold'>Batch of {plural(items.length, 'file')}</h1>
           <p className='mt-1 text-muted' aria-live='polite'>
-            {!checkedAll ? (
+            {checkingNow ? (
               <span className='inline-flex items-center gap-2'>
                 <Spinner className='text-accent' /> Checking file{' '}
                 {Math.min(checkedCount + 1, items.length)} of {items.length}
@@ -383,7 +386,7 @@ export function BatchView({
         </Button>
       </div>
 
-      {missing.length > 0 && <Reattach missing={missing.length} onFiles={attach} />}
+      {missing.length > 0 && <Reattach missing={missing.length} unread={unread} onFiles={attach} />}
       {notice && <p className='mt-3 text-sm text-bad'>{notice}</p>}
 
       {state.groups
@@ -525,13 +528,22 @@ function CostLine({
   )
 }
 
-function Reattach({ missing, onFiles }: { missing: number; onFiles: (f: File[]) => void }) {
+function Reattach({
+  missing,
+  unread,
+  onFiles,
+}: {
+  missing: number
+  unread: number
+  onFiles: (f: File[]) => void
+}) {
   const input = useRef<HTMLInputElement>(null)
   return (
     <Card className='mt-5 flex flex-wrap items-center gap-3 px-4 py-3 text-sm'>
       <p className='min-w-0 flex-1'>
-        {plural(missing, 'file')} still {missing === 1 ? 'needs' : 'need'} reading. Add the same
-        files again to carry on; tables already read are kept.
+        {unread > 0
+          ? `${plural(unread, 'file')} still ${unread === 1 ? 'needs' : 'need'} reading. Add the same files again to carry on; tables already read are kept.`
+          : `Add the same ${missing === 1 ? 'file' : 'files'} again to review ${missing === 1 ? 'it' : 'them'} next to the page. Tables already read are kept, and downloads work without them.`}
       </p>
       <Button size='sm' onClick={() => input.current?.click()}>
         <FilePlus2 className='size-3.5' /> Add files
