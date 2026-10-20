@@ -151,6 +151,25 @@ export async function buildWorkbook(pages: PageTables[], opts: ExportOptions): P
   return writeXlsxFile(sheets).toBlob()
 }
 
+/** One sheet per given table, named after it, typed like every other export. */
+export async function buildSheetsWorkbook(
+  tables: { name: string; table: Table }[],
+  typed: boolean,
+): Promise<Blob> {
+  const used = new Set<string>()
+  const sheets: Sheet<Blob>[] = tables.map(({ name, table }) => {
+    const data = tableRows(table, typed)
+    return {
+      data,
+      sheet: sheetName(name, used),
+      columns: widths(data),
+      stickyRowsCount: table.headerRows || undefined,
+    }
+  })
+  if (sheets.length === 0) throw new Error('Nothing to export. No file is ready yet.')
+  return writeXlsxFile(sheets).toBlob()
+}
+
 /** Merge tables that continue across consecutive pages (statements, ledgers). */
 export function joinContinued(pages: PageTables[]): PageTables[] {
   const out: PageTables[] = []

@@ -203,9 +203,12 @@ export function buildRecipe(
       })
     })
   const kept = new Set(after.flatMap(p => p.tables.map(t => t.id)))
+  const was = new Set(before.flatMap(p => p.tables.map(t => t.id)))
+  // A page read again (OCR, AI, Fix with AI) has new tables: its old ones were replaced, not deleted.
+  const reread = new Set(after.filter(p => p.tables.some(t => !was.has(t.id))).map(p => p.page))
   for (const p of before)
     p.tables.forEach((t, position) => {
-      if (kept.has(t.id)) return
+      if (kept.has(t.id) || reread.has(p.page)) return
       const match = t.origin ?? originOf(t)
       if (rules.some(r => key(r.match, soft) === key(match, soft))) return
       rules.push({ match, page: p.page, position, include: false, edits: [] })
