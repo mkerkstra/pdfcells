@@ -84,13 +84,32 @@ function caption(t: Table, page: number): Row[] {
   return [[{ value: title, fontWeight: 'bold', fontSize: 13 }]]
 }
 
+/** Included, non-empty tables, joined across pages when asked. */
+function includedTables(pages: PageTables[], joinPages: boolean): PageTables[] {
+  const included = pages
+    .map(p => ({ ...p, tables: p.tables.filter(t => t.include && t.rows.length > 0) }))
+    .filter(p => p.tables.length)
+  return joinPages ? joinContinued(included) : included
+}
+
+/** One named entry per table, named exactly as the .xlsx sheets would be. */
+export function namedTables(
+  pages: PageTables[],
+  joinPages: boolean,
+): { name: string; table: Table }[] {
+  const used = new Set<string>()
+  return includedTables(pages, joinPages).flatMap(p =>
+    p.tables.map((t, i) => ({
+      name: sheetName(t.title || `p${p.page}${p.tables.length > 1 ? ` t${i + 1}` : ''}`, used),
+      table: t,
+    })),
+  )
+}
+
 export async function buildWorkbook(pages: PageTables[], opts: ExportOptions): Promise<Blob> {
   const used = new Set<string>()
   const sheets: Sheet<Blob>[] = []
-  let included = pages
-    .map(p => ({ ...p, tables: p.tables.filter(t => t.include && t.rows.length > 0) }))
-    .filter(p => p.tables.length)
-  if (opts.joinPages) included = joinContinued(included)
+  const included = includedTables(pages, opts.joinPages)
 
   if (opts.layout === 'per-table') {
     for (const p of included) {
@@ -150,12 +169,6 @@ export function joinContinued(pages: PageTables[]): PageTables[] {
     }
   }
   return out
-}
-
-export function toCsv(t: Table): string {
-  return t.rows
-    .map(r => r.map(c => (/[",\n]/.test(c) ? `"${c.replaceAll('"', '""')}"` : c)).join(','))
-    .join('\r\n')
 }
 
 export function download(blob: Blob, name: string) {

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Columns2,
   Combine,
+  Check,
   Copy,
   Hash,
   Rows2,
@@ -14,10 +15,10 @@ import {
 } from 'lucide-react'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
+import { copyTable } from '@/lib/plaintext'
 import * as ops from '@/lib/tableOps'
 import type { Table } from '@/lib/types'
 import { columnTypes, isTotalRow, validate, type Issue } from '@/lib/validate'
-import { toCsv } from '@/lib/xlsx'
 
 import { Badge, Button, cn, FIELD, FOOTED_TITLE, Spinner, Tick } from './ui'
 
@@ -55,6 +56,7 @@ export function TableEditor({
 }) {
   const [sel, setSel] = useState<{ r: number; c: number } | null>(null)
   const [fixOpen, setFixOpen] = useState(false)
+  const [copied, setCopied] = useState<'done' | 'failed' | null>(null)
   const [instruction, setInstruction] = useState('')
   const gridRef = useRef<HTMLTableElement>(null)
 
@@ -171,11 +173,27 @@ export function TableEditor({
         <Button
           size='icon'
           variant='ghost'
-          onClick={() => void navigator.clipboard.writeText(toCsv(table))}
-          title='Copy as CSV'
-          aria-label='Copy as CSV'
+          onClick={() =>
+            void copyTable(table).then(
+              () => setCopied('done'),
+              () => setCopied('failed'),
+            )
+          }
+          onBlur={() => setCopied(null)}
+          title={
+            copied === 'done'
+              ? 'Copied. Paste into any spreadsheet.'
+              : copied === 'failed'
+                ? 'Copying was blocked by the browser.'
+                : 'Copy the table to paste into Excel, Sheets or Numbers'
+          }
+          aria-label='Copy table'
         >
-          <Copy className='size-3.5' />
+          {copied === 'done' ? (
+            <Check className='size-3.5 text-tick' />
+          ) : (
+            <Copy className='size-3.5' />
+          )}
         </Button>
         <Button
           size='icon'
