@@ -98,3 +98,18 @@ func TestForward(t *testing.T) {
 		t.Fatalf("text %q", sent.Text)
 	}
 }
+
+func TestForwardRejectsMalformedID(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer srv.Close()
+	f := &Forwarder{APIKey: "re_test", To: "a@b.c", BaseURL: srv.URL}
+	for _, id := range []string{"", "../../domains", "abc/def", "a?b=c", "x y"} {
+		if err := f.Forward(context.Background(), id); err == nil {
+			t.Errorf("id %q accepted", id)
+		}
+	}
+	if called {
+		t.Fatal("a malformed id reached the Resend API")
+	}
+}

@@ -63,7 +63,7 @@ func ParsePriceIDs(s string) (map[int64]string, error) {
 // Checkout creates a hosted Managed Payments Checkout session for a credit pack.
 func (b *Billing) Checkout(ctx context.Context, userID string, amountCents int64) (string, error) {
 	if !slices.Contains(TopupAmountsCents, amountCents) {
-		return "", fmt.Errorf("amount must be one of %v cents", TopupAmountsCents)
+		return "", ErrBadAmount
 	}
 	item := &stripe.CheckoutSessionCreateLineItemParams{Quantity: stripe.Int64(1)}
 	if id, ok := b.prices[amountCents]; ok {
@@ -117,6 +117,9 @@ type Event struct {
 	Topup  *Topup
 	Refund *Refund
 }
+
+// ErrBadAmount means the requested pack isn't one we sell.
+var ErrBadAmount = fmt.Errorf("amount must be one of %v cents", TopupAmountsCents)
 
 // ErrIgnored marks webhook events that need no action.
 var ErrIgnored = errors.New("event ignored")

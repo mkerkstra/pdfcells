@@ -122,6 +122,11 @@ type outgoing struct {
 // Forward fetches the received email and re-sends it to f.To. The email ID is
 // the idempotency key, so a retried webhook can't deliver twice.
 func (f *Forwarder) Forward(ctx context.Context, emailID string) error {
+	// The ID comes from a verified webhook, but it is interpolated into API
+	// paths called with our key, so accept only the UUID-like shape Resend uses.
+	if !validID(emailID) {
+		return fmt.Errorf("inbound: malformed email id")
+	}
 	var msg received
 	if err := f.call(ctx, http.MethodGet, "/emails/receiving/"+emailID, nil, "", &msg); err != nil {
 		return fmt.Errorf("fetch received email: %w", err)
@@ -194,7 +199,12 @@ func (f *Forwarder) call(ctx context.Context, method, path string, body any, ide
 	defer func() { _ = res.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if res.StatusCode >= 300 {
-		return fmt.Errorf("resend %s %s: %d %s", method, path, res.StatusCode, strings.TrimSpace(string(raw)))
+		// Error bodies end up in logs; keep them short so message content can't.
+		msg := strings.TrimSpace(string(raw))
+		if len(msg) > 300 {
+			msg = msg[:300] + "…"
+		}
+		return fmt.Errorf("resend %s %s: %d %s", method, path, res.StatusCode, msg)
 	}
 	if out != nil {
 		return json.Unmarshal(raw, out)
@@ -221,6 +231,20 @@ func (f *Forwarder) now() time.Time {
 		return f.Now()
 	}
 	return time.Now()
+}
+
+func validID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func htmlEscape(s string) string {
