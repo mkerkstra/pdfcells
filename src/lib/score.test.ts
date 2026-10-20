@@ -61,7 +61,7 @@ describe('scoreTable', () => {
     const t = only(prose)
     const s = scoreTable(t, prose)
     expect(s.kind).toBe('prose')
-    expect(s.score).toBeLessThan(INCLUDE_THRESHOLD)
+    expect(s.score).toBeLessThan(0.2)
     expect(defaultInclude(t, tableFeatures(t, prose).features)).toBe(false)
     expect(hiddenReason(s)).toBe('Looks like a paragraph of text, not data.')
   })
@@ -74,6 +74,30 @@ describe('scoreTable', () => {
     expect(good.score - bad.score).toBeGreaterThan(0.02)
     expect(good.score).toBeGreaterThan(0.95)
     expect(bad.score).toBeGreaterThan(INCLUDE_THRESHOLD)
+  })
+
+  it('a table of contents and chart ticks are hidden too', () => {
+    const toc = grid(
+      [
+        ['Introduction', '. . . . . . . . . . . .', '3'],
+        ['Market overview', '. . . . . . . . . . . .', '7'],
+        ['Financial statements', '. . . . . . . . . . . .', '12'],
+        ['Notes to the accounts', '. . . . . . . . . . . .', '18'],
+      ],
+      [50, 250, 420],
+    )
+    const ticks = grid(
+      [
+        ['0', '250', '500', '750', '1000'],
+        ['2022', '2023', '2024', '2025', '2026'],
+      ],
+      [60, 160, 260, 360, 460],
+    )
+    const a = scoreTable(only(toc), toc)
+    const b = scoreTable(only(ticks), ticks)
+    expect([a.kind, a.score < INCLUDE_THRESHOLD]).toEqual(['toc', true])
+    expect([b.kind, b.score < INCLUDE_THRESHOLD]).toEqual(['axis', true])
+    expect(hiddenReason(b)).toBe('Looks like the labels on a chart’s axis, not a table.')
   })
 
   it('a text-only list is still included (hide only on evidence)', () => {

@@ -72,8 +72,9 @@ export const WEIGHTS: Readonly<Record<FeatureName | 'bias', number>> = {
 
 /**
  * Tables scoring below this are hidden by default. Every table in the golden
- * corpus scores ≥ 0.85 (see corpus.pipeline.test.ts), and the synthetic prose,
- * toc and axis blocks score ≤ 0.1, so 0.5 leaves wide margin on both sides.
+ * corpus scores ≥ 0.8 (the weakest, 0.81, is a three-row key/value block; see
+ * corpus.pipeline.test.ts), and the synthetic prose block scores ≈ 0.1, so
+ * 0.5 leaves wide margin on both sides.
  */
 export const INCLUDE_THRESHOLD = 0.5
 
