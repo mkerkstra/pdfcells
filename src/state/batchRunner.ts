@@ -24,9 +24,13 @@ import type { Engine, Tier } from '@/lib/types'
 import type { BatchAction, BatchGroup, BatchItem, ReadChoice } from './batch'
 import { slimTriage } from './batch'
 import type { PageState } from './doc'
-import { fromLocal, pool, runPages, type RunHooks } from './runner'
+import { fromLocal, runPages, semaphore, type RunHooks } from './runner'
 
 type Dispatch = (a: BatchAction) => void
+
+/** Files open at once across the whole batch (checking and reading), for memory. */
+export const OPEN_AT_ONCE = 2
+export const docSlots = semaphore(OPEN_AT_ONCE)
 
 /** The largest document the single-file flow opens; the same holds per file in a batch. */
 export const MAX_FILE_PAGES = 300
@@ -51,7 +55,18 @@ const message = (e: unknown) =>
  * tables read from the PDF text. `pagesSoFar` is the batch's page count
  * before this file, for the batch page limit. Returns this file's pages.
  */
-export async function checkItem(
+export function checkItem(
+  item: BatchItem,
+  file: File,
+  aiAvailable: boolean,
+  pagesSoFar: number,
+  dispatch: Dispatch,
+  signal: AbortSignal,
+): Promise<number> {
+  return docSlots(() => checkOne(item, file, aiAvailable, pagesSoFar, dispatch, signal))
+}
+
+async function checkOne(
   item: BatchItem,
   file: File,
   aiAvailable: boolean,
@@ -173,9 +188,6 @@ export async function readItem(
   }
 }
 
-/** Files at a time: each has its own DocSource open while it reads. */
-export const OPEN_AT_ONCE = 2
-
 export async function readAll(
   jobs: { item: BatchItem; file: File; pages: PageState[] }[],
   tier: Tier,
@@ -183,8 +195,33 @@ export async function readAll(
   dispatch: Dispatch,
   hooks: RunHooks,
 ): Promise<void> {
-  await pool(jobs, OPEN_AT_ONCE, j =>
-    readItem(j.item, j.file, j.pages, tier, aiAvailable, dispatch, hooks),
+  // docSlots is shared with checkItem and every other readAll call, so the
+  // two-open-files bound holds however many reads are going.
+  await Promise.all(
+    jobs.map(j =>
+      docSlots(() => readItem(j.item, j.file, j.pages, tier, aiAvailable, dispatch, hooks)),
+    ),
+  )
+}
+
+/**
+ * Pages to run from review, with their text layer restored from the open
+ * document (batch pages keep slim summaries), so AI gets the exact PDF text.
+ */
+export async function withFacts(
+  doc: DocSource,
+  pages: PageState[],
+  aiAvailable: boolean,
+): Promise<PageState[]> {
+  return Promise.all(
+    pages.map(async p => {
+      try {
+        return { ...p, triage: classify(await (await doc.page(p.n)).facts(), aiAvailable) }
+      } catch {
+        // The read itself reports a page that can't be opened.
+        return p
+      }
+    }),
   )
 }
 

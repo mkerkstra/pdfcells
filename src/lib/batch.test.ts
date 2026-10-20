@@ -138,6 +138,28 @@ describe('combineTables', () => {
     ])
   })
 
+  it('tables whose dates read differently go on separate sheets', () => {
+    const us = table(
+      [HEAD, ['05/06/2026', 'A', '1.00', '1.00'], ['05/13/2026', 'B', '1.00', '2.00']],
+      'US',
+    )
+    const uk = table(
+      [HEAD, ['05/06/2026', 'C', '1.00', '1.00'], ['13/06/2026', 'D', '1.00', '2.00']],
+      'UK',
+    )
+    const sheets = combineTables(
+      [
+        { name: 'us.pdf', pages: [{ page: 1, tables: [us] }] },
+        { name: 'uk.pdf', pages: [{ page: 1, tables: [uk] }] },
+      ],
+      true,
+    )
+    expect(sheets.map(s => [s.name, s.table.rows.length])).toEqual([
+      ['US', 3],
+      ['UK', 3],
+    ])
+  })
+
   it('leaves out tables that aren’t included', () => {
     const t = { ...table([HEAD, ['05/01/2026', 'A', '1.00', '1.00']]), include: false }
     expect(combineTables([{ name: 'a.pdf', pages: [{ page: 1, tables: [t] }] }], true)).toEqual([])

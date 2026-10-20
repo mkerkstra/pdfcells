@@ -16,7 +16,15 @@ import {
   type ReadChoice,
   pendingMembers,
 } from '@/state/batch'
-import { checkItem, enginesOf, readAll, regroup, rereads, toRead } from '@/state/batchRunner'
+import {
+  checkItem,
+  enginesOf,
+  readAll,
+  regroup,
+  rereads,
+  toRead,
+  withFacts,
+} from '@/state/batchRunner'
 import { clearBatch, saveBatch } from '@/state/batchStore'
 import type { Action, PageState } from '@/state/doc'
 import { runPages, type RunHooks } from '@/state/runner'
@@ -152,8 +160,13 @@ export function BatchView({
     const signal = exit.current?.signal
     if (!next || !file || !signal || signal.aborted) return
     checking.current = true
+    // Every file already admitted counts, including ones being read.
     const sofar = state.items.reduce(
-      (n, it) => n + (it.status === 'checked' || it.status === 'read' ? it.doc.pages.length : 0),
+      (n, it) =>
+        n +
+        (it.id !== next.id && it.status !== 'waiting' && it.status !== 'error'
+          ? it.doc.pages.length
+          : 0),
       0,
     )
     void checkItem(next, file, account.aiPossible, sofar, dispatch, signal).finally(() => {
@@ -164,15 +177,22 @@ export function BatchView({
 
   // Files handed to the reader and not finished yet, so no file is read twice.
   const inFlight = useRef(new Set<string>())
+  /**
+   * 'start' is the person pressing Read: it records their choice (OCR when AI
+   * isn't available) as consent for the batch. 'continue' reads newly added
+   * files under that consent. 'local' reads only files that need neither OCR
+   * nor AI, and consents to nothing.
+   */
   const read = useCallback(
-    async (items: BatchItem[]) => {
-      // Save the choice as made (OCR when AI isn't available), so a resume
-      // never reads with an engine the person didn't pick.
-      dispatch({ type: 'choice', choice })
-      dispatch({ type: 'started' })
+    async (items: BatchItem[], mode: 'start' | 'continue' | 'local') => {
+      if (mode === 'start') {
+        dispatch({ type: 'choice', choice })
+        dispatch({ type: 'started' })
+      }
       const jobs = items.flatMap(item => {
         const file = attached.get(item.id)
         if (!file || item.status !== 'checked' || inFlight.current.has(item.id)) return []
+        if (mode === 'local' && toRead(item, 'ai').length > 0) return []
         inFlight.current.add(item.id)
         return [{ item, file, pages: toRead(item, choice) }]
       })
@@ -205,8 +225,8 @@ export function BatchView({
   const readable = items.some(it => it.status === 'checked' && attached.has(it.id))
   useEffect(() => {
     if (!readable) return
-    if (state.started || (checkedAll && toReadNow.needing === 0)) void read(stateRef.current.items)
-  }, [readable, state.started, checkedAll, toReadNow.needing, read])
+    void read(stateRef.current.items, state.started ? 'continue' : 'local')
+  }, [readable, state.started, read])
 
   // Once every file that can be read is read, group them; a file read later
   // (added again after a resume) joins a group then.
@@ -258,7 +278,15 @@ export function BatchView({
     }
   }
 
+  const reviewingRef = useRef<string | null>(null)
+  useEffect(() => {
+    reviewingRef.current = reviewing?.id ?? null
+  }, [reviewing])
+  // Review can't be left while its pages are being read: the read needs the open document.
   const closeReview = useCallback(() => {
+    const id = reviewingRef.current
+    const it = stateRef.current.items.find(x => x.id === id)
+    if (it?.doc.pages.some(p => p.status === 'running' || p.status === 'queued')) return
     setReviewing(null)
     // The effect below destroys the DocSource once it's replaced.
     setSource(null)
@@ -525,7 +553,7 @@ export function BatchView({
                   : 'Add an API key in Settings to read with AI.'}
               </span>
             )}
-            <Button variant='primary' onClick={() => void read(items)}>
+            <Button variant='primary' onClick={() => void read(items, 'start')}>
               Read {plural(waitingFiles.length, 'file')}
             </Button>
           </div>
@@ -821,7 +849,7 @@ function BatchReview({
     async (pages, opts = {}) => {
       await runPages(
         source,
-        pages,
+        await withFacts(source, pages, account.aiPossible),
         docDispatch,
         { tier: opts.tier ?? account.tier, current: opts.current, instruction: opts.instruction },
         hooks,
@@ -880,6 +908,7 @@ function SetupBar({
   })
   const ai = again.filter(p => p.engine === 'ai').length
   const est = useAiEstimate(ai)
+  const reading = first.doc.pages.some(p => p.status === 'running' || p.status === 'queued')
   return (
     <div className={BAR}>
       <p className='min-w-0 flex-1 text-muted'>
@@ -889,7 +918,12 @@ function SetupBar({
           ` ${plural(again.length, 'page')} in them will be read again with ${ai ? 'AI' : 'OCR'}, as here${ai && !est.byok && est.paid > 0 ? `, about ${formatUsd(est.cost)}` : ''}.`}
       </p>
       <Button onClick={onBack}>Back to batch</Button>
-      <Button variant='primary' onClick={onApply}>
+      <Button
+        variant='primary'
+        onClick={onApply}
+        disabled={reading}
+        title={reading ? 'Wait for the pages being read to finish' : undefined}
+      >
         Use for {plural(others, 'file')}
       </Button>
     </div>

@@ -7,7 +7,7 @@ import { sniff, SNIFF_BYTES } from './filetype'
 import { headerCells, words } from './fingerprint'
 import { joinWithOrigins, readStatement, type Statement, type Transaction } from './statement'
 import type { Table } from './types'
-import { reviewDocument } from './validate'
+import { columnTypes, reviewDocument } from './validate'
 
 export const MAX_FILES = 200
 export const MAX_BATCH_PAGES = 2000
@@ -121,9 +121,15 @@ const soft = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
 function schemaKey(t: Table): string {
   const head = headerCells(t).map(soft)
   const width = t.rows[0]?.length ?? 0
+  // Cells are typed per column on export, so tables whose dates or decimals
+  // read differently (05/06 as May 6 vs 5 June, 1.234,56 vs 1,234.56) must not
+  // share a column: each keeps the reading it has on its own.
+  const typing = columnTypes(t)
+    .map(ct => (ct.kind === 'date' ? ct.dateOrder : ct.kind === 'number' ? ct.locale : ''))
+    .join(',')
   return head.some(Boolean)
-    ? `h:${width}:${head.join('|')}`
-    : `n:${width}:${words(t.title).join(' ')}`
+    ? `h:${width}:${head.join('|')}:${typing}`
+    : `n:${width}:${words(t.title).join(' ')}:${typing}`
 }
 
 /**
