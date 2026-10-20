@@ -8,10 +8,11 @@ import { getDocument, OPS, PasswordException } from 'pdfjs-dist/legacy/build/pdf
 import { describe, expect, it } from 'vitest'
 
 import { inferColumn } from './lib/cells'
+import { provenance } from './lib/checks/provenance'
 import { pageFacts } from './lib/pagefacts'
 import { triage, type PageTriage } from './lib/triage'
 import type { Table } from './lib/types'
-import { validate } from './lib/validate'
+import { reviewDocument, validate, type DocumentReview } from './lib/validate'
 
 const IMAGE_OPS = new Set([
   OPS.paintImageXObject,
@@ -178,6 +179,149 @@ describe('pages that need visual reading are routed to OCR or AI', () => {
       verbosity: 0,
     }).promise
     expect(triage(await pageFacts(await doc.getPage(1), IMAGE_OPS), false).recommended).toBe('ocr')
+  })
+})
+
+async function reviewed(file: string): Promise<DocumentReview> {
+  const ps = await pages(file)
+  return reviewDocument(
+    ps.map((p, n) => ({
+      page: n + 1,
+      tables: p.localTables.map((t, k) => ({ ...asTable(t), id: `${file}:${n + 1}:${k}` })),
+    })),
+  )
+}
+
+const tickLabels = (r: DocumentReview) => r.tables.map(t => t.ticks.map(k => k.label))
+const allIssues = (r: DocumentReview) => [...r.tables.flatMap(t => t.issues), ...r.cross.issues]
+
+describe('accuracy cross-checks', () => {
+  it.each([
+    'statement.pdf',
+    'ruled-wrapped.pdf',
+    'eu-invoice.pdf',
+    'financial-report.pdf',
+    'dense-wide.pdf',
+    'no-header-ids.pdf',
+    'mixed-document.pdf',
+    'side-by-side.pdf',
+    'statement-dc.pdf',
+  ])('%s: no false positives', async f => {
+    expect(allIssues(await reviewed(f))).toEqual([])
+  })
+
+  it('statement: running balance ties on both pages', async () => {
+    expect(tickLabels(await reviewed('statement.pdf'))).toEqual([
+      ['Balance ties'],
+      ['Balance ties'],
+      [],
+    ])
+  })
+
+  it('dense wide table: FY cross-foots Q1..Q4', async () => {
+    const r = await reviewed('dense-wide.pdf')
+    expect(r.tables[0]?.ticks).toEqual([
+      { kind: 'crossfoot', label: 'Cross-footed', cols: [7, 3, 4, 5, 6], rows: 55 },
+    ])
+  })
+
+  it('mixed document: headcount and inventory cross-foot', async () => {
+    expect(tickLabels(await reviewed('mixed-document.pdf'))).toEqual([
+      ['Footed', 'Cross-footed'],
+      ['Cross-footed'],
+    ])
+  })
+
+  it('EU invoice: line totals and Nettobetrag + USt. = Gesamtbetrag', async () => {
+    expect(tickLabels(await reviewed('eu-invoice.pdf'))).toEqual([
+      [],
+      ['Line totals check', 'Subtotal and tax tie to total'],
+    ])
+  })
+
+  it('financial report: footed, and quarters are not mistaken for addends', async () => {
+    expect(tickLabels(await reviewed('financial-report.pdf'))).toEqual([['Footed']])
+  })
+
+  it('debit/credit statement: balance and summary tie', async () => {
+    expect(tickLabels(await reviewed('statement-dc.pdf'))).toEqual([
+      ['Balance ties'],
+      ['Footed', 'Opening and closing balances tie'],
+    ])
+  })
+
+  it('debit/credit statement with one misread credit: blames that cell', async () => {
+    const r = await reviewed('statement-dc-misread.pdf')
+    expect(allIssues(r)).toEqual([
+      expect.objectContaining({
+        kind: 'balance',
+        row: 10,
+        col: 3,
+        expected: 397.86,
+        actualText: '402.86',
+        message: 'Credit should be 397.86 (balance goes from 2,948.91 to 3,346.77)',
+      }),
+    ])
+  })
+
+  it('invoice with one wrong line total: flags that line', async () => {
+    const r = await reviewed('invoice-lines.pdf')
+    expect(allIssues(r)).toEqual([
+      expect.objectContaining({
+        kind: 'arithmetic',
+        row: 3,
+        col: 3,
+        expected: 81.75,
+        actualText: '171.75',
+        message: 'Amount should be 81.75 (3 × 27.25)',
+      }),
+    ])
+    expect(tickLabels(r)).toEqual([['Footed', 'Subtotal and tax tie to total']])
+  })
+
+  it('invoice whose total is not subtotal + tax: flags the total', async () => {
+    const r = await reviewed('invoice-tie.pdf')
+    expect(allIssues(r)).toEqual([
+      expect.objectContaining({
+        kind: 'tie',
+        row: 9,
+        col: 3,
+        expected: 1502.2,
+        actualText: '1,602.20',
+        message: 'Total should be 1,502.20 (subtotal 1,387.71 + sales tax 114.49)',
+      }),
+    ])
+    expect(tickLabels(r)).toEqual([['Line totals check']])
+  })
+
+  it('provenance: every number in a page table is in its text layer, a changed one is not', async () => {
+    const found: string[] = []
+    for (const f of ['statement.pdf', 'eu-invoice.pdf', 'dense-wide.pdf', 'financial-report.pdf'])
+      for (const p of await pages(f))
+        for (const t of p.localTables)
+          found.push(...provenance(asTable(t), p).map(i => `${f} ${i.row}:${i.col}`))
+    expect(found).toEqual([])
+    const [p] = await pages('statement.pdf')
+    const t = asTable(p?.localTables[0] as NonNullable<typeof p>['localTables'][number])
+    const rows = t.rows.map(r => [...r])
+    rows[14] = ['03/15/2026', 'Payment ref 1014', '287.45', '456.82']
+    expect(provenance({ ...t, rows }, p as NonNullable<typeof p>)).toEqual([
+      expect.objectContaining({ kind: 'provenance', row: 14, col: 3 }),
+    ])
+  })
+
+  it('report with one wrong FY: flags that cell', async () => {
+    const r = await reviewed('report-fy.pdf')
+    expect(allIssues(r)).toEqual([
+      expect.objectContaining({
+        kind: 'crossfoot',
+        row: 5,
+        col: 5,
+        expected: 232700,
+        actualText: '233,600',
+        message: 'FY should be 232,700 (sum of Q1 to Q4)',
+      }),
+    ])
   })
 })
 

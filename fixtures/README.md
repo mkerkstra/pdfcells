@@ -4,7 +4,11 @@ Each PDF targets one way real-world documents go wrong. `src/corpus.test.ts` run
 
 ```sh
 uv run --with reportlab --with pillow --with pypdfium2 --with numpy python fixtures/make_fixtures.py fixtures
+# or only some fixtures:
+uv run --with reportlab --with pillow --with pypdfium2 --with numpy python fixtures/make_fixtures.py fixtures statement_dc report_fy
 ```
+
+Content is deterministic (fixed seeds). The original fixtures embed creation timestamps, so regenerating them rewrites their bytes without changing what they contain; the cross-check fixtures below are written with `invariant=1` and are byte-stable.
 
 | File | What it stresses | Expected route |
 |---|---|---|
@@ -21,3 +25,17 @@ uv run --with reportlab --with pillow --with pypdfium2 --with numpy python fixtu
 | `scanned-bad.pdf` | 110 dpi fax-grade, 2.5° skew, heavy noise, JPEG q25 | AI |
 | `photo-invoice.pdf` | Phone photo: perspective warp, uneven lighting, tint | AI |
 | `broken-text-layer.pdf` | Scan with an invisible OCR layer of garbage glyphs | Broken text → AI |
+
+## Accuracy cross-checks
+
+These exercise the deterministic checks in `src/lib/checks/` (`review()` / `reviewDocument()` in `src/lib/validate.ts`). Each planted error is caught at one exact cell with the expected value; the clean variants and every fixture above produce ticks and no issues.
+
+| File | What it plants | Expected result |
+|---|---|---|
+| `statement-dc.pdf` | Debit/credit/balance columns, account summary with opening, credits, debits, closing | "Balance ties"; "Footed" + "Opening and closing balances tie" on the summary |
+| `statement-dc-misread.pdf` | Same statement, one credit printed `402.86` instead of `397.86` (balances unchanged) | One `balance` issue on that credit cell, expected 397.86 |
+| `invoice-lines.pdf` | Qty × unit = amount, except "Desk lamp" printed `171.75` (3 × 27.25 = 81.75); subtotal adds the printed lines | One `arithmetic` issue on that amount, expected 81.75; subtotal + tax ties |
+| `invoice-tie.pdf` | Correct lines and subtotal, total printed 100.00 too high | One `tie` issue on the total, expected 1,502.20; "Line totals check" |
+| `report-fy.pdf` | Q1–Q4 + FY + Growth %, one FY printed `233,600` (sum 232,700) | One `crossfoot` issue on that FY, expected 232,700 |
+
+Existing fixtures double as false-positive guards: `statement.pdf` ties its running balance on both pages, `dense-wide.pdf` and both `mixed-document.pdf` tables cross-foot, `eu-invoice.pdf` checks its line totals and ties Nettobetrag + USt. to Gesamtbetrag, and `financial-report.pdf` foots without mistaking its quarters for addends.
