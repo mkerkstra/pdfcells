@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest'
 import { inferColumn } from './lib/cells'
 import { provenance } from './lib/checks/provenance'
 import { pageFacts } from './lib/pagefacts'
+import { readStatement } from './lib/statement'
+import { ofxToXml, toOfx, toQbo } from './lib/statementExport'
 import { triage, type PageTriage } from './lib/triage'
 import type { Table } from './lib/types'
 import { reviewDocument, validate, type DocumentReview } from './lib/validate'
@@ -322,6 +324,70 @@ describe('accuracy cross-checks', () => {
         message: 'FY should be 232,700 (sum of Q1 to Q4)',
       }),
     ])
+  })
+})
+
+async function statementOf(file: string) {
+  const ps = await pages(file)
+  return readStatement(
+    ps.map((p, n) => ({
+      page: n + 1,
+      tables: p.localTables.map((t, k) => ({ ...asTable(t), id: `${file}:${n + 1}:${k}` })),
+    })),
+  )
+}
+
+describe('bank statement export', () => {
+  it('statement.pdf: 45 transactions joined across pages, balance ties, OFX and QBO', async () => {
+    const s = await statementOf('statement.pdf')
+    expect(s?.pages).toEqual([1, 2])
+    expect(s?.transactions).toHaveLength(45)
+    expect(s?.transactions[0]).toMatchObject({
+      date: '2026-03-02',
+      description: 'Payment ref 1001',
+      amount: -39.51,
+      balance: 960.49,
+      page: 1,
+      row: 1,
+    })
+    expect(s?.transactions.at(-1)).toMatchObject({ amount: -91.34, balance: 1547.18, page: 2 })
+    expect(new Set(s?.transactions.map(t => t.fitid)).size).toBe(45)
+    expect(s?.period).toEqual({ start: '2026-03-01', end: '2026-03-31' })
+    expect([s?.opening, s?.closing]).toEqual([1000, 1547.18])
+    expect(s?.gate).toEqual({ ok: true, basis: 'balance', label: 'balance ties' })
+    if (!s || s.closing === undefined) throw new Error('no statement')
+    const input = {
+      ...s,
+      closing: s.closing,
+      account: '000000',
+      currency: 'USD' as const,
+      now: new Date(Date.UTC(2026, 3, 1)),
+    }
+    for (const out of [toOfx(input), toQbo(input)]) {
+      expect(out.match(/<STMTTRN>/g)).toHaveLength(45)
+      expect(out).toContain('<LEDGERBAL>\r\n<BALAMT>1547.18\r\n<DTASOF>20260331')
+      expect(ofxToXml(out)).toContain('<TRNAMT>-39.51</TRNAMT>')
+    }
+    expect(toQbo(input)).toContain('<INTU.BID>3000')
+  })
+
+  it('statement-dc.pdf: debit/credit statement is exportable', async () => {
+    const s = await statementOf('statement-dc.pdf')
+    expect(s?.transactions).toHaveLength(18)
+    expect(s?.transactions.slice(0, 2).map(t => t.amount)).toEqual([-72.66, 874.26])
+    expect([s?.opening, s?.closing]).toEqual([2450, 2846.38])
+    expect(s?.summary).toMatchObject({ opening: 2450, closing: 2846.38, ties: true })
+    expect(s?.gate.ok).toBe(true)
+  })
+
+  it('statement-dc-misread.pdf: not exportable, and the reason names the misread credit', async () => {
+    const s = await statementOf('statement-dc-misread.pdf')
+    expect(s?.gate).toEqual({
+      ok: false,
+      reasons: [
+        'Balance doesn’t tie on page 1, row 11: Credit should be 397.86 (balance goes from 2,948.91 to 3,346.77)',
+      ],
+    })
   })
 })
 
