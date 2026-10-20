@@ -10,7 +10,7 @@ import { pool, runPage, triageAll, type AiOptions } from '@/state/runner'
 import { DropOverlay, Landing } from './Landing'
 import { ReviewView } from './ReviewView'
 import { TriageView } from './TriageView'
-import { Button } from './ui'
+import { Button, cn, FIELD } from './ui'
 
 export type RunFn = (pages: PageState[], opts?: Partial<AiOptions>) => Promise<void>
 
@@ -39,10 +39,13 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
         abortRef.current?.abort()
         await pdfRef.current?.loadingTask.destroy()
         const pdf = await openPdf(data, pw)
-        if (pdf.numPages > MAX_PAGES)
-          throw new Error(
-            `This PDF has ${pdf.numPages} pages; the limit is ${MAX_PAGES}. Split it first.`,
+        if (pdf.numPages > MAX_PAGES) {
+          setError(
+            `This PDF has ${pdf.numPages} pages and PDFCells opens up to ${MAX_PAGES}. Split it into smaller files and open each one.`,
           )
+          await pdf.loadingTask.destroy()
+          return
+        }
         pdfRef.current = pdf
         setPdf(pdf)
         setPassword(null)
@@ -53,7 +56,10 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
         void triageAll(pdf, account.aiPossible, dispatch, ctl.signal)
       } catch (e) {
         if (e instanceof PasswordRequired) setPassword({ data, name, incorrect: e.incorrect })
-        else setError(e instanceof Error ? e.message : 'Could not open this file as a PDF.')
+        else
+          setError(
+            'This file couldn’t be opened as a PDF. It may be damaged; try saving it again from the app that made it.',
+          )
       } finally {
         setOpening(false)
       }
@@ -64,7 +70,7 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
   const onFile = useCallback(
     async (f: File) => {
       if (f.type && f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-        setError('That file isn’t a PDF. Choose a file ending in .pdf.')
+        setError('That file isn’t a PDF. Choose a file that ends in .pdf.')
         return
       }
       await load(await f.arrayBuffer(), f.name)
@@ -182,20 +188,22 @@ function PasswordPrompt({
   const [pw, setPw] = useState('')
   return (
     <form
-      className='mt-5 flex max-w-md items-center gap-2'
+      className='mt-5 flex max-w-md flex-wrap items-center gap-2'
       onSubmit={e => {
         e.preventDefault()
         onSubmit(pw)
       }}
     >
-      <Lock className='size-4 text-muted' />
+      <Lock className='size-4 shrink-0 text-muted' aria-hidden />
       <input
         type='password'
         autoFocus
         value={pw}
         onChange={e => setPw(e.target.value)}
-        placeholder={incorrect ? 'Wrong password, try again' : 'This PDF is password-protected'}
-        className='h-9 flex-1 rounded-md border border-line bg-card px-2 text-sm'
+        aria-label='PDF password'
+        aria-invalid={incorrect || undefined}
+        placeholder={incorrect ? 'Wrong password. Try again.' : 'This PDF needs a password'}
+        className={cn(FIELD, 'h-9 min-w-0 flex-1 px-2.5 text-sm', incorrect && 'border-bad')}
       />
       <Button type='submit' variant='primary'>
         Unlock

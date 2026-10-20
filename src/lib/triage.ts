@@ -53,7 +53,7 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
         textHint: '',
         localTables: [],
         recommended: 'skip',
-        reason: 'Nothing on this page.',
+        reason: 'This page is blank.',
       }
     }
     return {
@@ -64,8 +64,8 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
       localTables: [],
       recommended: smart,
       reason: aiAvailable
-        ? 'An image of a page with no text inside it. AI reads scans more reliably than OCR.'
-        : 'An image of a page with no text inside it, so it will be read with OCR.',
+        ? 'A scanned image with no PDF text. AI reads scans more reliably than OCR.'
+        : 'A scanned image with no PDF text, so OCR will read it.',
     }
   }
 
@@ -78,7 +78,7 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
       localTables: [],
       recommended: smart,
       reason:
-        'The text inside this PDF is scrambled (a broken font), so the page has to be read from its image.',
+        'The PDF text on this page is scrambled by a broken font, so it has to be read from the page image.',
     }
   }
 
@@ -95,7 +95,7 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
     return {
       ...common,
       recommended: 'skip',
-      reason: 'Text only. No table found.',
+      reason: 'Text only, no table found.',
     }
   }
   if (best >= GOOD_LOCAL_CONFIDENCE || !aiAvailable) {
@@ -111,7 +111,6 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
   return {
     ...common,
     recommended: 'ai',
-    reason:
-      'The table layout is irregular (merged or wrapped cells). AI rebuilds the grid using the exact PDF text.',
+    reason: 'The table has merged or wrapped cells. AI rebuilds the grid from the exact PDF text.',
   }
 }

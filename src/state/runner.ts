@@ -102,7 +102,7 @@ export async function runPage(
       const tables = buildTables(words).map(t => fromLocal(t))
       const warnings = tables.length
         ? []
-        : ['OCR found no table layout on this page. Try AI, or the page may be text only.']
+        : ['OCR found no table on this page. If it has one, read it again with AI.']
       dispatch({ type: 'result', index, tables, warnings, run: { engine: 'ocr' } })
       return
     }

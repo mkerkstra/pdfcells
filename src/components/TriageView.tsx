@@ -10,7 +10,7 @@ import type { Action, DocState, PageState } from '@/state/doc'
 
 import { PageThumb } from './PageThumb'
 import { TIER_LABEL, TierPicker } from './TierPicker'
-import { Badge, Button, cn, Spinner } from './ui'
+import { Badge, Button, cn, FIELD, Spinner } from './ui'
 import type { RunFn } from './Workspace'
 
 export const KIND_LABEL: Record<PageKind, string> = {
@@ -20,11 +20,18 @@ export const KIND_LABEL: Record<PageKind, string> = {
   blank: 'Blank',
 }
 const KIND_TONE = { digital: 'good', scanned: 'warn', garbled: 'bad', blank: 'neutral' } as const
+/** The three read methods, named the same everywhere: pre-check, review, badges. */
 export const ENGINE_LABEL: Record<Engine | 'skip', string> = {
-  text: 'Read the PDF text',
-  ocr: 'OCR in browser',
+  text: 'PDF text',
+  ocr: 'OCR',
   ai: 'AI',
-  skip: 'Skip page',
+  skip: 'Skip',
+}
+const ENGINE_OPTION: Record<Engine | 'skip', string> = {
+  text: 'PDF text (exact, free)',
+  ocr: 'OCR (free, in your browser)',
+  ai: 'AI (sends this page)',
+  skip: 'Skip this page',
 }
 
 // A rendered 2000px page ≈ 4k image tokens; typical table output ≈ 1.5k tokens.
@@ -95,19 +102,21 @@ export function TriageView({
       : est.byok
         ? 'Billed to your API key'
         : est.paid === 0
-          ? 'Free (daily AI pages)'
+          ? 'Free (uses your free AI pages)'
           : `About ${formatUsd(est.cost)}`
 
   return (
     <main className='mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6'>
       <div className='flex flex-wrap items-start gap-x-6 gap-y-3'>
         <div className='min-w-0'>
-          <h1 className='truncate text-2xl font-bold tracking-[-0.02em]'>{doc.fileName}</h1>
+          <h1 className='truncate text-2xl font-bold'>{doc.fileName}</h1>
           <p className='mt-1 text-muted'>
             {done ? (
               <>
-                Checked {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}. {tables}{' '}
-                {tables === 1 ? 'table' : 'tables'} already read exactly from the PDF text.
+                Checked {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}.{' '}
+                {tables === 0
+                  ? 'No tables found in the PDF text.'
+                  : `Found ${tables} ${tables === 1 ? 'table' : 'tables'} in the PDF text.`}
               </>
             ) : (
               <span className='inline-flex items-center gap-2'>
@@ -129,7 +138,7 @@ export function TriageView({
               <th className='w-16 py-2 pl-3 font-medium'>Page</th>
               <th className='py-2 pr-3 font-medium'>What’s on it</th>
               <th className='hidden w-20 py-2 pr-3 text-right font-medium sm:table-cell'>Tables</th>
-              <th className='w-56 py-2 pr-3 font-medium'>Read with</th>
+              <th className='hidden w-56 py-2 pr-3 font-medium sm:table-cell'>Read with</th>
             </tr>
           </thead>
           <tbody>
@@ -149,7 +158,9 @@ export function TriageView({
                 {doc.pages.length}
               </td>
               <td className='py-3 pr-3 align-top'>
-                <div className='font-semibold'>To convert</div>
+                <div className='font-semibold'>
+                  To read<span className='font-normal text-muted sm:hidden'>: {costLine}</span>
+                </div>
                 <div className='text-muted'>
                   {pending.length === 0
                     ? 'Nothing left to read. Every table came from the PDF text.'
@@ -164,12 +175,12 @@ export function TriageView({
               <td className='hidden py-3 pr-3 text-right align-top font-semibold sm:table-cell'>
                 <span className='double-rule px-1'>{tables}</span>
               </td>
-              <td className='py-3 pr-3 align-top'>
+              <td className='hidden py-3 pr-3 align-top sm:table-cell'>
                 <div className='font-semibold'>{costLine}</div>
                 {aiPages.length > 0 && !est.byok && est.paid > 0 && (
                   <div className='text-xs text-muted'>
-                    {est.free > 0 && `${est.free} free, then `}≈{formatUsd(est.perPage)} a page,
-                    charged at exact cost
+                    {est.free > 0 && `${est.free} free, then `}about {formatUsd(est.perPage)} a
+                    page, charged at exact cost
                   </div>
                 )}
               </td>
@@ -189,14 +200,21 @@ export function TriageView({
           {needsAuth &&
             (account.signIn ? (
               <span className='flex items-center gap-2 text-sm text-muted'>
-                Sign in for free AI pages {account.signIn}
+                Sign in to use your free AI pages {account.signIn}
               </span>
             ) : (
-              <span className='text-sm text-muted'>No API key: AI pages will use OCR instead</span>
+              <span className='text-sm text-muted'>
+                Without an API key, AI pages are read with OCR. Add one in Settings.
+              </span>
             ))}
           {pending.length > 0 && (
-            <Button variant='outline' onClick={onContinue} disabled={!done || tables === 0}>
-              Review without converting
+            <Button
+              variant='outline'
+              onClick={onContinue}
+              disabled={!done || tables === 0}
+              title={tables === 0 ? 'No tables to review until a page is read' : undefined}
+            >
+              Review without reading
             </Button>
           )}
           <Button
@@ -205,7 +223,7 @@ export function TriageView({
             disabled={!done || (pending.length === 0 && tables === 0)}
           >
             {pending.length
-              ? `Convert ${pending.length} ${pending.length === 1 ? 'page' : 'pages'}`
+              ? `Read ${pending.length} ${pending.length === 1 ? 'page' : 'pages'} and review`
               : 'Review tables'}
           </Button>
         </div>
@@ -245,40 +263,63 @@ function PageRow({
         {t ? (
           <>
             <Badge tone={KIND_TONE[t.kind]}>{KIND_LABEL[t.kind]}</Badge>
-            <p className='mt-1.5 max-w-prose leading-snug text-muted'>{t.reason}</p>
+            <p className='mt-1.5 max-w-prose text-muted'>{t.reason}</p>
           </>
         ) : page.status === 'error' ? (
-          <p className='text-bad'>Couldn’t read this page: {page.error}</p>
+          <p className='text-bad'>This page couldn’t be checked: {page.error}</p>
         ) : (
           <span className='inline-flex items-center gap-2 text-muted'>
-            <Spinner /> Checking
+            <Spinner /> Checking…
           </span>
+        )}
+        {t && (
+          <div className='mt-3 sm:hidden'>
+            <ReadWith page={page} engines={engines} aiPossible={aiPossible} onEngine={onEngine} />
+          </div>
         )}
       </td>
       <td className='hidden py-3 pr-3 text-right sm:table-cell'>{page.tables.length || ''}</td>
-      <td className='py-3 pr-3'>
+      <td className='hidden py-3 pr-3 sm:table-cell'>
         {t && (
-          <select
-            value={page.engine}
-            onChange={e => onEngine(e.target.value as Engine | 'skip')}
-            className='h-8 w-full rounded-md border border-rule bg-card px-2 text-sm text-ink'
-            aria-label={`How to read page ${page.n}`}
-          >
-            {engines.map(e => (
-              <option key={e} value={e} disabled={e === 'ai' && !aiPossible}>
-                {ENGINE_LABEL[e]}
-              </option>
-            ))}
-          </select>
-        )}
-        {t && (
-          <p className='mt-1 text-xs text-muted'>
-            {page.engine === t.recommended
-              ? 'Recommended'
-              : `Recommended: ${ENGINE_LABEL[t.recommended].toLowerCase()}`}
-          </p>
+          <ReadWith page={page} engines={engines} aiPossible={aiPossible} onEngine={onEngine} />
         )}
       </td>
     </tr>
+  )
+}
+
+function ReadWith({
+  page,
+  engines,
+  aiPossible,
+  onEngine,
+}: {
+  page: PageState
+  engines: (Engine | 'skip')[]
+  aiPossible: boolean
+  onEngine: (e: Engine | 'skip') => void
+}) {
+  const t = page.triage
+  if (!t) return null
+  return (
+    <>
+      <select
+        value={page.engine}
+        onChange={e => onEngine(e.target.value as Engine | 'skip')}
+        className={cn(FIELD, 'h-8 w-full px-2 text-sm')}
+        aria-label={`How to read page ${page.n}`}
+      >
+        {engines.map(e => (
+          <option key={e} value={e} disabled={e === 'ai' && !aiPossible}>
+            {ENGINE_OPTION[e]}
+          </option>
+        ))}
+      </select>
+      <p className='mt-1 text-xs text-muted'>
+        {page.engine === t.recommended
+          ? 'Recommended'
+          : `Recommended: ${ENGINE_LABEL[t.recommended]}`}
+      </p>
+    </>
   )
 }
