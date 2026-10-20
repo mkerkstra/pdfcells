@@ -58,10 +58,18 @@ async function decodeHeicFile(file: File): Promise<Decoded> {
     import('libheif-js/libheif-wasm/libheif.wasm?url'),
     import('./heic'),
   ])
-    .then(([lib, wasm, heic]) => heic.ready(lib.default({ locateFile: () => wasm.default })))
-    .catch((e: unknown) => {
+    // This build compiles the WASM synchronously, so it must be handed the bytes.
+    .then(async ([lib, wasm, heic]) => {
+      const res = await fetch(wasm.default)
+      if (!res.ok) throw new Error(`HEIC decoder failed to load (${res.status})`)
+      const wasmBinary = new Uint8Array(await res.arrayBuffer())
+      return heic.ready(lib.default({ wasmBinary }))
+    })
+    .catch(() => {
       heicModule = null
-      throw e
+      throw new OpenError(
+        'The HEIC decoder couldn’t be loaded. Check your connection, then open the file again.',
+      )
     })
   const [m, { decodeHeic }] = await Promise.all([heicModule, import('./heic')])
   return decodeHeic(m, new Uint8Array(await file.arrayBuffer()))
@@ -115,8 +123,8 @@ async function decodeFirst(o: Origin): Promise<{ frame: Frame; bmp: ImageBitmap 
     } else {
       bmp = await createImageBitmap(o.file, { imageOrientation: 'from-image' })
     }
-  } catch {
-    throw damaged(o.file)
+  } catch (e) {
+    throw e instanceof OpenError ? e : damaged(o.file)
   }
   const { bmp: out, resized } = await capped(bmp)
   const lossless = o.type === 'tiff' || (o.type === 'native' && o.kind !== 'jpeg')
