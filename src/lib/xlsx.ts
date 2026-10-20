@@ -127,7 +127,8 @@ export async function buildWorkbook(pages: PageTables[], opts: ExportOptions): P
       })
     }
   }
-  if (sheets.length === 0) throw new Error('Nothing to export: include at least one table.')
+  if (sheets.length === 0)
+    throw new Error('No tables are included. Tick Include on at least one table.')
   return writeXlsxFile(sheets).toBlob()
 }
 

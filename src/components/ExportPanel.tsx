@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { buildWorkbook, download, type SheetLayout } from '@/lib/xlsx'
 import type { DocState } from '@/state/doc'
 
-import { Button, Spinner } from './ui'
+import { Button, cn, FIELD, Spinner } from './ui'
 
 const LAYOUTS: Record<SheetLayout, string> = {
   'per-table': 'One sheet per table',
@@ -34,18 +34,18 @@ export function ExportPanel({ doc }: { doc: DocState }) {
         `${doc.fileName || 'tables'}.xlsx`,
       )
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(e instanceof Error ? e.message : 'The Excel file couldn’t be built. Try again.')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className='flex flex-wrap items-center gap-2 text-xs'>
+    <div className='sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-paper/95 px-4 py-2.5 text-xs backdrop-blur sm:py-3 sm:text-sm'>
       <select
         value={layout}
         onChange={e => setLayout(e.target.value as SheetLayout)}
-        className='h-8 rounded-md border border-line bg-card px-1'
+        className={cn(FIELD, 'h-9 px-2 text-sm')}
         aria-label='Sheet layout'
       >
         {Object.entries(LAYOUTS).map(([k, v]) => (
@@ -55,23 +55,33 @@ export function ExportPanel({ doc }: { doc: DocState }) {
         ))}
       </select>
       <label
-        className='flex items-center gap-1'
+        className='flex items-center gap-1.5'
         title='Tables with the same columns on consecutive pages become one table'
       >
-        <input type='checkbox' checked={joinPages} onChange={e => setJoinPages(e.target.checked)} />{' '}
+        <input type='checkbox' checked={joinPages} onChange={e => setJoinPages(e.target.checked)} />
         Join across pages
       </label>
       <label
-        className='flex items-center gap-1'
-        title='Convert numbers, percents and dates into real values. Off keeps text exactly as printed.'
+        className='flex items-center gap-1.5'
+        title='Store numbers, percentages and dates as Excel values. Off keeps the text exactly as printed.'
       >
-        <input type='checkbox' checked={typed} onChange={e => setTyped(e.target.checked)} /> Real
-        numbers
+        <input type='checkbox' checked={typed} onChange={e => setTyped(e.target.checked)} />
+        Real numbers
       </label>
-      <Button variant='primary' onClick={() => void run()} disabled={busy || count === 0}>
-        {busy ? <Spinner /> : <Download className='size-4' />} Download .xlsx
-      </Button>
-      {error && <span className='text-bad'>{error}</span>}
+      <div className='ml-auto flex items-center gap-3'>
+        {error ? (
+          <span className='text-bad'>{error}</span>
+        ) : (
+          <span className='hidden text-muted sm:inline'>
+            {count === 0
+              ? 'No tables included'
+              : `${count} ${count === 1 ? 'table' : 'tables'} included`}
+          </span>
+        )}
+        <Button variant='primary' onClick={() => void run()} disabled={busy || count === 0}>
+          {busy ? <Spinner /> : <Download className='size-4' />} Download .xlsx
+        </Button>
+      </div>
     </div>
   )
 }

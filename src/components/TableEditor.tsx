@@ -1,13 +1,16 @@
 import {
   ArrowDownToLine,
   ArrowRightToLine,
+  CalendarDays,
   Columns2,
   Combine,
   Copy,
+  Hash,
   Rows2,
   Sparkles,
   Split,
   Trash2,
+  Type,
 } from 'lucide-react'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
@@ -16,18 +19,19 @@ import type { Table } from '@/lib/types'
 import { columnTypes, isTotalRow, validate, type Issue } from '@/lib/validate'
 import { toCsv } from '@/lib/xlsx'
 
-import { Badge, Button, cn, Spinner, Tick } from './ui'
+import { Badge, Button, cn, FIELD, FOOTED_TITLE, Spinner, Tick } from './ui'
 
 const COL = (i: number): string =>
   i < 26
     ? String.fromCharCode(65 + i)
     : COL(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26))
-const KIND_ICON = { number: '#', date: '📅', text: 'Aa' } as const
+const KIND_ICON = { number: Hash, date: CalendarDays, text: Type } as const
+const KIND_NAME = { number: 'Numbers', date: 'Dates', text: 'Text' } as const
 const FIX_PRESETS = [
-  'Columns are misaligned: rebuild the grid',
-  'Split merged columns',
-  'This continues on the next line: merge wrapped rows',
-  'Re-check every number against the page',
+  'Rebuild the grid: the columns are misaligned',
+  'Split columns that were merged together',
+  'Merge rows that wrap onto a second line',
+  'Check every number against the page',
 ]
 
 export function TableEditor({
@@ -97,21 +101,22 @@ export function TableEditor({
     >
       <header className='flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5'>
         <div className='flex w-full min-w-0 items-center gap-2'>
-          <span className='flex size-5 shrink-0 items-center justify-center rounded bg-accent text-[11px] font-semibold text-white dark:text-paper'>
+          <span className='flex size-5 shrink-0 items-center justify-center rounded bg-accent text-2xs font-semibold text-white dark:text-paper'>
             {index + 1}
           </span>
           <input
             value={table.title}
             onChange={e => onChange({ ...table, title: e.target.value })}
-            placeholder='Name this table (becomes the sheet name)'
+            placeholder='Table name (used as the sheet name)'
             aria-label='Table name'
-            className='min-w-0 flex-1 rounded bg-transparent px-1 text-[0.9375rem] font-semibold outline-none placeholder:font-normal placeholder:text-muted focus:bg-paper'
+            className='min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 font-semibold outline-none placeholder:font-normal placeholder:text-muted hover:bg-paper focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-accent/30'
           />
           <span className='shrink-0 text-xs text-muted'>
-            {table.rows.length} rows, {width} columns
+            {table.rows.length} {table.rows.length === 1 ? 'row' : 'rows'}, {width}{' '}
+            {width === 1 ? 'column' : 'columns'}
           </span>
         </div>
-        <label className='flex items-center gap-1 text-xs'>
+        <label className='flex items-center gap-1.5 text-xs'>
           Header rows
           <input
             type='number'
@@ -119,19 +124,22 @@ export function TableEditor({
             max={table.rows.length}
             value={table.headerRows}
             onChange={e => apply(t => ops.setHeaderRows(t, Number(e.target.value)))}
-            className='h-6 w-11 rounded border border-line bg-paper px-1 text-xs'
+            className={cn(FIELD, 'h-7 w-12 bg-paper px-1.5 text-xs')}
           />
         </label>
-        <label className='flex items-center gap-1 text-xs'>
+        <label
+          className='flex items-center gap-1.5 text-xs'
+          title='Include this table in the Excel file'
+        >
           <input
             type='checkbox'
             checked={table.include}
             onChange={e => onChange({ ...table, include: e.target.checked })}
           />
-          Export
+          Include
         </label>
         {footed && (
-          <Badge tone='tick' className='gap-1'>
+          <Badge tone='tick' className='gap-1' title={FOOTED_TITLE}>
             <Tick /> Footed
           </Badge>
         )}
@@ -139,8 +147,8 @@ export function TableEditor({
           <button
             type='button'
             onClick={nextIssue}
-            title='Go to the next cell that needs a look'
-            className='rounded text-xs focus-visible:outline-2'
+            title='Go to the next cell to check'
+            className='rounded text-xs'
           >
             <Badge tone={issues.some(i => i.kind === 'total') ? 'bad' : 'warn'}>
               {issues.length} {issues.length === 1 ? 'cell' : 'cells'} to check
@@ -155,7 +163,7 @@ export function TableEditor({
           title={
             aiAvailable
               ? 'Ask AI to correct this table against the page'
-              : 'Sign in or add an API key to use AI'
+              : 'To use AI, sign in or add an API key in Settings.'
           }
         >
           {aiBusy ? <Spinner /> : <Sparkles className='size-3.5' />} Fix with AI
@@ -196,7 +204,7 @@ export function TableEditor({
                 key={p}
                 type='button'
                 onClick={() => setInstruction(p)}
-                className='rounded-full border border-line bg-card px-2 py-0.5 text-[11px] hover:border-accent'
+                className='rounded-full border border-line bg-card px-2.5 py-0.5 text-2xs transition-colors hover:border-accent hover:text-accent'
               >
                 {p}
               </button>
@@ -207,15 +215,17 @@ export function TableEditor({
               autoFocus
               value={instruction}
               onChange={e => setInstruction(e.target.value)}
-              placeholder='Describe what’s wrong, or leave empty to re-verify every cell against the page'
-              className='h-8 min-w-0 flex-1 rounded-md border border-line bg-card px-2 text-xs'
+              placeholder='Describe what’s wrong, or leave blank to check every cell against the page'
+              aria-label='What to fix'
+              className={cn(FIELD, 'h-8 min-w-0 flex-1 px-2 text-xs')}
             />
             <Button type='submit' size='sm' variant='primary'>
-              Run
+              Fix table
             </Button>
           </div>
-          <p className='text-[11px] text-muted'>
-            AI sees the page image plus these tables and returns a corrected version. Undo with ⌘Z.
+          <p className='text-2xs text-muted'>
+            AI gets the page image and this page’s tables, and returns corrected tables. Undo with
+            ⌘Z.
           </p>
         </form>
       )}
@@ -228,12 +238,12 @@ export function TableEditor({
           </span>
           <ToolBtn
             icon={<Rows2 />}
-            label='Row above'
+            label='Add row above'
             onClick={() => apply(t => ops.insertRow(t, sel.r))}
           />
           <ToolBtn
             icon={<ArrowDownToLine />}
-            label='Row below'
+            label='Add row below'
             onClick={() => apply(t => ops.insertRow(t, sel.r + 1))}
           />
           <ToolBtn
@@ -244,12 +254,12 @@ export function TableEditor({
           <span className='mx-1 h-4 w-px bg-line' />
           <ToolBtn
             icon={<Columns2 />}
-            label='Column left'
+            label='Add column left'
             onClick={() => apply(t => ops.insertCol(t, sel.c))}
           />
           <ToolBtn
             icon={<ArrowRightToLine />}
-            label='Column right'
+            label='Add column right'
             onClick={() => apply(t => ops.insertCol(t, sel.c + 1))}
           />
           <ToolBtn
@@ -274,7 +284,7 @@ export function TableEditor({
       )}
 
       <div className='max-h-[60vh] overflow-auto'>
-        <table ref={gridRef} className='w-max min-w-full border-collapse text-[0.8125rem]'>
+        <table ref={gridRef} className='w-max min-w-full border-collapse text-cell'>
           <thead className='sticky top-0 z-10 bg-accent-soft'>
             <tr>
               <th className='w-8 border-r border-b border-line' aria-label='Row' />
@@ -283,7 +293,7 @@ export function TableEditor({
                   key={c}
                   className='min-w-20 border-r border-b border-rule px-2 py-1 text-left text-xs font-medium text-muted'
                 >
-                  {COL(c)} <span className='opacity-60'>{KIND_ICON[types[c]?.kind ?? 'text']}</span>
+                  <ColHead letter={COL(c)} kind={types[c]?.kind ?? 'text'} />
                 </th>
               ))}
             </tr>
@@ -331,6 +341,17 @@ export function TableEditor({
   )
 }
 
+function ColHead({ letter, kind }: { letter: string; kind: keyof typeof KIND_ICON }) {
+  const Icon = KIND_ICON[kind]
+  return (
+    <span className='flex items-center gap-1.5' title={`Column ${letter}: ${KIND_NAME[kind]}`}>
+      {letter}
+      <Icon className='size-3 opacity-60' aria-hidden />
+      <span className='sr-only'>{KIND_NAME[kind]}</span>
+    </span>
+  )
+}
+
 function ToolBtn({
   icon,
   label,
@@ -345,7 +366,8 @@ function ToolBtn({
       type='button'
       onClick={onClick}
       title={label}
-      className='flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-line/60 hover:text-ink [&_svg]:size-3.5'
+      aria-label={label}
+      className='flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-line/60 hover:text-ink [&_svg]:size-3.5'
     >
       {icon}
       <span className='hidden xl:inline'>{label}</span>

@@ -40,7 +40,11 @@ export function PageImage({
 
   return (
     <div className='relative overflow-hidden rounded-md border border-line bg-white shadow-sm'>
-      <div ref={host} className='min-h-64' />
+      {/* Sits under the canvas, which is opaque once drawn. */}
+      <div className='absolute inset-x-0 top-0 flex h-64 items-center justify-center text-xs text-neutral-500'>
+        Drawing page {n}…
+      </div>
+      <div ref={host} className='relative min-h-64' />
       {size &&
         tables.map(
           (t, i) =>
@@ -64,7 +68,7 @@ export function PageImage({
                   height: `${((t.bbox.y1 - t.bbox.y0 + 6) / size.h) * 100}%`,
                 }}
               >
-                <span className='absolute -top-5 left-0 rounded bg-accent px-1 text-[10px] font-medium text-white'>
+                <span className='absolute top-0 right-full mr-0.5 rounded-sm bg-accent px-1 text-2xs font-semibold text-white dark:text-paper'>
                   {i + 1}
                 </span>
               </button>
