@@ -18,8 +18,9 @@ import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { fixInstruction } from '@/lib/checks/instruct'
 import type { IssueKind, TickKind } from '@/lib/checks/model'
 import { copyTable } from '@/lib/plaintext'
+import { colRef, recordEdit } from '@/lib/recipe'
 import * as ops from '@/lib/tableOps'
-import type { Table } from '@/lib/types'
+import type { Table, TableEdit } from '@/lib/types'
 import { columnTypes, review, totalRows as findTotalRows, type Issue } from '@/lib/validate'
 
 import { Badge, Button, cn, FIELD, FOOTED_TITLE, Spinner, Tick } from './ui'
@@ -110,7 +111,10 @@ export function TableEditor({
     if (target) focusCell(target.row, target.col)
   }
 
-  const apply = (fn: (t: Table) => Table) => onChange(fn(table))
+  // Structural edits are recorded on the table so a batch can replay them (src/lib/recipe.ts).
+  const apply = (fn: (t: Table) => Table, edit?: TableEdit) =>
+    onChange(recordEdit(table, fn(table), edit))
+  const ref = (c: number) => colRef(table, c)
 
   return (
     <section
@@ -127,7 +131,7 @@ export function TableEditor({
           </span>
           <input
             value={table.title}
-            onChange={e => onChange({ ...table, title: e.target.value })}
+            onChange={e => apply(t => ({ ...t, title: e.target.value }))}
             placeholder='Table name (used as the sheet name)'
             aria-label='Table name'
             className='min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 font-semibold outline-none placeholder:font-normal placeholder:text-muted hover:bg-paper focus-visible:bg-paper focus-visible:ring-2 focus-visible:ring-accent/30'
@@ -144,7 +148,12 @@ export function TableEditor({
             min={0}
             max={table.rows.length}
             value={table.headerRows}
-            onChange={e => apply(t => ops.setHeaderRows(t, Number(e.target.value)))}
+            onChange={e =>
+              apply(t => ops.setHeaderRows(t, Number(e.target.value)), {
+                op: 'headerRows',
+                n: Math.max(0, Math.min(Number(e.target.value), table.rows.length)),
+              })
+            }
             className={cn(FIELD, 'h-7 w-12 bg-paper px-1.5 text-xs')}
           />
         </label>
@@ -155,7 +164,7 @@ export function TableEditor({
           <input
             type='checkbox'
             checked={table.include}
-            onChange={e => onChange({ ...table, include: e.target.checked })}
+            onChange={e => apply(t => ({ ...t, include: e.target.checked }))}
           />
           Include
         </label>
@@ -293,27 +302,45 @@ export function TableEditor({
           <ToolBtn
             icon={<Columns2 />}
             label='Add column left'
-            onClick={() => apply(t => ops.insertCol(t, sel.c))}
+            onClick={() =>
+              apply(t => ops.insertCol(t, sel.c), {
+                op: 'insert',
+                before: ref(sel.c),
+                width,
+              })
+            }
           />
           <ToolBtn
             icon={<ArrowRightToLine />}
             label='Add column right'
-            onClick={() => apply(t => ops.insertCol(t, sel.c + 1))}
+            onClick={() =>
+              apply(t => ops.insertCol(t, sel.c + 1), {
+                op: 'insert',
+                after: ref(sel.c),
+                width,
+              })
+            }
           />
           <ToolBtn
             icon={<Trash2 />}
             label='Delete column'
-            onClick={() => apply(t => ops.deleteCol(t, sel.c))}
+            onClick={() => apply(t => ops.deleteCol(t, sel.c), { op: 'delete', col: ref(sel.c) })}
           />
           <ToolBtn
             icon={<Combine />}
             label='Merge with right'
-            onClick={() => apply(t => ops.mergeRight(t, sel.c))}
+            onClick={() =>
+              apply(t => ops.mergeRight(t, sel.c), {
+                op: 'merge',
+                col: ref(sel.c),
+                right: ref(sel.c + 1).name,
+              })
+            }
           />
           <ToolBtn
             icon={<Split />}
             label='Split column'
-            onClick={() => apply(t => ops.splitCol(t, sel.c))}
+            onClick={() => apply(t => ops.splitCol(t, sel.c), { op: 'split', col: ref(sel.c) })}
           />
           {issueAt.get(`${sel.r}:${sel.c}`) && (
             <span className='ml-2 text-bad'>{issueAt.get(`${sel.r}:${sel.c}`)?.message}</span>
@@ -358,7 +385,14 @@ export function TableEditor({
                     numeric={types[c]?.kind === 'number'}
                     total={totalRows[r] === true && types[c]?.kind === 'number' && v.trim() !== ''}
                     onSelect={() => setSel({ r, c })}
-                    onCommit={nv => apply(t => ops.setCell(t, r, c, nv))}
+                    onCommit={nv =>
+                      apply(
+                        t => ops.setCell(t, r, c, nv),
+                        r < table.headerRows
+                          ? { op: 'header', row: r, col: ref(c), text: nv }
+                          : undefined,
+                      )
+                    }
                     onMove={(dr, dc) =>
                       focusCell(
                         Math.max(0, Math.min(table.rows.length - 1, r + dr)),
