@@ -1,0 +1,95 @@
+{
+ "file": "noisy-statement.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "statement",
+   "tables": [
+    {
+     "title": "Account summary",
+     "headerRows": 0,
+     "rows": [
+      ["Beginning balance", "3,214.55"],
+      ["Deposits and credits", "12,597.55"],
+      ["Withdrawals and debits", "(6,430.55)"],
+      ["Ending balance", "9,381.55"]
+     ]
+    }
+   ]
+  },
+  {
+   "type": "statement",
+   "tables": [
+    {
+     "title": "Transaction detail",
+     "headerRows": 1,
+     "rows": [
+      ["Date", "Description", "Withdrawals", "Deposits", "Balance"],
+      ["06/01/2026", "Mobile deposit", "", "645.24", "3,859.79"],
+      ["06/01/2026", "Online transfer to savings", "308.46", "", "3,551.33"],
+      ["06/02/2026", "POS purchase Shell 2231", "114.29", "", "3,437.04"],
+      ["06/02/2026", "POS purchase Hannaford #412", "186.80", "", "3,250.24"],
+      ["06/03/2026", "POS purchase Shell 2231", "28.49", "", "3,221.75"],
+      ["06/04/2026", "Mobile deposit", "", "926.62", "4,148.37"],
+      ["06/04/2026", "Check 1043", "129.83", "", "4,018.54"],
+      ["06/05/2026", "POS purchase Hannaford #412", "340.06", "", "3,678.48"],
+      ["06/06/2026", "ACH deposit PAYROLL ACME", "", "1,506.08", "5,184.56"],
+      ["06/06/2026", "POS purchase Shell 2231", "13.92", "", "5,170.64"],
+      ["06/07/2026", "Check 1043", "52.09", "", "5,118.55"],
+      ["06/07/2026", "Bill pay Eversource", "115.47", "", "5,003.08"],
+      ["06/08/2026", "ATM withdrawal", "281.57", "", "4,721.51"],
+      ["06/09/2026", "POS purchase Shell 2231", "169.68", "", "4,551.83"],
+      ["06/09/2026", "POS purchase Shell 2231", "236.35", "", "4,315.48"],
+      ["06/10/2026", "Check 1043", "297.99", "", "4,017.49"],
+      ["06/11/2026", "ACH debit Netflix", "101.30", "", "3,916.19"],
+      ["06/11/2026", "Bill pay Eversource", "91.95", "", "3,824.24"],
+      ["06/12/2026", "Check 1043", "25.97", "", "3,798.27"],
+      ["06/12/2026", "POS purchase Shell 2231", "185.84", "", "3,612.43"],
+      ["06/13/2026", "POS purchase Amazon Mktp", "148.84", "", "3,463.59"],
+      ["06/14/2026", "ATM withdrawal", "379.43", "", "3,084.16"],
+      ["06/14/2026", "Bill pay Eversource", "70.89", "", "3,013.27"],
+      ["06/15/2026", "Mobile deposit", "", "957.71", "3,970.98"],
+      ["06/16/2026", "ACH deposit PAYROLL ACME", "", "1,047.98", "5,018.96"],
+      ["06/16/2026", "ACH deposit PAYROLL ACME", "", "1,480.55", "6,499.51"],
+      ["06/17/2026", "ACH debit Netflix", "127.28", "", "6,372.23"],
+      ["06/18/2026", "Mobile deposit", "", "809.21", "7,181.44"],
+      ["06/18/2026", "Bill pay Eversource", "77.30", "", "7,104.14"],
+      ["06/19/2026", "ACH deposit PAYROLL ACME", "", "1,047.39", "8,151.53"],
+      ["06/19/2026", "ACH deposit PAYROLL ACME", "", "2,081.67", "10,233.20"],
+      ["06/20/2026", "ATM withdrawal", "248.19", "", "9,985.01"],
+      ["06/21/2026", "Bill pay Eversource", "15.16", "", "9,969.85"],
+      ["06/21/2026", "POS purchase Shell 2231", "281.04", "", "9,688.81"]
+     ]
+    }
+   ]
+  },
+  {
+   "type": "statement",
+   "tables": [
+    {
+     "title": "Transaction detail (continued)",
+     "headerRows": 1,
+     "rows": [
+      ["Date", "Description", "Withdrawals", "Deposits", "Balance"],
+      ["06/22/2026", "POS purchase Shell 2231", "314.26", "", "9,374.55"],
+      ["06/23/2026", "Check 1043", "318.20", "", "9,056.35"],
+      ["06/23/2026", "POS purchase Amazon Mktp", "179.07", "", "8,877.28"],
+      ["06/24/2026", "Mobile deposit", "", "445.51", "9,322.79"],
+      ["06/24/2026", "ACH deposit PAYROLL ACME", "", "1,649.59", "10,972.38"],
+      ["06/25/2026", "Check 1043", "50.46", "", "10,921.92"],
+      ["06/26/2026", "POS purchase Hannaford #412", "281.57", "", "10,640.35"],
+      ["06/26/2026", "Online transfer to savings", "248.72", "", "10,391.63"],
+      ["06/27/2026", "ATM withdrawal", "320.29", "", "10,071.34"],
+      ["06/28/2026", "ACH debit Netflix", "174.73", "", "9,896.61"],
+      ["06/28/2026", "POS purchase Shell 2231", "186.70", "", "9,709.91"],
+      ["06/29/2026", "ATM withdrawal", "328.36", "", "9,381.55"]
+     ]
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "tables": []
+  }
+ ]
+}

@@ -1,0 +1,23 @@
+{
+ "file": "ruled-wrapped.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "Change orders - Building C",
+     "headerRows": 1,
+     "rows": [
+      ["No.", "Description", "Amount", "Status"],
+      ["CO-101", "Relocate electrical panel to north wall per revised drawing E-3, including new conduit runs", "4,250.00", "Approved"],
+      ["CO-102", "Add two skylights", "7,800.00", "Pending"],
+      ["CO-103", "Upgrade lobby flooring from vinyl to porcelain tile; owner-supplied grout", "12,410.50", "Approved"],
+      ["CO-104", "Credit for deleted canopy", "(3,000.00)", "Approved"],
+      ["CO-105", "Fire sprinkler head relocation at mezzanine, coordinate with HVAC duct reroute and ceiling grid", "2,975.25", "Rejected"]
+     ]
+    }
+   ]
+  }
+ ]
+}

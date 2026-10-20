@@ -1,0 +1,22 @@
+{
+ "file": "no-header-ids.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 0,
+     "rows": [
+      ["000123", "2026-01-04", "Widget refill", "12.50"],
+      ["000124", "01/05/2026", "Adapter", "8.00"],
+      ["000125", "Jan 6, 2026", "Return - adapter", "8.00-"],
+      ["000126", "2026-01-07", "Cable 2m", "4.75"],
+      ["000127", "2026-01-09", "Widget refill", "12.50"]
+     ]
+    }
+   ]
+  }
+ ]
+}

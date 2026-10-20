@@ -1,0 +1,43 @@
+{
+ "file": "side-by-side-ruled.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "Open invoices",
+     "headerRows": 1,
+     "rows": [
+      ["Invoice", "Customer", "Due", "Amount"],
+      ["INV-2201", "Contoso", "07/02", "4,180.00"],
+      ["INV-2207", "Fabrikam", "07/09", "912.50"],
+      ["INV-2212", "Tailspin", "07/15", "12,040.00"],
+      ["INV-2215", "Wingtip", "07/21", "388.75"],
+      ["INV-2219", "Litware", "07/28", "2,604.10"],
+      ["INV-2224", "Proseware", "08/03", "1,150.00"]
+     ]
+    },
+    {
+     "title": "Payments received",
+     "headerRows": 1,
+     "rows": [
+      ["Date", "Payer", "Amount"],
+      ["06/24", "Northwind", "3,500.00"],
+      ["06/27", "Adventure Works", "1,275.40"],
+      ["06/30", "Contoso", "6,000.00"]
+     ]
+    },
+    {
+     "title": "Aging summary",
+     "headerRows": 1,
+     "rows": [
+      ["Bucket", "Current", "1-30", "31-60", "61-90", "90+"],
+      ["Receivables", "8,412.10", "6,240.00", "1,150.00", "388.75", "0.00"],
+      ["Payables", "5,903.33", "2,118.00", "0.00", "640.00", "75.00"]
+     ]
+    }
+   ]
+  }
+ ]
+}

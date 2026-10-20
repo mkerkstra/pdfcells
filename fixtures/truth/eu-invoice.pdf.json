@@ -1,0 +1,35 @@
+{
+ "file": "eu-invoice.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "invoice",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 0,
+     "rows": [
+      ["Rechnungsnummer", "RE-2026-0412"],
+      ["Rechnungsdatum", "03.04.2026"],
+      ["Kundennummer", "004711"],
+      ["Fällig am", "17.04.2026"]
+     ]
+    },
+    {
+     "title": "",
+     "headerRows": 1,
+     "rows": [
+      ["Position", "Menge", "Einheit", "Einzelpreis", "Gesamt"],
+      ["Beratung", "8,0", "Std.", "120,00 €", "960,00 €"],
+      ["Lizenz Jahresabo", "1", "Stk.", "1.490,00 €", "1.490,00 €"],
+      ["Schulung vor Ort", "2,5", "Tage", "850,00 €", "2.125,00 €"],
+      ["Reisekosten", "1", "pausch.", "312,40 €", "312,40 €"],
+      ["", "", "Nettobetrag", "", "4.887,40 €"],
+      ["", "", "USt. 19 %", "", "928,61 €"],
+      ["", "", "Gesamtbetrag", "", "5.816,01 €"]
+     ]
+    }
+   ]
+  }
+ ]
+}

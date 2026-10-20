@@ -1,0 +1,42 @@
+{
+ "file": "borderless-wrapped.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "Expense detail - Q2 2026",
+     "headerRows": 1,
+     "rows": [
+      ["Ref", "Date", "Description", "Category", "Notes", "Amount"],
+      ["EX-3100", "04/01/26", "FedEx - airport transfer", "Lodging", "Receipt attached", "3,789.60"],
+      ["EX-3107", "04/06/26", "FedEx - annual licence renewal", "Supplies", "Missing itemised receipt, card statement used instead", "1,618.28"],
+      ["EX-3114", "04/11/26", "WeWork - client kickoff workshop in Denver with the analytics team", "Lodging", "Includes 8% tip", "2,782.70"],
+      ["EX-3121", "04/16/26", "Delta Air Lines - ergonomic chairs for new hires", "Lodging", "Receipt attached", "4,116.12"],
+      ["EX-3128", "04/21/26", "Uber - replacement toner and paper for the third floor", "Meals", "Approved by finance; split across two cost centres per policy 4.2", "2,906.76"],
+      ["EX-3135", "04/26/26", "WeWork - client kickoff workshop in Denver with the analytics team", "Equipment", "", "2,473.52"],
+      ["EX-3142", "04/03/26", "FedEx - annual licence renewal", "Meals", "Includes 8% tip", "916.08"],
+      ["EX-3149", "04/08/26", "Uber - ergonomic chairs for new hires", "Shipping", "Receipt attached", "2,817.76"],
+      ["EX-3156", "04/13/26", "Marriott Downtown - monthly hosting for the reporting platform", "Meals", "Receipt attached", "3,784.66"],
+      ["EX-3163", "05/18/26", "Staples - client kickoff workshop in Denver with the analytics team", "Supplies", "Approved by finance; split across two cost centres per policy 4.2", "955.63"],
+      ["EX-3170", "05/23/26", "Delta Air Lines - replacement toner and paper for the third floor", "Equipment", "Reimbursable by client under SOW 17", "3,557.26"],
+      ["EX-3177", "05/28/26", "Zoom Video - overnight courier of signed contracts to counsel", "Travel", "Receipt attached", "2,808.16"],
+      ["EX-3184", "05/05/26", "FedEx - client kickoff workshop in Denver with the analytics team", "Meals", "Pre-approved", "2,077.79"],
+      ["EX-3191", "05/10/26", "FedEx - team offsite, two nights, shared rooms", "Travel", "", "577.17"],
+      ["EX-3198", "05/15/26", "Office Depot - overnight courier of signed contracts to counsel", "Shipping", "Reimbursable by client under SOW 17", "3,129.72"],
+      ["EX-3205", "05/20/26", "Hilton Garden Inn - client kickoff workshop in Denver with the analytics team", "Meals", "", "1,954.18"],
+      ["EX-3212", "05/25/26", "Staples - replacement toner and paper for the third floor", "Travel", "Includes 8% tip", "3,011.46"],
+      ["EX-3219", "05/02/26", "Marriott Downtown - replacement toner and paper for the third floor", "Meals", "Reimbursable by client under SOW 17", "2,984.90"],
+      ["EX-3226", "06/07/26", "Marriott Downtown - quarterly board meeting catering", "Shipping", "Reimbursable by client under SOW 17", "3,565.11"],
+      ["EX-3233", "06/12/26", "AWS - team offsite, two nights, shared rooms", "Supplies", "Reimbursable by client under SOW 17", "3,083.57"],
+      ["EX-3240", "06/17/26", "FedEx - ergonomic chairs for new hires", "Meals", "", "1,167.65"],
+      ["EX-3247", "06/22/26", "AWS - team offsite, two nights, shared rooms", "Software", "Approved by finance; split across two cost centres per policy 4.2", "3,770.52"],
+      ["EX-3254", "06/27/26", "Uber - overnight courier of signed contracts to counsel", "Supplies", "Includes 8% tip", "3,157.70"],
+      ["EX-3261", "06/04/26", "Marriott Downtown - team offsite, two nights, shared rooms", "Lodging", "Missing itemised receipt, card statement used instead", "907.57"]
+     ]
+    }
+   ]
+  }
+ ]
+}

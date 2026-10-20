@@ -1,0 +1,79 @@
+{
+ "file": "annual-report-excerpt.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "text",
+   "tables": []
+  },
+  {
+   "type": "text",
+   "tables": []
+  },
+  {
+   "type": "text",
+   "tables": []
+  },
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 2,
+     "rows": [
+      ["", "", "Year ended 31 December", ""],
+      ["", "Note", "2026 £m", "2025 £m"],
+      ["Revenue", "3", "1,842.6", "1,523.1"],
+      ["Cost of sales", "", "(1,011.4)", "(861.9)"],
+      ["Gross profit", "", "831.2", "661.2"],
+      ["Distribution costs", "", "(142.0)", "(120.7)"],
+      ["Administrative expenses", "", "(318.5)", "(289.9)"],
+      ["Exceptional items³", "5", "(22.1)", "—"],
+      ["Operating profit", "", "348.6", "250.6"],
+      ["Finance income", "", "6.2", "3.1"],
+      ["Finance costs", "", "(31.8)", "(36.4)"],
+      ["Profit before tax", "", "323.0", "217.3"],
+      ["Taxation", "6", "(80.8)", "(52.1)"],
+      ["Profit for the year", "", "242.2", "165.2"],
+      ["Earnings per share", "", "", ""],
+      ["Basic (pence)", "7", "41.2", "33.5"],
+      ["Diluted (pence)", "7", "40.6", "33.0"]
+     ],
+     "spans": [
+      [0, 2, 1, 2]
+     ]
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "tables": []
+  },
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 2,
+     "rows": [
+      ["", "Revenue", "", "Operating profit", "", ""],
+      ["Segment", "2026", "2025", "2026", "2025", "Margin 2026"],
+      ["Software", "1,120.4", "902.7", "261.8", "188.0", "23.4%"],
+      ["Services", "402.9", "371.5", "52.3", "44.1", "13.0%"],
+      ["Hardware", "214.0", "168.2", "21.9", "12.6", "10.2%"],
+      ["Payments", "105.3", "80.7", "12.6", "5.9", "12.0%"],
+      ["Total", "1,842.6", "1,523.1", "348.6", "250.6", "18.9%"]
+     ],
+     "spans": [
+      [0, 1, 1, 2],
+      [0, 3, 1, 2]
+     ]
+    }
+   ]
+  },
+  {
+   "type": "text",
+   "tables": []
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+ "file": "invoice-lines.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "invoice",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 1,
+     "rows": [
+      ["Description", "Qty", "Unit price", "Amount"],
+      ["Copier paper, case", "12", "41.50", "498.00"],
+      ["Toner cartridge", "4", "89.99", "359.96"],
+      ["Desk lamp", "3", "27.25", "171.75"],
+      ["Cable ties, pack", "25", "3.40", "85.00"],
+      ["Whiteboard 4x6", "2", "159.00", "318.00"],
+      ["Delivery", "1", "45.00", "45.00"],
+      ["", "", "Subtotal", "1,477.71"],
+      ["", "", "Sales tax 8.25%", "121.91"],
+      ["", "", "Total", "1,599.62"]
+     ]
+    }
+   ]
+  }
+ ]
+}

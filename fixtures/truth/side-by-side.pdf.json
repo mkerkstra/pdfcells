@@ -1,0 +1,33 @@
+{
+ "file": "side-by-side.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "Top customers",
+     "headerRows": 1,
+     "rows": [
+      ["Customer", "Revenue"],
+      ["Contoso", "182,400"],
+      ["Fabrikam", "121,050"],
+      ["Tailspin", "98,700"],
+      ["Wingtip", "64,300"]
+     ]
+    },
+    {
+     "title": "Top products",
+     "headerRows": 1,
+     "rows": [
+      ["Product", "Units"],
+      ["Widget Pro", "8,120"],
+      ["Widget Lite", "6,904"],
+      ["Gizmo", "2,330"],
+      ["Doohickey", "1,215"]
+     ]
+    }
+   ]
+  }
+ ]
+}

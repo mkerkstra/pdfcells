@@ -1,0 +1,23 @@
+{
+ "file": "scanned-invoice.pdf",
+ "source": "scan",
+ "pages": [
+  {
+   "type": "invoice",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 1,
+     "rows": [
+      ["Item", "Qty", "Unit", "Total"],
+      ["Steel brackets", "120", "2.35", "282.00"],
+      ["Hex bolts M8", "800", "0.12", "96.00"],
+      ["Anchor plates", "40", "14.50", "580.00"],
+      ["Freight", "1", "85.00", "85.00"],
+      ["Total", "", "", "1,043.00"]
+     ]
+    }
+   ]
+  }
+ ]
+}

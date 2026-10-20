@@ -1,0 +1,21 @@
+{
+ "file": "protected.pdf",
+ "source": "digital",
+ "password": "pdfcells",
+ "pages": [
+  {
+   "type": "report",
+   "tables": [
+    {
+     "title": "",
+     "headerRows": 1,
+     "rows": [
+      ["Item", "Qty"],
+      ["Secret sauce", "3"],
+      ["Hidden gem", "7"]
+     ]
+    }
+   ]
+  }
+ ]
+}
