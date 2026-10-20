@@ -1,11 +1,12 @@
 # PDFCells
 
-> PDFCells (https://pdfcells.com) is a free PDF to Excel converter that runs in the browser. It turns tables in PDFs (bank statements, invoices, financial reports, scanned documents) into .xlsx spreadsheets, and lets the user check and correct every cell before downloading.
+> PDFCells (https://pdfcells.com) is a free PDF to Excel converter that runs in the browser. It turns tables in PDFs (bank statements, invoices, financial reports, scanned documents, photos and screenshots) into .xlsx spreadsheets, and lets the user check and correct every cell before downloading.
 
 ## How it works
 - Pre-check: each page is classified as text, scanned, broken text or blank, and gets a recommended read method: PDF text, OCR, AI or skip.
 - PDF text: pages with a text layer are read exactly from it with pdf.js, free and on the user's device.
 - OCR: scanned pages are read with tesseract.js in the browser, free and on the user's device.
+- Images: JPG, PNG, WebP, GIF (first frame), HEIC/HEIF and multi-page TIFF open like scanned PDFs. Several images open as one document, one page each in filename order, and a screenshot can be pasted with Cmd/Ctrl+V. Image pages are read with OCR or AI.
 - AI: difficult scans and irregular tables can be read with Claude. Only these pages leave the browser.
 - Correction grid: edit cells, insert or delete rows and columns, merge or split columns, set header rows, undo and redo. Totals that don't add up, values that don't match their column and cells OCR was unsure of are flagged. Tables whose totals all add up are marked "Footed". "Fix with AI" corrects a table against the page image from a plain-English instruction.
 - Export: real Excel numbers, percentages, currencies and dates, consistent column formats, frozen header rows, and tables that run across pages joined into one sheet.
@@ -16,7 +17,7 @@
 - AI quality: Fast (Claude Haiku 5.5), Accurate (Claude Sonnet 5.5), Max (Claude Opus 5.5).
 
 ## Privacy
-- PDFs are processed on the user's device. Only pages the user reads with AI leave the browser, as one rendered page image per request, and they are not stored.
+- PDFs and images are processed on the user's device. Only pages the user reads with AI leave the browser, as one rendered page image per request, and they are not stored.
 
 ## Links
 - App: https://pdfcells.com/
