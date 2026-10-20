@@ -467,8 +467,138 @@ def protected():
     c.save()
 
 
+# ---------------------------------------------------------------- accuracy cross-checks
+# The fixtures below plant exactly one arithmetic error each (or none, for the
+# clean variants) so the deterministic checks in src/lib/checks/ can be held to
+# the exact cell. invariant=1 keeps their bytes stable across regenerations.
+def statement_dc(plant: bool):
+    """Debit/credit/balance statement; the misread variant prints one debit with a wrong digit."""
+    name = "statement-dc-misread.pdf" if plant else "statement-dc.pdf"
+    rng = random.Random(21)
+    c = canvas.Canvas(str(out / name), pagesize=letter, invariant=1)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(50, 740, "Harbor Credit Union - Share draft account")
+    c.setFont("Helvetica", 9.5)
+    c.drawString(50, 724, "Statement period 05/01/2026 to 05/31/2026")
+    xs = [50, 115, 330, 410, 500]
+    y = 690
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(xs[0], y, "Date")
+    c.drawString(xs[1], y, "Description")
+    for x, h in zip(xs[2:], ["Debit", "Credit", "Balance"]):
+        c.drawRightString(x + 60, y, h)
+    opening = bal = 2450.00
+    debits = credits = 0.0
+    c.setFont("Helvetica", 9.5)
+    for i in range(18):
+        y -= 15
+        credit = i % 4 == 1
+        amt = round(rng.uniform(150, 1200) if credit else rng.uniform(8, 400), 2)
+        bal = round(bal + (amt if credit else -amt), 2)
+        if credit:
+            credits += amt
+        else:
+            debits += amt
+        shown = amt
+        if plant and i == 9:
+            shown = round(amt + 5, 2)  # one digit misread, e.g. 82.51 -> 87.51
+        c.drawString(xs[0], y, f"05/{i + 2:02d}/2026")
+        c.drawString(xs[1], y, ("Payroll deposit" if credit else f"Card purchase {4100 + i}"))
+        c.drawRightString(xs[3 if credit else 2] + 60, y, f"{shown:,.2f}")
+        c.drawRightString(xs[4] + 60, y, f"{bal:,.2f}")
+    y -= 40
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, y, "Account summary")
+    c.setFont("Helvetica", 9.5)
+    for label, v in [("Opening balance", opening), ("Total credits", credits), ("Total debits", debits), ("Closing balance", bal)]:
+        y -= 15
+        c.drawString(50, y, label)
+        c.drawRightString(300, y, f"{v:,.2f}")
+    c.save()
+
+
+def _invoice(name: str, title: str, lines, wrong_line=None, total_delta=0.0):
+    c = canvas.Canvas(str(out / name), pagesize=letter, invariant=1)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, 735, title)
+    c.setFont("Helvetica", 10)
+    c.drawString(50, 717, "Bill to: Contoso Facilities, 400 Pine St")
+    xs = [50, 330, 420, 520]
+    y = 680
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(xs[0], y, "Description")
+    for x, h in zip(xs[1:], ["Qty", "Unit price", "Amount"]):
+        c.drawRightString(x + 30, y, h)
+    c.setFont("Helvetica", 10)
+    sub = 0.0
+    for n, (desc, q, u) in enumerate(lines):
+        y -= 16
+        amt = round(q * u, 2)
+        if n == wrong_line:
+            amt = round(amt + 90, 2)  # a misread digit in the line total
+        sub = round(sub + amt, 2)
+        c.drawString(xs[0], y, desc)
+        c.drawRightString(xs[1] + 30, y, str(q))
+        c.drawRightString(xs[2] + 30, y, f"{u:,.2f}")
+        c.drawRightString(xs[3] + 30, y, f"{amt:,.2f}")
+    tax = round(sub * 0.0825, 2)
+    y -= 10
+    for label, v in [("Subtotal", sub), ("Sales tax 8.25%", tax), ("Total", round(sub + tax + total_delta, 2))]:
+        y -= 16
+        c.setFont("Helvetica-Bold" if label == "Total" else "Helvetica", 10)
+        c.drawString(xs[2] - 40, y, label)
+        c.drawRightString(xs[3] + 30, y, f"{v:,.2f}")
+    c.save()
+
+
+INVOICE_LINES = [("Copier paper, case", 12, 41.50), ("Toner cartridge", 4, 89.99), ("Desk lamp", 3, 27.25), ("Cable ties, pack", 25, 3.40), ("Whiteboard 4x6", 2, 159.00), ("Delivery", 1, 45.00)]
+
+
+def invoice_lines():
+    """Qty x unit = amount on every line but one (printed subtotal adds the printed amounts)."""
+    _invoice("invoice-lines.pdf", "INVOICE #5523", INVOICE_LINES, wrong_line=2)
+
+
+def invoice_tie():
+    """Lines and subtotal are right; the printed total is not subtotal + tax."""
+    _invoice("invoice-tie.pdf", "INVOICE #5524", INVOICE_LINES, total_delta=100.0)
+
+
+def report_fy():
+    """Quarterly report whose FY column cross-foots Q1..Q4 on every row but one."""
+    rng = random.Random(31)
+    c = canvas.Canvas(str(out / "report-fy.pdf"), pagesize=letter, invariant=1)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, 740, "Net sales by region (USD)")
+    xs = [50, 170, 240, 310, 380, 460, 530]
+    heads = ["Region", "Q1", "Q2", "Q3", "Q4", "FY", "Growth"]
+    y = 710
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(xs[0], y, heads[0])
+    for x, h in zip(xs[1:], heads[1:]):
+        c.drawRightString(x + 40, y, h)
+    c.setFont("Helvetica", 9.5)
+    for n, region in enumerate(["Northeast", "Southeast", "Midwest", "Southwest", "Mountain", "Pacific", "Canada", "Mexico"]):
+        y -= 15
+        q = [rng.randint(40, 990) * 100 for _ in range(4)]
+        fy = sum(q) + (900 if n == 4 else 0)  # one misread FY digit
+        c.drawString(xs[0], y, region)
+        for x, v in zip(xs[1:], [*q, fy]):
+            c.drawRightString(x + 40, y, f"{v:,}")
+        c.drawRightString(xs[6] + 40, y, f"{rng.uniform(-5, 18):.1f}%")
+    c.save()
+
+
 if __name__ == "__main__":
     out.mkdir(parents=True, exist_ok=True)
-    for fn in [statement, scans, ruled_wrapped, eu_invoice, financial_report, mixed, dense_wide, side_by_side, no_header, protected]:
-        fn()
-        print("ok", fn.__name__)
+    fixtures = {
+        "statement": statement, "scans": scans, "ruled_wrapped": ruled_wrapped, "eu_invoice": eu_invoice,
+        "financial_report": financial_report, "mixed": mixed, "dense_wide": dense_wide, "side_by_side": side_by_side,
+        "no_header": no_header, "protected": protected,
+        "statement_dc": lambda: (statement_dc(False), statement_dc(True)), "invoice_lines": invoice_lines,
+        "invoice_tie": invoice_tie, "report_fy": report_fy,
+    }
+    # Optional names after the output dir regenerate only those fixtures.
+    for name in sys.argv[2:] or fixtures:
+        fixtures[name]()
+        print("ok", name)
