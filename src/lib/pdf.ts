@@ -2,6 +2,9 @@ import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
+import type { DocSource, Rendered } from './document'
+import { pageFacts } from './pagefacts'
+
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 export type { PDFDocumentProxy, PDFPageProxy }
@@ -34,12 +37,6 @@ export const IMAGE_OPS: ReadonlySet<number> = new Set([
   pdfjs.OPS.paintImageXObjectRepeat,
 ])
 
-export interface Rendered {
-  canvas: HTMLCanvasElement
-  /** canvas pixels per page point */
-  scale: number
-}
-
 /** Render a page so its long side is ~targetPx (capped for memory). */
 export async function renderPage(page: PDFPageProxy, targetPx = 2000): Promise<Rendered> {
   const base = page.getViewport({ scale: 1 })
@@ -52,21 +49,23 @@ export async function renderPage(page: PDFPageProxy, targetPx = 2000): Promise<R
   return { canvas, scale }
 }
 
-/** JPEG for the AI engine: bounded size regardless of how the PDF was made. */
-export async function toJpegBase64(canvas: HTMLCanvasElement, quality = 0.85): Promise<string> {
-  const blob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(
-      b =>
-        b
-          ? resolve(b)
-          : reject(new Error('This page couldn’t be turned into an image. Try again.')),
-      'image/jpeg',
-      quality,
-    ),
-  )
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  let bin = ''
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return btoa(bin)
+/** A PDF as a document: page units are points, facts come from the text layer. */
+export function pdfSource(pdf: PDFDocumentProxy, name: string): DocSource {
+  return {
+    name,
+    kind: 'pdf',
+    pages: pdf.numPages,
+    async page(n) {
+      const page = await pdf.getPage(n)
+      const vp = page.getViewport({ scale: 1 })
+      return {
+        n,
+        width: vp.width,
+        height: vp.height,
+        render: targetPx => renderPage(page, targetPx),
+        facts: () => pageFacts(page, IMAGE_OPS),
+      }
+    },
+    destroy: () => pdf.loadingTask.destroy(),
+  }
 }

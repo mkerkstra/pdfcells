@@ -2,10 +2,9 @@
 // survives re-renders; results flow back through dispatch.
 
 import { api, toApiTable, type ExtractResponse } from '@/lib/api'
+import { toJpegBase64, type DocSource } from '@/lib/document'
 import { buildTables, type LocalTable } from '@/lib/layout'
 import { ocrWords } from '@/lib/ocr'
-import { pageFacts } from '@/lib/pagefacts'
-import { IMAGE_OPS, renderPage, toJpegBase64, type PDFDocumentProxy } from '@/lib/pdf'
 import { triage as classify } from '@/lib/triage'
 import type { Table, Tier } from '@/lib/types'
 
@@ -41,16 +40,16 @@ function fromApi(r: ExtractResponse): Table[] {
 }
 
 export async function triageAll(
-  pdf: PDFDocumentProxy,
+  doc: DocSource,
   aiAvailable: boolean,
   dispatch: Dispatch,
   signal: AbortSignal,
 ) {
-  for (let i = 0; i < pdf.numPages; i++) {
+  for (let i = 0; i < doc.pages; i++) {
     if (signal.aborted) return
-    const page = await pdf.getPage(i + 1)
     try {
-      const triage = classify(await pageFacts(page, IMAGE_OPS), aiAvailable)
+      const page = await doc.page(i + 1)
+      const triage = classify(await page.facts(), aiAvailable)
       dispatch({
         type: 'triaged',
         index: i,
@@ -76,7 +75,7 @@ export interface AiOptions {
 }
 
 export async function runPage(
-  pdf: PDFDocumentProxy,
+  doc: DocSource,
   page: PageState,
   dispatch: Dispatch,
   ai: AiOptions,
@@ -87,7 +86,7 @@ export async function runPage(
   if (engine === 'skip') return
   dispatch({ type: 'status', index, status: 'running', progress: 0 })
   try {
-    const pdfPage = await pdf.getPage(page.n)
+    const source = await doc.page(page.n)
     if (engine === 'text') {
       const tables = (page.triage?.localTables ?? []).map(t => fromLocal(t))
       dispatch({ type: 'result', index, tables, warnings: [], run: { engine: 'text' } })
@@ -95,7 +94,7 @@ export async function runPage(
     }
     if (engine === 'ocr') {
       // ~300 dpi for a letter page; OCR accuracy drops sharply below ~200.
-      const { canvas, scale } = await renderPage(pdfPage, 3000)
+      const { canvas, scale } = await source.render(3000)
       const words = await ocrWords(canvas, scale, p =>
         dispatch({ type: 'status', index, status: 'running', progress: p }),
       )
@@ -106,7 +105,7 @@ export async function runPage(
       dispatch({ type: 'result', index, tables, warnings, run: { engine: 'ocr' } })
       return
     }
-    const { canvas } = await renderPage(pdfPage, 2000)
+    const { canvas } = await source.render(2000)
     const res = await api.extract({
       tier: ai.tier,
       image_base64: await toJpegBase64(canvas),

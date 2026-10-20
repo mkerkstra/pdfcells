@@ -2,8 +2,8 @@ import { RotateCcw } from 'lucide-react'
 import type { Dispatch } from 'react'
 
 import { formatUsd } from '@/lib/api'
-import type { PDFDocumentProxy } from '@/lib/pdf'
-import type { PageKind } from '@/lib/triage'
+import type { DocSource } from '@/lib/document'
+import type { PageKind, PageTriage } from '@/lib/triage'
 import type { Engine } from '@/lib/types'
 import { useAccount } from '@/state/account'
 import type { Action, DocState, PageState } from '@/state/doc'
@@ -13,12 +13,14 @@ import { TIER_LABEL, TierPicker } from './TierPicker'
 import { Badge, Button, cn, FIELD, Spinner } from './ui'
 import type { RunFn } from './Workspace'
 
-export const KIND_LABEL: Record<PageKind, string> = {
+const KIND_LABEL: Record<PageKind, string> = {
   digital: 'Text',
   scanned: 'Scanned',
   garbled: 'Broken text',
   blank: 'Blank',
 }
+/** Image pages are scanned pages, but say what they really are. */
+export const kindLabel = (t: PageTriage) => (t.image ? 'Image' : KIND_LABEL[t.kind])
 const KIND_TONE = { digital: 'good', scanned: 'warn', garbled: 'bad', blank: 'neutral' } as const
 /** The three read methods, named the same everywhere: pre-check, review, badges. */
 export const ENGINE_LABEL: Record<Engine | 'skip', string> = {
@@ -62,14 +64,14 @@ export function useAiEstimate(pages: number) {
 export function TriageView({
   doc,
   dispatch,
-  pdf,
+  source,
   onRun,
   onContinue,
   onReset,
 }: {
   doc: DocState
   dispatch: Dispatch<Action>
-  pdf: PDFDocumentProxy
+  source: DocSource
   onRun: RunFn
   onContinue: () => void
   onReset: () => void
@@ -114,9 +116,11 @@ export function TriageView({
             {done ? (
               <>
                 Checked {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}.{' '}
-                {tables === 0
-                  ? 'No tables found in the PDF text.'
-                  : `Found ${tables} ${tables === 1 ? 'table' : 'tables'} in the PDF text.`}
+                {source.kind === 'image'
+                  ? `${doc.pages.length === 1 ? 'It’s an image' : 'They’re images'}, so ${doc.pages.length === 1 ? 'it’s' : 'they’re'} read from the pixels.`
+                  : tables === 0
+                    ? 'No tables found in the PDF text.'
+                    : `Found ${tables} ${tables === 1 ? 'table' : 'tables'} in the PDF text.`}
               </>
             ) : (
               <span className='inline-flex items-center gap-2'>
@@ -127,7 +131,7 @@ export function TriageView({
           </p>
         </div>
         <Button variant='ghost' size='sm' className='ml-auto' onClick={onReset}>
-          <RotateCcw className='size-3.5' /> Open a different PDF
+          <RotateCcw className='size-3.5' /> Open a different file
         </Button>
       </div>
 
@@ -146,7 +150,7 @@ export function TriageView({
               <PageRow
                 key={p.n}
                 page={p}
-                pdf={pdf}
+                source={source}
                 aiPossible={account.aiPossible}
                 onEngine={e => dispatch({ type: 'engine', index: i, engine: e })}
               />
@@ -234,12 +238,12 @@ export function TriageView({
 
 function PageRow({
   page,
-  pdf,
+  source,
   aiPossible,
   onEngine,
 }: {
   page: PageState
-  pdf: PDFDocumentProxy
+  source: DocSource
   aiPossible: boolean
   onEngine: (e: Engine | 'skip') => void
 }) {
@@ -255,14 +259,14 @@ function PageRow({
     >
       <td className='py-3 pl-3'>
         <div className='w-10'>
-          <PageThumb pdf={pdf} n={page.n} width={40} />
+          <PageThumb source={source} n={page.n} width={40} />
         </div>
         <div className='mt-1 text-center text-xs text-muted'>{page.n}</div>
       </td>
       <td className='py-3 pr-3'>
         {t ? (
           <>
-            <Badge tone={KIND_TONE[t.kind]}>{KIND_LABEL[t.kind]}</Badge>
+            <Badge tone={KIND_TONE[t.kind]}>{kindLabel(t)}</Badge>
             <p className='mt-1.5 max-w-prose text-muted'>{t.reason}</p>
           </>
         ) : page.status === 'error' ? (

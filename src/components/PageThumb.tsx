@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react'
 
-import { renderPage, type PDFDocumentProxy } from '@/lib/pdf'
+import type { DocSource } from '@/lib/document'
 
 /** Lazily rendered page preview; renders once it scrolls into view. */
 export function PageThumb({
-  pdf,
+  source,
   n,
   width = 120,
 }: {
-  pdf: PDFDocumentProxy
+  source: DocSource
   n: number
   width?: number
 }) {
@@ -20,8 +20,8 @@ export function PageThumb({
     const io = new IntersectionObserver(async ([entry]) => {
       if (!entry?.isIntersecting) return
       io.disconnect()
-      const page = await pdf.getPage(n)
-      const { canvas } = await renderPage(page, width * 2)
+      const page = await source.page(n)
+      const { canvas } = await page.render(width * 2)
       if (cancelled) return
       canvas.className = 'h-auto w-full'
       el.replaceChildren(canvas)
@@ -31,7 +31,7 @@ export function PageThumb({
       cancelled = true
       io.disconnect()
     }
-  }, [pdf, n, width])
+  }, [source, n, width])
   return (
     <div
       ref={ref}

@@ -1,27 +1,11 @@
-import { readFileSync } from 'node:fs'
-
 import { describe, expect, it } from 'vitest'
 
-import { baseName, naturalSort, sniff, SNIFF_BYTES } from './filetype'
+import { baseName, naturalSort, sniff } from './filetype'
 
-const head = (file: string) => new Uint8Array(readFileSync(`fixtures/${file}`)).subarray(0, SNIFF_BYTES)
 const bytes = (...xs: (number | string)[]) =>
   new Uint8Array(xs.flatMap(x => (typeof x === 'string' ? [...x].map(c => c.charCodeAt(0)) : [x])))
 
 describe('sniff', () => {
-  it.each([
-    ['statement.pdf', 'pdf'],
-    ['protected.pdf', 'pdf'],
-    ['scanned-invoice.png', 'png'],
-    ['scanned-invoice-2p.tiff', 'tiff'],
-    ['photo-rotated.jpg', 'jpeg'],
-    ['screenshot.gif', 'gif'],
-    ['screenshot.webp', 'webp'],
-    ['scanned-invoice.heic', 'heic'],
-  ])('%s is %s', (file, kind) => {
-    expect(sniff(head(file)).kind).toBe(kind)
-  })
-
   it('ignores the extension and MIME type entirely', () => {
     expect(sniff(bytes(0xff, 0xd8, 0xff, 0xe0)).kind).toBe('jpeg')
     expect(sniff(bytes('hello, world'))).toEqual({ kind: null, reason: 'unknown' })

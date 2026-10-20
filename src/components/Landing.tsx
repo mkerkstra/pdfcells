@@ -1,6 +1,8 @@
 import { FileUp, Lock } from 'lucide-react'
 import { useRef, useState } from 'react'
 
+import { ACCEPT } from '@/lib/open'
+
 import { Button, FOOTED_TITLE, Spinner, Tick } from './ui'
 
 // A real slice of fixtures/statement.pdf, as the engine reads it.
@@ -14,12 +16,12 @@ const SAMPLE = [
 const TOTAL = '(122.95)'
 
 export function Landing({
-  onFile,
+  onFiles,
   busy,
   error,
   password,
 }: {
-  onFile: (f: File) => void
+  onFiles: (files: File[]) => void
   busy: boolean
   error: string
   password: React.ReactNode
@@ -32,8 +34,9 @@ export function Landing({
           PDF tables into spreadsheets you can check.
         </h1>
         <p className='mt-5 max-w-[34rem] text-lg text-pretty text-muted'>
-          PDFs with a text layer are read exactly. Scans are read with OCR or AI. Every total is
-          checked against its rows, and you can edit any cell before you download the Excel file.
+          PDFs with a text layer are read exactly. Scans, photos and screenshots are read with OCR
+          or AI. Every total is checked against its rows, and you can edit any cell before you
+          download the Excel file.
         </p>
         <div className='mt-8 flex flex-wrap items-center gap-x-4 gap-y-3'>
           <Button
@@ -43,17 +46,18 @@ export function Landing({
             onClick={() => input.current?.click()}
           >
             {busy ? <Spinner /> : <FileUp className='size-5' />}
-            {busy ? 'Opening the PDF' : 'Choose a PDF'}
+            {busy ? 'Opening' : 'Choose a PDF or image'}
           </Button>
-          <span className='text-sm text-muted'>or drop one anywhere on this page</span>
+          <span className='text-sm text-muted'>or drop or paste one anywhere on this page</span>
           <input
             ref={input}
             type='file'
-            accept='application/pdf,.pdf'
+            accept={ACCEPT}
+            multiple
             className='hidden'
             onChange={e => {
-              const f = e.target.files?.[0]
-              if (f) onFile(f)
+              const files = Array.from(e.target.files ?? [])
+              if (files.length) onFiles(files)
               e.target.value = ''
             }}
           />
@@ -62,7 +66,7 @@ export function Landing({
         {error && <p className='mt-4 text-sm text-bad'>{error}</p>}
         <p className='mt-8 flex items-start gap-2 text-sm text-muted'>
           <Lock className='mt-0.5 size-4 shrink-0 text-accent' />
-          The PDF opens in your browser. Nothing is uploaded unless you choose AI for a page.
+          The file opens in your browser. Nothing is uploaded unless you choose AI for a page.
         </p>
       </div>
 
@@ -176,7 +180,7 @@ function Row({
   )
 }
 
-export function DropOverlay({ onFile }: { onFile: (f: File) => void }) {
+export function DropOverlay({ onFiles }: { onFiles: (files: File[]) => void }) {
   const [active, setActive] = useState(false)
   return (
     <div
@@ -186,8 +190,8 @@ export function DropOverlay({ onFile }: { onFile: (f: File) => void }) {
       onDrop={e => {
         e.preventDefault()
         setActive(false)
-        const f = e.dataTransfer.files[0]
-        if (f) onFile(f)
+        const files = Array.from(e.dataTransfer.files)
+        if (files.length) onFiles(files)
       }}
       ref={el => {
         if (!el) return
@@ -198,7 +202,7 @@ export function DropOverlay({ onFile }: { onFile: (f: File) => void }) {
     >
       {active && (
         <div className='absolute inset-4 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-paper/80 text-lg font-semibold text-accent'>
-          Drop the PDF to open it
+          Drop to open
         </div>
       )}
     </div>

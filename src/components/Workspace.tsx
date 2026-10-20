@@ -2,7 +2,9 @@ import { Lock } from 'lucide-react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { ApiError } from '@/lib/api'
-import { openPdf, PasswordRequired, type PDFDocumentProxy } from '@/lib/pdf'
+import { OpenError, type DocSource } from '@/lib/document'
+import { openDocument } from '@/lib/open'
+import { PasswordRequired } from '@/lib/pdf'
 import { useAccount } from '@/state/account'
 import { initialDoc, reducer, type PageState } from '@/state/doc'
 import { pool, runPage, triageAll, type AiOptions } from '@/state/runner'
@@ -22,43 +24,43 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
   const [phase, setPhase] = useState<'empty' | 'triage' | 'review'>('empty')
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState('')
-  const [password, setPassword] = useState<{
-    data: ArrayBuffer
-    name: string
-    incorrect: boolean
-  } | null>(null)
-  const pdfRef = useRef<PDFDocumentProxy | null>(null)
-  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
+  const [password, setPassword] = useState<{ files: File[]; incorrect: boolean } | null>(null)
+  const docRef = useRef<DocSource | null>(null)
+  const [source, setSource] = useState<DocSource | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const load = useCallback(
-    async (data: ArrayBuffer, name: string, pw?: string) => {
+    async (files: File[], pw?: string) => {
       setError('')
       setOpening(true)
       try {
         abortRef.current?.abort()
-        await pdfRef.current?.loadingTask.destroy()
-        const pdf = await openPdf(data, pw)
-        if (pdf.numPages > MAX_PAGES) {
+        await docRef.current?.destroy()
+        const doc = await openDocument(files, pw)
+        if (doc.pages > MAX_PAGES) {
           setError(
-            `This PDF has ${pdf.numPages} pages and PDFCells opens up to ${MAX_PAGES}. Split it into smaller files and open each one.`,
+            doc.kind === 'pdf'
+              ? `This PDF has ${doc.pages} pages and PDFCells opens up to ${MAX_PAGES}. Split it into smaller files and open each one.`
+              : `These images make ${doc.pages} pages and PDFCells opens up to ${MAX_PAGES}. Open them in smaller batches.`,
           )
-          await pdf.loadingTask.destroy()
+          await doc.destroy()
           return
         }
-        pdfRef.current = pdf
-        setPdf(pdf)
+        docRef.current = doc
+        setSource(doc)
         setPassword(null)
-        dispatch({ type: 'open', fileName: name.replace(/\.pdf$/i, ''), pageCount: pdf.numPages })
+        dispatch({ type: 'open', fileName: doc.name, pageCount: doc.pages })
         setPhase('triage')
         const ctl = new AbortController()
         abortRef.current = ctl
-        void triageAll(pdf, account.aiPossible, dispatch, ctl.signal)
+        void triageAll(doc, account.aiPossible, dispatch, ctl.signal)
       } catch (e) {
-        if (e instanceof PasswordRequired) setPassword({ data, name, incorrect: e.incorrect })
+        if (e instanceof PasswordRequired) setPassword({ files, incorrect: e.incorrect })
         else
           setError(
-            'This file couldn’t be opened as a PDF. It may be damaged; try saving it again from the app that made it.',
+            e instanceof OpenError
+              ? e.message
+              : 'This file couldn’t be opened. It may be damaged; try saving it again from the app that made it.',
           )
       } finally {
         setOpening(false)
@@ -67,21 +69,12 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
     [account.aiPossible],
   )
 
-  const onFile = useCallback(
-    async (f: File) => {
-      if (f.type && f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-        setError('That file isn’t a PDF. Choose a file that ends in .pdf.')
-        return
-      }
-      await load(await f.arrayBuffer(), f.name)
-    },
-    [load],
-  )
+  const onFiles = useCallback((files: File[]) => void load(files), [load])
 
   const run: RunFn = useCallback(
     async (pages, opts = {}) => {
-      const pdf = pdfRef.current
-      if (!pdf) return
+      const doc = docRef.current
+      if (!doc) return
       const ai: AiOptions = {
         tier: opts.tier ?? account.tier,
         current: opts.current,
@@ -93,7 +86,7 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
       const ocr = pages.filter(p => p.engine === 'ocr' && !opts.current)
       const rest = pages.filter(p => !ocr.includes(p))
       const job = (p: PageState) =>
-        runPage(pdf, p, dispatch, ai, () => account.refreshMe()).catch((e: unknown) => {
+        runPage(doc, p, dispatch, ai, () => account.refreshMe()).catch((e: unknown) => {
           if (e instanceof ApiError && e.code === 'insufficient_credits') needCredits = true
           throw e
         })
@@ -123,26 +116,27 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
 
   const reset = () => {
     abortRef.current?.abort()
-    void pdfRef.current?.loadingTask.destroy()
-    pdfRef.current = null
-    setPdf(null)
+    void docRef.current?.destroy()
+    docRef.current = null
+    setSource(null)
     dispatch({ type: 'reset' })
     setPhase('empty')
   }
 
-  if (phase === 'empty' || !pdf) {
+  if (phase === 'empty' || !source) {
     return (
       <>
-        <DropOverlay onFile={f => void onFile(f)} />
+        <DropOverlay onFiles={onFiles} />
+        <PasteImages onFiles={onFiles} />
         <Landing
-          onFile={f => void onFile(f)}
+          onFiles={onFiles}
           busy={opening}
           error={error}
           password={
             password && (
               <PasswordPrompt
                 incorrect={password.incorrect}
-                onSubmit={pw => void load(password.data, password.name, pw)}
+                onSubmit={pw => void load(password.files, pw)}
                 onCancel={() => setPassword(null)}
               />
             )
@@ -157,7 +151,7 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
       <TriageView
         doc={doc}
         dispatch={dispatch}
-        pdf={pdf}
+        source={source}
         onRun={run}
         onContinue={() => setPhase('review')}
         onReset={reset}
@@ -168,12 +162,30 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
     <ReviewView
       doc={doc}
       dispatch={dispatch}
-      pdf={pdf}
+      source={source}
       onRun={run}
       onBack={() => setPhase('triage')}
       onReset={reset}
     />
   )
+}
+
+/** ⌘V / Ctrl+V a screenshot (or copied image files) before a document is open. */
+function PasteImages({ onFiles }: { onFiles: (files: File[]) => void }) {
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return
+      if (t instanceof HTMLElement && t.isContentEditable) return
+      const files = Array.from(e.clipboardData?.files ?? [])
+      if (files.length === 0) return
+      e.preventDefault()
+      onFiles(files)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [onFiles])
+  return null
 }
 
 function PasswordPrompt({

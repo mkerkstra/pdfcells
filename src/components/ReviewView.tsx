@@ -12,7 +12,7 @@ import {
 import { useState, type Dispatch } from 'react'
 
 import { formatUsd } from '@/lib/api'
-import type { PDFDocumentProxy } from '@/lib/pdf'
+import type { DocSource } from '@/lib/document'
 import { useAccount } from '@/state/account'
 import type { Action, DocState, PageState } from '@/state/doc'
 
@@ -20,21 +20,21 @@ import { ExportPanel } from './ExportPanel'
 import { PageImage } from './PageImage'
 import { TableEditor } from './TableEditor'
 import { TIER_LABEL, TierPicker } from './TierPicker'
-import { ENGINE_LABEL, KIND_LABEL } from './TriageView'
+import { ENGINE_LABEL, kindLabel } from './TriageView'
 import { Badge, Button, cn, Spinner } from './ui'
 import type { RunFn } from './Workspace'
 
 export function ReviewView({
   doc,
   dispatch,
-  pdf,
+  source,
   onRun,
   onBack,
   onReset,
 }: {
   doc: DocState
   dispatch: Dispatch<Action>
-  pdf: PDFDocumentProxy
+  source: DocSource
   onRun: RunFn
   onBack: () => void
   onReset: () => void
@@ -68,8 +68,8 @@ export function ReviewView({
             variant='ghost'
             className='ml-auto'
             onClick={onReset}
-            title='Open a different PDF'
-            aria-label='Open a different PDF'
+            title='Open a different file'
+            aria-label='Open a different file'
           >
             <RotateCcw className='size-3.5' />
           </Button>
@@ -127,7 +127,7 @@ export function ReviewView({
                 </h2>
                 {page.triage && (
                   <span className='hidden text-xs text-muted sm:inline'>
-                    {KIND_LABEL[page.triage.kind]} page
+                    {kindLabel(page.triage)} page
                   </span>
                 )}
               </div>
@@ -207,7 +207,7 @@ export function ReviewView({
           <div className='grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]'>
             <div className='max-h-[45dvh] overflow-y-auto rounded-md xl:sticky xl:top-18 xl:max-h-none xl:self-start xl:overflow-visible'>
               <PageImage
-                pdf={pdf}
+                source={source}
                 n={page.n}
                 tables={page.tables}
                 activeId={activeTable}

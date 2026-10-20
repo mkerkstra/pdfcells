@@ -13,7 +13,17 @@ export type Sniffed =
 /** Enough bytes for every check below. */
 export const SNIFF_BYTES = 1024
 
-const HEIC_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1', 'heif'])
+const HEIC_BRANDS = new Set([
+  'heic',
+  'heix',
+  'hevc',
+  'hevx',
+  'heim',
+  'heis',
+  'mif1',
+  'msf1',
+  'heif',
+])
 const AVIF_BRANDS = new Set(['avif', 'avis'])
 
 const ascii = (b: Uint8Array, at: number, len: number) =>
@@ -25,7 +35,10 @@ const starts = (b: Uint8Array, sig: readonly number[], at = 0) =>
 /** ISO-BMFF `ftyp` brands: major brand plus compatible brands. */
 function ftypBrands(b: Uint8Array): string[] {
   if (b.length < 16 || ascii(b, 4, 4) !== 'ftyp') return []
-  const size = Math.min(b.length, ((b[0] ?? 0) << 24) | ((b[1] ?? 0) << 16) | ((b[2] ?? 0) << 8) | (b[3] ?? 0))
+  const size = Math.min(
+    b.length,
+    ((b[0] ?? 0) << 24) | ((b[1] ?? 0) << 16) | ((b[2] ?? 0) << 8) | (b[3] ?? 0),
+  )
   const brands = [ascii(b, 8, 4)]
   for (let at = 16; at + 4 <= size; at += 4) brands.push(ascii(b, at, 4))
   return brands

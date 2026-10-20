@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { renderPage, type PDFDocumentProxy } from '@/lib/pdf'
+import type { DocSource } from '@/lib/document'
 import type { Table } from '@/lib/types'
 
 import { cn } from './ui'
 
 /** The page as rendered, with detected table regions outlined. */
 export function PageImage({
-  pdf,
+  source,
   n,
   tables,
   activeId,
   onPick,
 }: {
-  pdf: PDFDocumentProxy
+  source: DocSource
   n: number
   tables: Table[]
   activeId: string | null
@@ -25,18 +25,17 @@ export function PageImage({
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const page = await pdf.getPage(n)
-      const vp = page.getViewport({ scale: 1 })
-      const { canvas } = await renderPage(page, 1600)
+      const page = await source.page(n)
+      const { canvas } = await page.render(1600)
       if (cancelled || !host.current) return
       canvas.className = 'block h-auto w-full'
       host.current.replaceChildren(canvas)
-      setSize({ w: vp.width, h: vp.height })
+      setSize({ w: page.width, h: page.height })
     })()
     return () => {
       cancelled = true
     }
-  }, [pdf, n])
+  }, [source, n])
 
   return (
     <div className='relative overflow-hidden rounded-md border border-line bg-white shadow-sm'>
