@@ -15,12 +15,32 @@ import {
 } from 'lucide-react'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
+import { fixInstruction } from '@/lib/checks/instruct'
+import type { IssueKind, TickKind } from '@/lib/checks/model'
 import { copyTable } from '@/lib/plaintext'
 import * as ops from '@/lib/tableOps'
 import type { Table } from '@/lib/types'
-import { columnTypes, isTotalRow, validate, type Issue } from '@/lib/validate'
+import { columnTypes, isTotalRow, review, type Issue } from '@/lib/validate'
 
 import { Badge, Button, cn, FIELD, FOOTED_TITLE, Spinner, Tick } from './ui'
+
+/** Checks where a failure means the numbers can't all be right. */
+const ARITHMETIC: ReadonlySet<IssueKind> = new Set([
+  'total',
+  'balance',
+  'arithmetic',
+  'crossfoot',
+  'tie',
+  'provenance',
+])
+
+const TICK_TITLE: Record<TickKind, string> = {
+  total: FOOTED_TITLE,
+  balance: 'Balance ties: each balance equals the previous balance plus that row’s amount',
+  arithmetic: 'Line totals check: quantity × price equals the line total on every row',
+  crossfoot: 'Cross-footed: the total column equals the sum of the columns it adds up',
+  tie: 'Ties: the subtotal, tax and total (or opening and closing balances) agree',
+}
 
 const COL = (i: number): string =>
   i < 26
@@ -60,7 +80,7 @@ export function TableEditor({
   const [instruction, setInstruction] = useState('')
   const gridRef = useRef<HTMLTableElement>(null)
 
-  const issues = useMemo(() => validate(table), [table])
+  const { issues, ticks } = useMemo(() => review(table), [table])
   const types = useMemo(() => columnTypes(table), [table])
   const issueAt = useMemo(() => {
     const m = new Map<string, Issue>()
@@ -72,7 +92,9 @@ export function TableEditor({
     () => table.rows.map((r, i) => i >= table.headerRows && isTotalRow(r)),
     [table],
   )
-  const footed = totalRows.some(Boolean) && !issues.some(i => i.kind === 'total')
+  // One badge per passed check, e.g. Footed, Balance ties, Cross-footed.
+  const passed = useMemo(() => [...new Map(ticks.map(k => [k.label, k])).values()], [ticks])
+  const arithmetic = issues.some(i => ARITHMETIC.has(i.kind))
 
   const focusCell = (r: number, c: number) => {
     const el = gridRef.current?.querySelector<HTMLInputElement>(
@@ -140,11 +162,11 @@ export function TableEditor({
           />
           Include
         </label>
-        {footed && (
-          <Badge tone='tick' className='gap-1' title={FOOTED_TITLE}>
-            <Tick /> Footed
+        {passed.map(k => (
+          <Badge key={k.label} tone='tick' className='gap-1' title={TICK_TITLE[k.kind]}>
+            <Tick /> {k.label}
           </Badge>
-        )}
+        ))}
         {issues.length > 0 && (
           <button
             type='button'
@@ -152,7 +174,7 @@ export function TableEditor({
             title='Go to the next cell to check'
             className='rounded text-xs'
           >
-            <Badge tone={issues.some(i => i.kind === 'total') ? 'bad' : 'warn'}>
+            <Badge tone={arithmetic ? 'bad' : 'warn'}>
               {issues.length} {issues.length === 1 ? 'cell' : 'cells'} to check
             </Badge>
           </button>
@@ -211,7 +233,8 @@ export function TableEditor({
           className='space-y-2 border-b border-line bg-paper px-3 py-2'
           onSubmit={e => {
             e.preventDefault()
-            onAiFix(instruction)
+            // With no instruction, send the exact failing checks so the AI re-reads those cells.
+            onAiFix(instruction.trim() || (issues.length ? fixInstruction(table, issues) : ''))
             setFixOpen(false)
             setInstruction('')
           }}
@@ -448,8 +471,8 @@ function Cell({
       className={cn(
         'border-r border-b border-line p-0',
         total && 'double-rule',
-        issue?.kind === 'total' && 'bg-bad-soft',
-        (issue?.kind === 'type' || issue?.kind === 'low-confidence') && 'bg-warn-soft',
+        issue && ARITHMETIC.has(issue.kind) && 'bg-bad-soft',
+        issue && !ARITHMETIC.has(issue.kind) && 'bg-warn-soft',
       )}
       title={issue?.message}
     >
