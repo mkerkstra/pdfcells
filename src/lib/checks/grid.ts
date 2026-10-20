@@ -2,7 +2,14 @@
 // per-column typing as export (cells.ts), so a check never sees a number the
 // workbook wouldn't.
 
-import { detectLocale, isPlaceholder, parseNumber, type NumberLocale } from '../cells'
+import {
+  detectLocale,
+  inferColumn,
+  isPlaceholder,
+  parseDate,
+  parseNumber,
+  type NumberLocale,
+} from '../cells'
 import type { Table } from '../types'
 
 const TOTAL = /^\s*(grand\s+)?(sub)?total\b|^\s*sum\b/i
@@ -74,7 +81,7 @@ export function buildGrid(t: Table): Grid {
     numericCol[c] = !percentCol[c] && nums.length > 0 && nums.length * 2 >= filled.length
     colDecimals[c] = Math.max(0, ...nums.map(i => dec[i]?.[c] ?? 0))
   }
-  const totalRow = t.rows.map((r, i) => i >= t.headerRows && isTotalRow(r))
+  const totalRow = totalRows(t)
   return {
     table: t,
     width,
@@ -136,4 +143,23 @@ export function columnLetter(col: number): string {
   for (let n = col + 1; n > 0; n = Math.floor((n - 1) / 26))
     s = String.fromCharCode(65 + ((n - 1) % 26)) + s
   return s
+}
+
+/**
+ * Body rows that are total lines. A row labelled "Total…" that also carries a
+ * real date in a date column is a transaction (a payee like "Total Wine"),
+ * not a summary line.
+ */
+export function totalRows(t: Table): boolean[] {
+  const body = t.rows.slice(t.headerRows)
+  const width = t.rows[0]?.length ?? 0
+  const dateCols = Array.from({ length: width }, (_, c) => inferColumn(body.map(r => r[c] ?? '')))
+    .map((ct, c) => ({ ct, c }))
+    .filter(({ ct }) => ct.kind === 'date')
+  return t.rows.map(
+    (r, i) =>
+      i >= t.headerRows &&
+      isTotalRow(r) &&
+      !dateCols.some(({ ct, c }) => parseDate(r[c] ?? '', ct.dateOrder) !== null),
+  )
 }

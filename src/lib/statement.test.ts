@@ -289,3 +289,23 @@ describe('assignFitids', () => {
     ).toEqual(assignFitids(base).map(x => x.fitid))
   })
 })
+
+describe('readStatement: payees that start with "Total"', () => {
+  it('keeps a dated "Total Wine" purchase and skips an undated total line', () => {
+    const s = one([
+      ['Date', 'Description', 'Amount', 'Balance'],
+      ['03/01/2026', 'Opening deposit', '100.00', '100.00'],
+      ['03/02/2026', 'Total Wine & More', '(25.00)', '75.00'],
+      ['03/03/2026', 'Coffee', '(5.00)', '70.00'],
+      ['03/04/2026', 'Refund', '10.00', '80.00'],
+      ['', 'Total', '80.00', ''],
+    ])
+    expect(s?.transactions.map(t => t.description)).toEqual([
+      'Opening deposit',
+      'Total Wine & More',
+      'Coffee',
+      'Refund',
+    ])
+    expect(s?.gate.ok).toBe(true)
+  })
+})

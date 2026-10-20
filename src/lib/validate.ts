@@ -5,7 +5,16 @@ import { inferColumn, type ColumnType } from './cells'
 import { lineArithmetic } from './checks/arithmetic'
 import { runningBalance } from './checks/balance'
 import { crossFoot } from './checks/crossfoot'
-import { buildGrid, cell, formatNumber, isTotalRow, raw, tolerance, type Grid } from './checks/grid'
+import {
+  buildGrid,
+  cell,
+  formatNumber,
+  isTotalRow,
+  raw,
+  tolerance,
+  totalRows,
+  type Grid,
+} from './checks/grid'
 import type {
   CheckResult,
   DocCheckResult,
@@ -17,7 +26,7 @@ import type {
 import { crossTableTies, tableTies } from './checks/tie'
 import type { Table } from './types'
 
-export { isTotalRow }
+export { isTotalRow, totalRows }
 export type { CheckResult, Issue, IssueKind, Tick }
 
 export function columnTypes(t: Table): ColumnType[] {

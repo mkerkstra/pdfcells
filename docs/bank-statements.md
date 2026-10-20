@@ -92,4 +92,4 @@ Both CSVs start with a UTF-8 byte order mark and guard every text cell against s
 - **Credit card statements** where the balance is the amount owed come out with inverted signs (a purchase raises the balance, so it reads as money in). Export as bank CSV and flip the sign, or wait for a credit-card mode.
 - One account per export. A statement with several accounts exports the longest transaction table.
 - OFX/QBO always declare a checking account.
-- A row whose description starts with "Total" or "Sum" is treated as a total line and skipped, as the balance check does. A real payee such as "Total Wine" would be dropped, and the balance check then flags the next row.
+- A row labelled "Total…" or "Sum…" is treated as a total line and skipped only when it has no date; a dated row such as a "Total Wine" purchase is a normal transaction.

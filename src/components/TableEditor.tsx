@@ -20,7 +20,7 @@ import type { IssueKind, TickKind } from '@/lib/checks/model'
 import { copyTable } from '@/lib/plaintext'
 import * as ops from '@/lib/tableOps'
 import type { Table } from '@/lib/types'
-import { columnTypes, isTotalRow, review, type Issue } from '@/lib/validate'
+import { columnTypes, review, totalRows as findTotalRows, type Issue } from '@/lib/validate'
 
 import { Badge, Button, cn, FIELD, FOOTED_TITLE, Spinner, Tick } from './ui'
 
@@ -88,10 +88,7 @@ export function TableEditor({
     return m
   }, [issues])
   const width = table.rows[0]?.length ?? 0
-  const totalRows = useMemo(
-    () => table.rows.map((r, i) => i >= table.headerRows && isTotalRow(r)),
-    [table],
-  )
+  const totalRows = useMemo(() => findTotalRows(table), [table])
   // One badge per passed check, e.g. Footed, Balance ties, Cross-footed.
   const passed = useMemo(() => [...new Map(ticks.map(k => [k.label, k])).values()], [ticks])
   const arithmetic = issues.some(i => ARITHMETIC.has(i.kind))

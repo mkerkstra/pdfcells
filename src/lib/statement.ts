@@ -258,10 +258,12 @@ function read(joined: Joined): Candidate | null {
   let forward: number | undefined
   let lastDate: string | null = null
   for (const r of g.body) {
-    if (g.totalRow[r]) continue
     const o = joined.origin[r]
     const dateText = raw(t, r, c.date)
     const parsed = dateText ? parseDate(dateText, order) : null
+    // A "Total…" row without a date is a summary line; with a date it's a real
+    // transaction whose payee happens to start with "Total" (Total Wine).
+    if (g.totalRow[r] && !parsed) continue
     const moversBlank = c.movers.every(m => isBlank(g, r, m.col))
     const mv = movement(g, r, c.movers)
     const desc = raw(t, r, c.description)
