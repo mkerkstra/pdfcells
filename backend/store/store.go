@@ -126,6 +126,9 @@ const (
 	FreeUserQuota   FreeDenied = "user_quota"
 	FreeIPQuota     FreeDenied = "ip_quota"
 	FreeGlobalLimit FreeDenied = "global_cap"
+	// A negative balance (spent credits later refunded or charged back) pauses
+	// free pages until the account is settled.
+	FreeNegativeBalance FreeDenied = "negative_balance"
 )
 
 // ReserveFree claims one page of today's (UTC) free quota. denied is set,
@@ -133,7 +136,11 @@ const (
 // Per-IP and global counts are serialized with transaction advisory locks so
 // concurrent requests from many accounts can't overshoot them.
 func (s *Store) ReserveFree(ctx context.Context, userID string, q FreeQuota) (id int64, denied FreeDenied, err error) {
-	err = s.tx(ctx, userID, func(tx pgx.Tx, _ int64) error {
+	err = s.tx(ctx, userID, func(tx pgx.Tx, balance int64) error {
+		if balance < 0 {
+			denied = FreeNegativeBalance
+			return nil
+		}
 		used, err := freeUsedToday(ctx, tx, userID)
 		if err != nil {
 			return err

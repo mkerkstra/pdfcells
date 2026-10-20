@@ -157,3 +157,33 @@ func TestRefundReversesCreditsIdempotently(t *testing.T) {
 		t.Fatal("unknown payment intent must be a no-op")
 	}
 }
+
+func TestNegativeBalancePausesFreePages(t *testing.T) {
+	s, u := open(t)
+	ctx := context.Background()
+	q := FreeQuota{PerUser: 25, PerIP: -1, Global: -1}
+	if _, err := s.CreditTopup(ctx, u, "cs_"+u, "pi_"+u, 10_000_000); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.ReservePaid(ctx, u, 100_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Settle(ctx, u, id, Usage{Model: "claude-opus-5-5", AnthropicCost: 32_936, Charged: 37_877}); err != nil {
+		t.Fatal(err)
+	}
+	// The top-up is refunded after some credit was spent: balance goes negative.
+	if _, err := s.ReverseTopup(ctx, "pi_"+u, 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if _, denied, err := s.ReserveFree(ctx, u, q); err != nil || denied != FreeNegativeBalance {
+		t.Fatalf("negative balance must pause free pages: denied=%q err=%v", denied, err)
+	}
+	// Settling the balance restores the free tier.
+	if _, err := s.CreditTopup(ctx, u, "cs2_"+u, "pi2_"+u, 10_000_000); err != nil {
+		t.Fatal(err)
+	}
+	if _, denied, err := s.ReserveFree(ctx, u, q); err != nil || denied != FreeOK {
+		t.Fatalf("settled balance should restore free pages: denied=%q err=%v", denied, err)
+	}
+}

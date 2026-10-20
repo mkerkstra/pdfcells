@@ -5,7 +5,7 @@ import { AccountPanel } from './components/AccountPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { Button } from './components/ui'
 import { Workspace } from './components/Workspace'
-import { formatUsd } from './lib/api'
+import { formatUsd, freePagesLeft } from './lib/api'
 import { AccountProvider, useAccount } from './state/account'
 
 export function App() {
@@ -44,8 +44,9 @@ function Shell() {
             >
               <span>{formatUsd(me.balance_micros, 2)} in credits</span>
               <span className='hidden font-normal text-muted sm:inline'>
-                and {Math.max(0, account.config.free_pages_per_day - me.free_used_today)} free AI
-                pages left today
+                {account.me?.free_paused
+                  ? 'Free AI pages paused until your balance is settled'
+                  : `and ${freePagesLeft(account.config.free_pages_per_day, account.me)} free AI pages left today`}
               </span>
             </Button>
           )}

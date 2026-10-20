@@ -1,7 +1,7 @@
 import { RotateCcw } from 'lucide-react'
 import type { Dispatch } from 'react'
 
-import { formatUsd } from '@/lib/api'
+import { formatUsd, freePagesLeft } from '@/lib/api'
 import type { DocSource } from '@/lib/document'
 import type { PageKind, PageTriage } from '@/lib/triage'
 import type { Engine } from '@/lib/types'
@@ -47,9 +47,7 @@ export function useAiEstimate(pages: number) {
     ? Math.ceil((EST_INPUT * t.input_micros_per_mtok + EST_OUTPUT * t.output_micros_per_mtok) / 1e6)
     : 0
   const freeLeft =
-    signedIn && !byok && tier === 'fast'
-      ? Math.max(0, config.free_pages_per_day - (me?.account.free_used_today ?? 0))
-      : 0
+    signedIn && !byok && tier === 'fast' ? freePagesLeft(config.free_pages_per_day, me) : 0
   const paid = Math.max(0, pages - freeLeft)
   const markup = byok ? 1 : 1 + config.markup_bps / 10_000
   return {

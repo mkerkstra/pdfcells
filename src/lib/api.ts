@@ -32,6 +32,8 @@ export interface Me {
   account: { balance_micros: number; free_used_today: number; recent: LedgerEntry[] }
   free_pages_per_day: number
   markup_bps: number
+  /** Free AI pages are paused while the balance is negative. */
+  free_paused?: boolean
 }
 
 export interface ExtractRequest {
@@ -84,6 +86,8 @@ const ERROR_COPY: Record<string, string> = {
   hosted_disabled: 'AI isn’t set up on this server. Add your own Anthropic API key in Settings.',
   sign_in: 'Sign in to use AI, or add your own Anthropic API key in Settings.',
   insufficient_credits: 'Not enough credits for this page. Add credits, or read it with OCR.',
+  balance_negative:
+    'Free AI pages are paused because your credit balance is negative. Add credits to settle it, or read the page with OCR.',
   refused: 'The AI model declined to read this page. Try OCR, or a different AI quality.',
   truncated: 'This page has more table text than AI can return at once. Read it with OCR instead.',
   timeout: 'The AI model took too long on this page. Try again, or choose Fast.',
@@ -180,4 +184,10 @@ export function formatUsd(micros: number, digits?: number): string {
   const usd = Math.abs(micros) / 1_000_000
   const d = digits ?? (usd < 0.01 && usd !== 0 ? 4 : 2)
   return `${micros < 0 ? '−' : ''}$${usd.toFixed(d)}`
+}
+
+/** Free AI pages the signed-in user can still use today (0 while paused). */
+export function freePagesLeft(perDay: number, me: Me | undefined): number {
+  if (!me || me.free_paused) return 0
+  return Math.max(0, perDay - me.account.free_used_today)
 }

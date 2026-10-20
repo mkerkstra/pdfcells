@@ -137,6 +137,9 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		case store.FreeOK:
 			source, holdID = "free", id
 			req.MaxTokens = extract.FreeMaxOutputTokens
+		case store.FreeNegativeBalance:
+			writeErr(w, http.StatusPaymentRequired, "balance_negative", "free AI pages are paused while your credit balance is negative; add credits to settle it")
+			return
 		case store.FreeIPQuota, store.FreeGlobalLimit:
 			// Falls through to credits, like an exhausted personal quota.
 			s.log.Warn("free page denied", "reason", string(denied), "request_id", middleware.GetReqID(r.Context()))
@@ -240,6 +243,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"account": a, "free_pages_per_day": s.cfg.FreePagesPerDay, "markup_bps": s.cfg.MarkupBps,
+		"free_paused": a.BalanceMicros < 0,
 	})
 }
 

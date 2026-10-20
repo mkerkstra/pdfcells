@@ -87,7 +87,11 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
       const rest = pages.filter(p => !ocr.includes(p))
       const job = (p: PageState) =>
         runPage(doc, p, dispatch, ai, () => account.refreshMe()).catch((e: unknown) => {
-          if (e instanceof ApiError && e.code === 'insufficient_credits') needCredits = true
+          if (
+            e instanceof ApiError &&
+            (e.code === 'insufficient_credits' || e.code === 'balance_negative')
+          )
+            needCredits = true
           throw e
         })
       await Promise.all([pool(rest, 3, job), pool(ocr, 1, job)])

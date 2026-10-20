@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 
-import { api, formatUsd } from '@/lib/api'
+import { api, formatUsd, freePagesLeft } from '@/lib/api'
 import { useAccount } from '@/state/account'
 
 import { Dialog } from './Dialog'
@@ -23,7 +23,7 @@ export function AccountPanel({ onClose }: { onClose: () => void }) {
     onSuccess: r => location.assign(r.url),
   })
   const status = new URLSearchParams(location.search).get('topup')
-  const freeLeft = Math.max(0, account.config.free_pages_per_day - (a?.free_used_today ?? 0))
+  const freeLeft = freePagesLeft(account.config.free_pages_per_day, account.me)
   const modelLabel = (model: string) => {
     const t = account.config.tiers.find(x => x.model === model)
     return t ? TIER_LABEL[t.id] : model.replace('claude-', '')
