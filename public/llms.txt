@@ -3,19 +3,20 @@
 > PDFCells (https://pdfcells.com) is a free PDF to Excel converter that runs in the browser. It turns tables in PDFs (bank statements, invoices, financial reports, scanned documents) into .xlsx spreadsheets, and lets the user check and correct every cell before downloading.
 
 ## How it works
-- Pre-check: each page is classified as digital text, scanned, broken text encoding or blank, and given a recommended engine.
-- Digital PDFs are read exactly from their embedded text with pdf.js, free and on-device.
-- Scanned PDFs are read with tesseract.js OCR in the browser, free and on-device, or with Claude AI for difficult scans.
-- Correction grid: edit cells, insert or delete rows and columns, merge or split columns, set header rows, undo and redo. Totals that don't add up, non-numeric values in number columns and low-confidence OCR cells are flagged. "Fix with AI" applies a plain-English correction against the page image.
-- Export: real Excel numbers, percentages, currencies and dates, consistent column formats, frozen header rows, and tables that span pages joined into one sheet.
+- Pre-check: each page is classified as text, scanned, broken text or blank, and gets a recommended read method: PDF text, OCR, AI or skip.
+- PDF text: pages with a text layer are read exactly from it with pdf.js, free and on the user's device.
+- OCR: scanned pages are read with tesseract.js in the browser, free and on the user's device.
+- AI: difficult scans and irregular tables can be read with Claude. Only these pages leave the browser.
+- Correction grid: edit cells, insert or delete rows and columns, merge or split columns, set header rows, undo and redo. Totals that don't add up, values that don't match their column and cells OCR was unsure of are flagged. Tables whose totals all add up are marked "Footed". "Fix with AI" corrects a table against the page image from a plain-English instruction.
+- Export: real Excel numbers, percentages, currencies and dates, consistent column formats, frozen header rows, and tables that run across pages joined into one sheet.
 
 ## Pricing
-- Free and unlimited: digital PDFs and in-browser OCR.
-- AI: 25 free pages per day when signed in (Claude Haiku 5.5). After that, prepaid credits at Anthropic's token cost plus 15%. Bring-your-own Anthropic API key is supported at no markup.
-- Tiers: Fast (Claude Haiku 5.5), Accurate (Claude Sonnet 5.5), Max (Claude Opus 5.5).
+- Free and unlimited: PDF text and in-browser OCR.
+- AI: 25 free AI pages a day when signed in (Fast). After that, prepaid credits at Anthropic's token cost plus 15%. Users can bring their own Anthropic API key and pay no markup.
+- AI quality: Fast (Claude Haiku 5.5), Accurate (Claude Sonnet 5.5), Max (Claude Opus 5.5).
 
 ## Privacy
-- PDFs are processed on the user's device. Only pages the user sends to AI leave the browser, as one rendered page image per request, and they are not stored.
+- PDFs are processed on the user's device. Only pages the user reads with AI leave the browser, as one rendered page image per request, and they are not stored.
 
 ## Links
 - App: https://pdfcells.com/
