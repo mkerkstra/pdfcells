@@ -14,6 +14,10 @@ Choose **Bank statement (OFX, QBO, Xero CSV)** in the export bar to turn a state
 
 The download is only enabled when the numbers check out: the running balance ties on every row, or, without a balance column, the account summary ties and the transactions add up to it. Otherwise the panel names the cell to fix ("Balance doesn't tie on page 1, row 11: ..."). Only the plain CSV can be exported anyway, behind a confirm box. Import tips and format details, including QuickBooks' limits on .qbo files: [docs/bank-statements.md](docs/bank-statements.md).
 
+## Batches
+
+Drop several PDFs (or PDFs and images) at once and each file becomes its own document in a batch; several images on their own still open as one document. Every file is checked first, with one cost line for the whole batch, then read with at most two files open at a time. Files that share a format (same table headers and letterhead, digits and dates ignored) are offered as a group: set up the first file once and its column, header, table name and Include changes, plus the engine used per page kind, are replayed on the rest by header name (`src/lib/recipe.ts`). A file is ready when every page is read, every check passes, the set-up applied cleanly and, for statements, the balance ties; the others need a look. Download one workbook with Source file and Page columns, one .xlsx per file in a ZIP, or one OFX, QBO or CSV per statement format. Progress is saved in this browser (IndexedDB, tables only, never the files) so a closed tab can resume. Up to 200 files and 2,000 pages per batch.
+
 ## Pricing model
 
 | Path | Cost |

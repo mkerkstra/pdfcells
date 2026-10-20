@@ -289,11 +289,13 @@ export function recipeSummary(r: Recipe): string[] {
   for (const t of r.tables) {
     const name = t.title ?? (t.match.title || t.match.header.filter(Boolean).slice(0, 3).join(', '))
     if (!t.include) {
-      out.push(`Leave out “${name || 'untitled table'}”`)
+      out.push(name ? `Leave out “${name}”` : `Leave out table ${t.position + 1} on page ${t.page}`)
       continue
     }
     if (t.title !== undefined)
-      out.push(`Rename “${t.match.title || 'untitled table'}” to “${t.title}”`)
+      out.push(
+        `Rename “${t.match.title || `table ${t.position + 1} on page ${t.page}`}” to “${t.title}”`,
+      )
     for (const e of t.edits) {
       const d = describe(e)
       out.push(d.charAt(0).toUpperCase() + d.slice(1))
