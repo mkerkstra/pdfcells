@@ -14,6 +14,8 @@ export interface PageTriage {
   chars: number
   images: number
   textTrusted: boolean
+  /** The page is a photo or screenshot, not a PDF page. */
+  image?: boolean
   words: Word[]
   /** Text layer as tab-separated lines, sent to the AI as a hint. */
   textHint: string
@@ -43,6 +45,21 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
   const chars = raw.replace(/\s/g, '').length
   const base = { width: facts.width, height: facts.height, chars, images, words }
   const smart: Engine = aiAvailable ? 'ai' : 'ocr'
+
+  if (facts.source === 'image') {
+    return {
+      ...base,
+      kind: 'scanned',
+      image: true,
+      textTrusted: false,
+      textHint: '',
+      localTables: [],
+      recommended: smart,
+      reason: aiAvailable
+        ? 'A photo or screenshot, so it’s read from the image. AI reads images more reliably than OCR.'
+        : 'A photo or screenshot, so it’s read from the image with OCR.',
+    }
+  }
 
   if (chars < 20) {
     if (images === 0) {

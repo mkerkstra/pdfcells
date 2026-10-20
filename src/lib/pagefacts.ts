@@ -25,6 +25,8 @@ export interface PageFacts {
   raw: string
   /** Number of raster image paint operations. */
   images: number
+  /** Set for photos and screenshots (never by pageFacts): the page is only pixels. */
+  source?: 'image'
 }
 
 interface TextItemLike {
