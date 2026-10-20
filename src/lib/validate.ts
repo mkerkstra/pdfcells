@@ -51,12 +51,17 @@ export function validate(t: Table): Issue[] {
 
   // Totals: a row labelled total should equal the sum of the rows since the
   // previous total (or the header).
+  // Percentages (growth, margin) never sum to a total row.
+  const percentColumn = types.map((_, c) => {
+    const vals = t.rows.slice(t.headerRows).map(r => (r[c] ?? '').trim()).filter(Boolean)
+    return vals.length > 0 && vals.filter(v => v.endsWith('%')).length >= vals.length / 2
+  })
   let start = t.headerRows
   for (let i = t.headerRows; i < t.rows.length; i++) {
     const row = t.rows[i] ?? []
     if (!row.some(c => TOTAL.test(c))) continue
     types.forEach((ct, c) => {
-      if (ct.kind !== 'number') return
+      if (ct.kind !== 'number' || percentColumn[c]) return
       const stated = parseNumber(row[c] ?? '', ct.locale)
       if (!stated) return
       let sum = 0

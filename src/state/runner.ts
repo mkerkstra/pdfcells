@@ -4,8 +4,9 @@
 import { api, toApiTable, type ExtractResponse } from '@/lib/api'
 import { buildTables, type LocalTable } from '@/lib/layout'
 import { ocrWords } from '@/lib/ocr'
-import { renderPage, toJpegBase64, type PDFDocumentProxy } from '@/lib/pdf'
-import { triagePage } from '@/lib/triage'
+import { pageFacts } from '@/lib/pagefacts'
+import { IMAGE_OPS, renderPage, toJpegBase64, type PDFDocumentProxy } from '@/lib/pdf'
+import { triage as classify } from '@/lib/triage'
 import type { Table, Tier } from '@/lib/types'
 
 import type { Action, PageState } from './doc'
@@ -49,7 +50,7 @@ export async function triageAll(
     if (signal.aborted) return
     const page = await pdf.getPage(i + 1)
     try {
-      const triage = await triagePage(page, aiAvailable)
+      const triage = classify(await pageFacts(page, IMAGE_OPS), aiAvailable)
       dispatch({
         type: 'triaged',
         index: i,

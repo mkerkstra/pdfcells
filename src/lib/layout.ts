@@ -44,7 +44,8 @@ interface SegLine {
   y1: number
 }
 
-const NUMERIC = /^[(\-−+]?[$€£¥₹]?\s?\d[\d,.\s']*%?\)?-?$/
+// Currency may lead ($1.00) or trail (1,00 €); negatives as -1, 1-, or (1).
+const NUMERIC = /^[(\-−+]?[$€£¥₹]?\s?\d[\d,.\s']*%?\s?[$€£¥₹]?\)?-?$/
 
 export function isNumericCell(s: string): boolean {
   const t = s.trim()
@@ -116,8 +117,13 @@ function findBlocks(lines: SegLine[]): SegLine[][] {
   let cur: SegLine[] = []
   let singles = 0
   const flush = () => {
-    // Trim trailing single-segment lines; a block needs ≥2 multi-column lines.
-    while (cur.length && (cur.at(-1)?.segs.length ?? 0) < 2) cur.pop()
+    // Trim trailing single-segment lines that start at the block's left edge
+    // (captions, footnotes). Ones indented into a later column are the wrapped
+    // tail of the last row's cell and belong to the table.
+    const left = Math.min(...cur.flatMap(l => l.segs.map(s => s.x0)))
+    const indent = (l: SegLine) => (l.segs[0]?.x0 ?? left) - left > pitch
+    while (cur.length && (cur.at(-1)?.segs.length ?? 0) < 2 && !indent(cur.at(-1) as SegLine)) cur.pop()
+    while (cur.length && (cur.at(-1)?.segs.length ?? 0) < 2 && cur.filter(l => l.segs.length >= 2).length < 2) cur.pop()
     if (cur.filter(l => l.segs.length >= 2).length >= 2) blocks.push(cur)
     cur = []
     singles = 0

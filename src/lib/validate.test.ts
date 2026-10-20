@@ -40,6 +40,19 @@ describe('validate', () => {
     expect(issues[0]).toMatchObject({ kind: 'total', row: 3, col: 1 })
   })
 
+  it('does not sum percentage columns into totals', () => {
+    expect(
+      validate(
+        table([
+          ['Item', 'Amount', 'Growth'],
+          ['A', '10', '5.0%'],
+          ['B', '20', '7.5%'],
+          ['Total', '30', '6.7%'],
+        ]),
+      ),
+    ).toEqual([])
+  })
+
   it('flags a misread digit in a numeric column', () => {
     const issues = validate(
       table([

@@ -2,7 +2,7 @@
 // and pick the cheapest engine likely to get it right.
 
 import { buildTables, linesToText, type LocalTable } from './layout'
-import { imageCoverage, textWords, type PDFPageProxy } from './pdf'
+import type { PageFacts } from './pagefacts'
 import type { Engine, Word } from './types'
 
 export type PageKind = 'digital' | 'scanned' | 'garbled' | 'blank'
@@ -37,11 +37,11 @@ export function garbleRatio(text: string): number {
 
 export const GOOD_LOCAL_CONFIDENCE = 0.75
 
-export async function triagePage(page: PDFPageProxy, aiAvailable: boolean): Promise<PageTriage> {
-  const vp = page.getViewport({ scale: 1 })
-  const [{ words, raw }, images] = await Promise.all([textWords(page), imageCoverage(page)])
+/** Classify a page from its extracted facts (pure; see pagefacts.ts). */
+export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
+  const { words, raw, images } = facts
   const chars = raw.replace(/\s/g, '').length
-  const base = { width: vp.width, height: vp.height, chars, images, words }
+  const base = { width: facts.width, height: facts.height, chars, images, words }
   const smart: Engine = aiAvailable ? 'ai' : 'ocr'
 
   if (chars < 20) {
