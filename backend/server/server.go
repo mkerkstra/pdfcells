@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,15 @@ type Config struct {
 	AppURL              string
 	MarkupBps           int64
 	FreePagesPerDay     int
+
+	// Abuse controls (see SECURITY.md). Negative free caps mean unlimited;
+	// 0 turns that path off. Rate limits <= 0 are disabled.
+	AuthorizedParties []string // allowed Clerk azp origins
+	FreePagesPerIP    int      // free pages per caller IP per UTC day
+	FreePagesGlobal   int      // free pages across all users per UTC day
+	ExtractPerMinute  int      // hosted /api/extract calls per user
+	CheckoutPerMinute int      // /api/checkout calls per user
+	IPHashSecret      string   // HMAC key for stored IP hashes
 }
 
 func ConfigFromEnv() Config {
@@ -72,6 +82,14 @@ func configFromEnv() Config {
 		AppURL:              envOr("APP_URL", "http://localhost:5173"),
 		MarkupBps:           int64(envInt("CREDIT_MARKUP_BPS", 1500)),
 		FreePagesPerDay:     envInt("FREE_PAGES_PER_DAY", 25),
+		AuthorizedParties:   parseList(envOr("CLERK_AUTHORIZED_PARTIES", strings.Join(DefaultAuthorizedParties, ","))),
+		FreePagesPerIP:      envInt("FREE_PAGES_PER_IP_PER_DAY", 40),
+		FreePagesGlobal:     envInt("FREE_PAGES_GLOBAL_PER_DAY", 2000),
+		ExtractPerMinute:    envInt("RATE_EXTRACT_PER_MINUTE", 30),
+		CheckoutPerMinute:   envInt("RATE_CHECKOUT_PER_MINUTE", 5),
+		// Without a dedicated secret, derive one from the Clerk secret, which
+		// every hosted deployment already has and never leaves the server.
+		IPHashSecret: envOr("IP_HASH_SECRET", "pdfcells-ip-v1:"+os.Getenv("CLERK_SECRET_KEY")),
 	}
 }
 
@@ -120,18 +138,29 @@ func New(cfg Config) *Server {
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer)
+	r.NotFound(notFound)
+	r.MethodNotAllowed(methodNotAllowed)
+	auth := func(next http.Handler) http.Handler { return next }
+	if s.cfg.ClerkSecretKey != "" {
+		auth = clerkhttp.WithHeaderAuthorization(
+			clerkhttp.AuthorizedParty(azpAllowed(s.cfg.AuthorizedParties)),
+			clerkhttp.AuthorizationFailureHandler(http.HandlerFunc(unauthorized)),
+		)
+	}
 	r.Route("/api", func(r chi.Router) {
-		r.Get("/health", s.health)
-		r.Get("/config", s.config)
-		r.Post("/stripe/webhook", s.stripeWebhook)
-		r.Post("/inbound", s.inboundEmail)
+		r.NotFound(notFound)
+		r.MethodNotAllowed(methodNotAllowed)
+		// Model calls get the function's full budget (extract bounds its own
+		// call at 280s); everything else should finish in seconds.
+		r.With(secure(295*time.Second), requireJSON, auth).Post("/extract", s.extract)
 		r.Group(func(r chi.Router) {
-			if s.cfg.ClerkSecretKey != "" {
-				r.Use(clerkhttp.WithHeaderAuthorization())
-			}
-			r.Post("/extract", s.extract)
-			r.Get("/me", s.me)
-			r.Post("/checkout", s.checkout)
+			r.Use(secure(60 * time.Second))
+			r.Get("/health", s.health)
+			r.Get("/config", s.config)
+			r.Post("/stripe/webhook", s.stripeWebhook)
+			r.Post("/inbound", s.inboundEmail)
+			r.With(auth).Get("/me", s.me)
+			r.With(requireJSON, auth).Post("/checkout", s.checkout)
 		})
 	})
 	return r

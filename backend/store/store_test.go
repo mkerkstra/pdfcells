@@ -113,10 +113,11 @@ func TestFreeQuota(t *testing.T) {
 	s, u := open(t)
 	ctx := context.Background()
 	for i := range 3 {
-		id, ok, err := s.ReserveFree(ctx, u, 2)
+		id, denied, err := s.ReserveFree(ctx, u, FreeQuota{PerUser: 2, PerIP: -1, Global: -1})
 		if err != nil {
 			t.Fatal(err)
 		}
+		ok := denied == FreeOK
 		if ok != (i < 2) {
 			t.Fatalf("reservation %d: ok=%v", i, ok)
 		}

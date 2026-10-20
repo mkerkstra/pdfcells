@@ -11,6 +11,23 @@ import (
 func do(t *testing.T, h http.Handler, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return rec, out
+}
+
+// doBYOK posts to /api/extract with a caller key, the path that validates the
+// body on any deployment (hosted requests are checked for a session first).
+func doBYOK(t *testing.T, h http.Handler, body string) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/extract", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Anthropic-Key", "sk-ant-test")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var out map[string]any
@@ -29,7 +46,7 @@ func TestUnconfiguredDeployServesLocalOnly(t *testing.T) {
 		t.Fatalf("want 3 tiers, got %v", cfg["tiers"])
 	}
 
-	rec, body := do(t, h, http.MethodPost, "/api/extract", `{"tier":"fast","image_base64":"aGk="}`)
+	rec, body := doBYOK(t, h, `{"tier":"fast","image_base64":"aGk="}`)
 	if rec.Code != http.StatusBadRequest {
 		// "hi" is not an image: rejected before any model call or billing.
 		t.Fatalf("non-image: %d %v", rec.Code, body)
@@ -47,10 +64,10 @@ func TestUnconfiguredDeployServesLocalOnly(t *testing.T) {
 
 func TestBadRequests(t *testing.T) {
 	h := New(Config{}).Router()
-	if rec, _ := do(t, h, http.MethodPost, "/api/extract", `{`); rec.Code != http.StatusBadRequest {
+	if rec, _ := doBYOK(t, h, `{`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad json: %d", rec.Code)
 	}
-	if rec, _ := do(t, h, http.MethodPost, "/api/extract", `{"tier":"turbo"}`); rec.Code != http.StatusBadRequest {
+	if rec, _ := doBYOK(t, h, `{"tier":"turbo"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad tier: %d", rec.Code)
 	}
 }

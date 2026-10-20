@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/mkerkstra/pdfcells/backend/billing"
 	"github.com/mkerkstra/pdfcells/backend/extract"
@@ -53,6 +54,39 @@ type extractResponse struct {
 }
 
 func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
+	// The caller's own key is used for this one request and forwarded only to
+	// Anthropic (extract.BaseURL); it is never logged or stored.
+	byokKey := r.Header.Get("X-Anthropic-Key")
+	r.Header.Del("X-Anthropic-Key")
+
+	var st *store.Store
+	uid := userID(r)
+	if byokKey == "" {
+		if !s.cfg.Hosted() {
+			writeErr(w, http.StatusServiceUnavailable, "hosted_disabled", "hosted AI is not configured on this deployment; add your own Anthropic key in settings")
+			return
+		}
+		if uid == "" {
+			writeErr(w, http.StatusUnauthorized, "sign_in", "sign in to use hosted AI, or add your own Anthropic key")
+			return
+		}
+		var err error
+		if st, err = s.db(r.Context()); err != nil {
+			s.internal(w, r, "database unavailable", err)
+			return
+		}
+		// Rate-limit before reading the 4 MB body.
+		ok, retry, err := st.Allow(r.Context(), "extract:"+uid, s.cfg.ExtractPerMinute, time.Minute)
+		if err != nil {
+			s.internal(w, r, "rate limit unavailable", err)
+			return
+		}
+		if !ok {
+			tooMany(w, retry)
+			return
+		}
+	}
+
 	var req extract.Request
 	if !decode(w, r, 4_400_000, &req) {
 		return
@@ -71,8 +105,8 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 280*time.Second)
 	defer cancel()
 
-	if key := r.Header.Get("X-Anthropic-Key"); key != "" {
-		res, err := extract.Run(ctx, key, req)
+	if byokKey != "" {
+		res, err := extract.Run(ctx, byokKey, req)
 		if err != nil {
 			s.modelError(w, r, err)
 			return
@@ -81,31 +115,31 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.cfg.Hosted() {
-		writeErr(w, http.StatusServiceUnavailable, "hosted_disabled", "hosted AI is not configured on this deployment; add your own Anthropic key in settings")
-		return
-	}
-	uid := userID(r)
-	if uid == "" {
-		writeErr(w, http.StatusUnauthorized, "sign_in", "sign in to use hosted AI, or add your own Anthropic key")
-		return
-	}
-	st, err := s.db(r.Context())
-	if err != nil {
-		s.internal(w, r, "database unavailable", err)
+	// Server-paid from here: refuse anything that isn't plausibly one page
+	// before any money is reserved.
+	if err := req.ValidateHosted(); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid", err.Error())
 		return
 	}
 
 	source := "credits"
 	var holdID int64
 	if req.Tier == extract.TierFast {
-		id, ok, err := st.ReserveFree(r.Context(), uid, s.cfg.FreePagesPerDay)
+		id, denied, err := st.ReserveFree(r.Context(), uid, store.FreeQuota{
+			PerUser: s.cfg.FreePagesPerDay, PerIP: s.cfg.FreePagesPerIP, Global: s.cfg.FreePagesGlobal,
+			IPHash: ipHash(s.cfg.IPHashSecret, clientIP(r)),
+		})
 		if err != nil {
 			s.internal(w, r, "could not reserve free page", err)
 			return
 		}
-		if ok {
+		switch denied {
+		case store.FreeOK:
 			source, holdID = "free", id
+			req.MaxTokens = extract.FreeMaxOutputTokens
+		case store.FreeIPQuota, store.FreeGlobalLimit:
+			// Falls through to credits, like an exhausted personal quota.
+			s.log.Warn("free page denied", "reason", string(denied), "request_id", middleware.GetReqID(r.Context()))
 		}
 	}
 	if source == "credits" {
@@ -154,6 +188,10 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 	if runErr != nil {
 		s.modelError(w, r, runErr)
 		return
+	}
+	if truncated, dropped := extract.Clamp(res); truncated+dropped > 0 {
+		s.log.Warn("clamped model output", "truncated_cells", truncated, "dropped_cells", dropped,
+			"request_id", middleware.GetReqID(r.Context()))
 	}
 	writeJSON(w, http.StatusOK, extractResponse{Result: res, Source: source, ChargedMicros: charged, BalanceMicros: &balance})
 }
@@ -215,6 +253,20 @@ func (s *Server) checkout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "sign_in", "sign in to buy credits")
 		return
 	}
+	st, err := s.db(r.Context())
+	if err != nil {
+		s.internal(w, r, "database unavailable", err)
+		return
+	}
+	ok, retry, err := st.Allow(r.Context(), "checkout:"+uid, s.cfg.CheckoutPerMinute, time.Minute)
+	if err != nil {
+		s.internal(w, r, "rate limit unavailable", err)
+		return
+	}
+	if !ok {
+		tooMany(w, retry)
+		return
+	}
 	var body struct {
 		AmountCents int64 `json:"amount_cents"`
 	}
@@ -222,8 +274,13 @@ func (s *Server) checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	url, err := s.billing.Checkout(r.Context(), uid, body.AmountCents)
-	if err != nil {
+	if errors.Is(err, billing.ErrBadAmount) {
 		writeErr(w, http.StatusBadRequest, "checkout", err.Error())
+		return
+	}
+	if err != nil {
+		// Stripe's error text can describe account configuration; keep it in logs.
+		s.internal(w, r, "could not start checkout", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
@@ -245,7 +302,8 @@ func (s *Server) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_webhook", err.Error())
+		s.log.Warn("rejected stripe webhook", "err", err)
+		writeErr(w, http.StatusBadRequest, "bad_webhook", "invalid webhook")
 		return
 	}
 	st, err := s.db(r.Context())

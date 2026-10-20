@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"time"
 
@@ -108,18 +109,120 @@ func releaseStale(ctx context.Context, tx pgx.Tx, userID string) (int64, error) 
 	return released, err
 }
 
-// ReserveFree claims one page of today's (UTC) free quota. ok is false when
-// the quota is used up.
-func (s *Store) ReserveFree(ctx context.Context, userID string, perDay int) (id int64, ok bool, err error) {
+// FreeQuota bounds free pages per UTC day. A negative PerIP or Global means
+// unlimited; Global 0 is the kill switch that stops all free pages.
+type FreeQuota struct {
+	PerUser int
+	PerIP   int
+	Global  int
+	IPHash  string // HMAC of the caller's IP; never the raw address
+}
+
+// FreeDenied says which free-page limit refused a reservation.
+type FreeDenied string
+
+const (
+	FreeOK          FreeDenied = ""
+	FreeUserQuota   FreeDenied = "user_quota"
+	FreeIPQuota     FreeDenied = "ip_quota"
+	FreeGlobalLimit FreeDenied = "global_cap"
+)
+
+// ReserveFree claims one page of today's (UTC) free quota. denied is set,
+// and id is 0, when any of the per-user, per-IP or global limits is used up.
+// Per-IP and global counts are serialized with transaction advisory locks so
+// concurrent requests from many accounts can't overshoot them.
+func (s *Store) ReserveFree(ctx context.Context, userID string, q FreeQuota) (id int64, denied FreeDenied, err error) {
 	err = s.tx(ctx, userID, func(tx pgx.Tx, _ int64) error {
 		used, err := freeUsedToday(ctx, tx, userID)
-		if err != nil || used >= perDay {
+		if err != nil {
 			return err
 		}
-		ok = true
-		return tx.QueryRow(ctx, `INSERT INTO ledger (user_id, kind, amount_micros) VALUES ($1, 'free', 0) RETURNING id`, userID).Scan(&id)
+		if used >= q.PerUser {
+			denied = FreeUserQuota
+			return nil
+		}
+		if q.PerIP >= 0 {
+			if q.PerIP == 0 {
+				denied = FreeIPQuota
+				return nil
+			}
+			n, err := countFreeToday(ctx, tx, "free-ip:"+q.IPHash, `AND ip_hash = $1`, q.IPHash)
+			if err != nil {
+				return err
+			}
+			if n >= q.PerIP {
+				denied = FreeIPQuota
+				return nil
+			}
+		}
+		if q.Global >= 0 {
+			if q.Global == 0 {
+				denied = FreeGlobalLimit
+				return nil
+			}
+			n, err := countFreeToday(ctx, tx, "free-global", ``)
+			if err != nil {
+				return err
+			}
+			if n >= q.Global {
+				denied = FreeGlobalLimit
+				return nil
+			}
+		}
+		return tx.QueryRow(ctx, `INSERT INTO ledger (user_id, kind, amount_micros, ip_hash) VALUES ($1, 'free', 0, NULLIF($2, '')) RETURNING id`,
+			userID, q.IPHash).Scan(&id)
 	})
-	return id, ok, err
+	if err != nil {
+		return 0, FreeOK, err
+	}
+	return id, denied, nil
+}
+
+// countFreeToday takes a transaction advisory lock named lock, then counts
+// today's free ledger rows matching the extra filter.
+func countFreeToday(ctx context.Context, tx pgx.Tx, lock, filter string, args ...any) (int, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lock); err != nil {
+		return 0, err
+	}
+	var n int
+	q := `SELECT count(*) FROM ledger WHERE kind = 'free' ` + filter + `
+		AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
+	err := tx.QueryRow(ctx, q, args...).Scan(&n)
+	return n, err
+}
+
+// Allow counts one hit against key in a fixed window and reports whether it
+// is within limit. When it isn't, retry is how long until the window resets.
+// A limit <= 0 disables the check.
+func (s *Store) Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retry time.Duration, err error) {
+	if limit <= 0 {
+		return true, 0, nil
+	}
+	secs := int64(window / time.Second)
+	if secs < 1 {
+		secs = 1
+	}
+	var hits int
+	var remaining float64
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO rate_limits AS r (key, window_start)
+		VALUES ($1, to_timestamp(floor(extract(epoch FROM now()) / $2) * $2))
+		ON CONFLICT (key, window_start) DO UPDATE SET hits = r.hits + 1
+		RETURNING hits, extract(epoch FROM r.window_start + make_interval(secs => $2) - now())::float8`,
+		key, secs).Scan(&hits, &remaining)
+	if err != nil {
+		return false, 0, err
+	}
+	// Prune expired windows now and then; one statement, no extra round trip
+	// on the hot path most of the time.
+	if hits == 1 && rand.IntN(50) == 0 {
+		_, _ = s.pool.Exec(ctx, `DELETE FROM rate_limits WHERE window_start < now() - interval '1 day'`)
+	}
+	if hits > limit {
+		return false, time.Duration(max(remaining, 1) * float64(time.Second)), nil
+	}
+	return true, 0, nil
 }
 
 // ReservePaid places a hold of amount µ$ against the balance.
