@@ -1,0 +1,25 @@
+{
+  "name": "PDFCells",
+  "short_name": "PDFCells",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f6f0",
+  "theme_color": "#1f6b47",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    }
+  ]
+}

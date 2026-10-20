@@ -10,6 +10,8 @@
     />
     <link rel="canonical" href="https://pdfcells.com/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..800&display=swap" rel="stylesheet" />
@@ -29,6 +31,22 @@
       {
         "@context": "https://schema.org",
         "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://pdfcells.com/#website",
+            "name": "PDFCells",
+            "url": "https://pdfcells.com/",
+            "publisher": { "@id": "https://pdfcells.com/#org" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://pdfcells.com/#org",
+            "name": "PDFCells",
+            "url": "https://pdfcells.com/",
+            "logo": "https://pdfcells.com/logo.png",
+            "email": "support@pdfcells.com",
+            "sameAs": ["https://github.com/mkerkstra/pdfcells"]
+          },
           {
             "@type": "WebApplication",
             "name": "PDFCells",
@@ -111,7 +129,8 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Pre-rendered headline for crawlers that don't run JS; React replaces #root's contents on load. -->
+    <div id="root"><main class="about"><h1>PDF tables into spreadsheets you can check.</h1><p>Convert PDF tables to Excel free in your browser. PDFs with a text layer are read exactly; scans, photos and screenshots are read with OCR or AI. Every total is checked against its rows, and you can edit any cell before you download.</p></main></div>
     <!-- Static copy: crawlable without JS (search and answer engines). The app hides it while a document is open. -->
     <section id="about" class="about">
       <h2>Convert PDF to Excel without retyping</h2>
