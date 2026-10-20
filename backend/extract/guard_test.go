@@ -7,25 +7,26 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // pageJPEG renders a white page, optionally with one short line of "text"
 // (a few dark glyph-sized blocks) like the sparsest real page.
-func pageJPEG(t *testing.T, w, h int, ink bool) string {
+func pageJPEG(t *testing.T, w, h, glyphs int, ink uint8) string {
 	t.Helper()
 	img := image.NewGray(image.Rect(0, 0, w, h))
 	for i := range img.Pix {
 		img.Pix[i] = 255
 	}
-	if ink {
-		for g := range 12 { // 12 glyphs, 14x20 px each, 4px strokes
+	{
+		for g := range glyphs { // 14x20 px glyphs, 4px strokes
 			x0 := 100 + g*20
 			for y := 100; y < 120; y++ {
 				for x := x0; x < x0+14; x++ {
 					if x-x0 < 4 || y-100 < 4 {
-						img.SetGray(x, y, color.Gray{Y: 20})
+						img.SetGray(x, y, color.Gray{Y: ink})
 					}
 				}
 			}
@@ -39,25 +40,40 @@ func pageJPEG(t *testing.T, w, h int, ink bool) string {
 }
 
 func TestValidateHosted(t *testing.T) {
-	page := pageJPEG(t, 1545, 2000, true)
+	page := pageJPEG(t, 1545, 2000, 12, 20)
 	ok := Request{Tier: TierFast, ImageBase64: page, TextLayer: strings.Repeat("1,234.56\t", 2000)}
 	if err := ok.ValidateHosted(); err != nil {
 		t.Fatalf("a sparse real-looking page was rejected: %v", err)
 	}
+	// Sparse pages must pass: a few dark glyphs, or two faint grey ones.
+	for name, img := range map[string]string{
+		"four glyphs":     pageJPEG(t, 1545, 2000, 4, 20),
+		"faint two glyph": pageJPEG(t, 1545, 2000, 2, 200),
+	} {
+		r := Request{ImageBase64: img}
+		if err := r.ValidateHosted(); err != nil {
+			t.Errorf("%s: sparse page rejected: %v", name, err)
+		}
+	}
 	big := [][]string{make([]string, HostedMaxCurrentCell+1)}
+	empties := make([]Table, HostedMaxTables+1) // zero cells, still a prompt flood
 	for name, r := range map[string]Request{
-		"text layer":  {ImageBase64: page, TextLayer: strings.Repeat("é", HostedMaxTextLayer+1)},
-		"instruction": {ImageBase64: page, Instruction: strings.Repeat("x", HostedMaxInstruction+1)},
-		"current":     {ImageBase64: page, Current: []Table{{Rows: big}}},
-		"not image":   {ImageBase64: "aGk="},
+		"text layer":   {ImageBase64: page, TextLayer: strings.Repeat("é", HostedMaxTextLayer+1)},
+		"instruction":  {ImageBase64: page, Instruction: strings.Repeat("x", HostedMaxInstruction+1)},
+		"current":      {ImageBase64: page, Current: []Table{{Rows: big}}},
+		"empty tables": {ImageBase64: page, Current: empties},
+		// Within the cell and text counts, but escaping doubles it past 64 KB.
+		"escaped json": {ImageBase64: page, Current: []Table{{Rows: [][]string{slices.Repeat([]string{strings.Repeat(`"`, 9)}, 4_900)}}}},
+		"empty rows":   {ImageBase64: page, Current: []Table{{Rows: make([][]string, HostedMaxRows+1)}}},
+		"not image":    {ImageBase64: "aGk="},
 	} {
 		if err := r.ValidateHosted(); err == nil {
 			t.Errorf("%s: expected rejection", name)
 		}
 	}
 	for name, img := range map[string]string{
-		"blank": pageJPEG(t, 1545, 2000, false),
-		"tiny":  pageJPEG(t, 300, 390, true),
+		"blank": pageJPEG(t, 1545, 2000, 0, 20),
+		"tiny":  pageJPEG(t, 300, 390, 12, 20),
 	} {
 		r := Request{ImageBase64: img}
 		if err := r.ValidateHosted(); !errors.Is(err, ErrNotAPage) {

@@ -79,6 +79,6 @@ These sit outside the code and should stay on:
 ## Supply chain
 
 `.github/workflows/security.yml` runs govulncheck, OSV-Scanner (over `go.mod`
-and `pnpm-lock.yaml`) and CodeQL on every push, every pull request and once a
+and `pnpm-lock.yaml`) and CodeQL on pushes to main, every pull request and once a
 week. CI also runs gitleaks. Every action is pinned to a full commit SHA, and
 pnpm refuses packages younger than 7 days (`pnpm-workspace.yaml`).

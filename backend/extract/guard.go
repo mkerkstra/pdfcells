@@ -3,6 +3,7 @@ package extract
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -16,8 +17,11 @@ const (
 	HostedMaxTextLayer   = 20_000 // characters
 	HostedMaxInstruction = 500    // characters
 	HostedMaxCurrentCell = 5_000  // cells across all correction tables
-	HostedMaxCurrentText = 100_000
-	HostedMinLongSide    = 400 // px
+	HostedMaxCurrentText = 48_000
+	HostedMaxCurrentJSON = 64 << 10 // serialized bytes, structure included
+	HostedMaxTables      = 20       // correction tables (one page's worth)
+	HostedMaxRows        = 2_000    // rows across correction tables
+	HostedMinLongSide    = 400      // px
 	// FreeMaxOutputTokens caps a free (Fast) page; dense ledgers fit easily.
 	FreeMaxOutputTokens = 6_000
 	// MaxCellRunes and MaxOutputCells bound what a hosted response returns.
@@ -39,9 +43,13 @@ func (r *Request) ValidateHosted() error {
 	if n := utf8.RuneCountInString(r.Instruction); n > HostedMaxInstruction {
 		return fmt.Errorf("instruction too long (%d characters, max %d)", n, HostedMaxInstruction)
 	}
-	cells, text := 0, 0
+	if len(r.Current) > HostedMaxTables {
+		return fmt.Errorf("too many correction tables (%d, max %d)", len(r.Current), HostedMaxTables)
+	}
+	cells, rows, text := 0, 0, 0
 	for _, t := range r.Current {
 		text += len(t.Title) + len(t.Notes)
+		rows += len(t.Rows)
 		for _, row := range t.Rows {
 			cells += len(row)
 			for _, c := range row {
@@ -49,8 +57,15 @@ func (r *Request) ValidateHosted() error {
 			}
 		}
 	}
-	if cells > HostedMaxCurrentCell || text > HostedMaxCurrentText {
+	if cells > HostedMaxCurrentCell || rows > HostedMaxRows || text > HostedMaxCurrentText {
 		return fmt.Errorf("current tables too large for a correction (max %d cells)", HostedMaxCurrentCell)
+	}
+	// Bound the serialized form too: thousands of empty tables or rows count
+	// as zero cells but still expand the prompt.
+	if len(r.Current) > 0 {
+		if b, err := json.Marshal(r.Current); err != nil || len(b) > HostedMaxCurrentJSON {
+			return fmt.Errorf("current tables too large for a correction (max %d KB)", HostedMaxCurrentJSON>>10)
+		}
 	}
 	raw, err := base64.StdEncoding.DecodeString(r.ImageBase64)
 	if err != nil {
@@ -76,9 +91,9 @@ func (r *Request) ValidateHosted() error {
 	return nil
 }
 
-// blank reports whether almost no sampled pixel differs clearly from the
-// dominant tone. A page with a single short line of text passes; an empty
-// or solid-colour image (JPEG noise included) does not.
+// blank reports whether the image is confidently uniform: essentially no
+// sampled pixel differs from the dominant tone by more than JPEG noise. It
+// errs towards accepting, so a page with a few faint glyphs still passes.
 func blank(img image.Image) bool {
 	b := img.Bounds()
 	stride := 1
@@ -103,11 +118,11 @@ func blank(img image.Image) bool {
 	}
 	ink := 0
 	for _, l := range lum {
-		if d := int(l) - mode; d > 48 || d < -48 {
+		if d := int(l) - mode; d > 24 || d < -24 {
 			ink++
 		}
 	}
-	return ink < max(30, len(lum)/5000)
+	return ink < 8
 }
 
 // Clamp bounds a hosted response: cells longer than MaxCellRunes are cut and
