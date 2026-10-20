@@ -36,20 +36,20 @@ export function validate(t: Table): Issue[] {
         kind: 'ragged',
         row: i,
         col: 0,
-        message: `row has ${r.length} cells, expected ${width}`,
+        message: `This row has ${r.length} cells; the table has ${width} columns.`,
       })
   })
 
   types.forEach((ct, c) => {
     if (t.rows.every(r => (r[c] ?? '').trim() === '')) {
-      issues.push({ kind: 'empty-column', row: -1, col: c, message: 'column is empty' })
+      issues.push({ kind: 'empty-column', row: -1, col: c, message: 'This column is empty.' })
     }
     for (const i of ct.outliers) {
       issues.push({
         kind: 'type',
         row: i + t.headerRows,
         col: c,
-        message: `not a ${ct.kind} like the rest of the column`,
+        message: `Not a ${ct.kind}, unlike the rest of this column.`,
       })
     }
   })
@@ -87,7 +87,7 @@ export function validate(t: Table): Issue[] {
           kind: 'total',
           row: i,
           col: c,
-          message: `total ${stated.value.toLocaleString()} ≠ sum of rows above ${round(sum).toLocaleString()}`,
+          message: `Total ${stated.value.toLocaleString()} doesn’t match the rows above, which add up to ${round(sum).toLocaleString()}.`,
         })
       }
     })
@@ -101,7 +101,7 @@ export function validate(t: Table): Issue[] {
           kind: 'low-confidence',
           row: i,
           col: c,
-          message: `OCR confidence ${Math.round(conf)}%`,
+          message: `OCR was only ${Math.round(conf)}% sure of this cell. Check it against the page.`,
         })
       }
     }),

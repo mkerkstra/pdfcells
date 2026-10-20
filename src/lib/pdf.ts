@@ -56,7 +56,10 @@ export async function renderPage(page: PDFPageProxy, targetPx = 2000): Promise<R
 export async function toJpegBase64(canvas: HTMLCanvasElement, quality = 0.85): Promise<string> {
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
-      b => (b ? resolve(b) : reject(new Error('could not encode page'))),
+      b =>
+        b
+          ? resolve(b)
+          : reject(new Error('This page couldn’t be turned into an image. Try again.')),
       'image/jpeg',
       quality,
     ),

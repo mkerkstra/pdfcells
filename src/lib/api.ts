@@ -75,6 +75,35 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What the user sees for each server error code: what happened and what to do.
+ * The server's own text is a developer message; it is only shown for codes
+ * that carry request-specific detail.
+ */
+const ERROR_COPY: Record<string, string> = {
+  hosted_disabled: 'AI isn’t set up on this server. Add your own Anthropic API key in Settings.',
+  sign_in: 'Sign in to use AI, or add your own Anthropic API key in Settings.',
+  insufficient_credits: 'Not enough credits for this page. Add credits, or read it with OCR.',
+  refused: 'The AI model declined to read this page. Try OCR, or a different AI quality.',
+  truncated: 'This page has more table text than AI can return at once. Read it with OCR instead.',
+  timeout: 'The AI model took too long on this page. Try again, or choose Fast.',
+  bad_key: 'Anthropic rejected your API key. Check it in Settings.',
+  overloaded: 'Anthropic is busy right now. Wait a moment and try again.',
+  model_rejected: 'Anthropic couldn’t process this page. Try again, or read it with OCR.',
+  payments_disabled: 'Buying credits isn’t available on this server.',
+  checkout: 'Checkout couldn’t start. Try again in a moment.',
+  too_large: 'This page image is too large to send. Read it with OCR instead.',
+  internal: 'Something went wrong on our server. Try again in a moment.',
+}
+
+function errorCopy(status: number, code: string | undefined): string {
+  const known = code ? ERROR_COPY[code] : undefined
+  if (known) return known
+  if (status === 0) return 'Couldn’t reach the server. Check your connection and try again.'
+  if (status >= 500) return `The server had a problem (error ${status}). Try again in a moment.`
+  return `The request failed (error ${status}). Try again, or read the page with OCR.`
+}
+
 let tokenGetter: (() => Promise<string | null>) | null = null
 
 /** Set by the auth layer once Clerk is loaded. */
@@ -114,16 +143,15 @@ async function request<T>(
     const token = await tokenGetter()
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
-  const res = await fetch(path, { ...init, headers })
+  const res = await fetch(path, { ...init, headers }).catch((e: unknown) => {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
+    throw new ApiError(0, 'network', errorCopy(0, 'network'))
+  })
   const body: unknown = await res.json().catch(() => null)
   if (!res.ok) {
     const err =
       typeof body === 'object' && body !== null ? (body as { error?: string; code?: string }) : {}
-    throw new ApiError(
-      res.status,
-      err.code ?? 'http',
-      err.error ?? `Request failed (${res.status})`,
-    )
+    throw new ApiError(res.status, err.code ?? 'http', errorCopy(res.status, err.code))
   }
   return body as T
 }
