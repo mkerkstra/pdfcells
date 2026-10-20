@@ -28,10 +28,23 @@ export function fromLocal(t: LocalTable): Table {
   }
 }
 
+/** Two tables on one page never share a name: they become two sheets. */
+export function distinctTitles(titles: string[]): string[] {
+  const seen = new Map<string, number>()
+  return titles.map(t => {
+    const key = t.trim().toLowerCase()
+    if (!key) return t
+    const n = (seen.get(key) ?? 0) + 1
+    seen.set(key, n)
+    return n === 1 ? t : `${t} (${n})`
+  })
+}
+
 function fromApi(r: ExtractResponse): Table[] {
-  return r.tables.map(t => ({
+  const titles = distinctTitles(r.tables.map(t => t.title))
+  return r.tables.map((t, i) => ({
     id: newId(),
-    title: t.title,
+    title: titles[i] ?? t.title,
     headerRows: t.header_rows,
     rows: t.rows,
     notes: t.notes,

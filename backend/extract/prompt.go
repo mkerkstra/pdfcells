@@ -18,6 +18,7 @@ Rules:
 - header_rows is how many leading rows are column headers (0 if none). Multi-level headers count every level.
 - A page can hold several separate tables; return each one. Repeated page headers/footers, page numbers and running titles are not tables.
 - Key-value blocks (invoices, forms, statements) become a two-column table of label and value.
+- Give every table its own descriptive title, used as its sheet name: e.g. "Invoice details" for a header block and "Line items" for the items, never the same title twice. Use the caption printed above a table when there is one.
 - If the page has no tabular or key-value content, return an empty tables array and page_kind "text" or "blank".
 - Put anything uncertain (illegible digits, a guessed column boundary, cut-off content) in warnings, naming the table and row.`
 
