@@ -508,12 +508,16 @@ def protected():
 def statement_dc(plant: bool):
     """Debit/credit/balance statement; the misread variant prints one debit with a wrong digit."""
     name = "statement-dc-misread.pdf" if plant else "statement-dc.pdf"
-    rng = random.Random(21)
+    _statement_dc(name, seed=21, month=5, last_day=31, opening=2450.00, plant=plant)
+
+
+def _statement_dc(name: str, seed: int, month: int, last_day: int, opening: float, plant: bool):
+    rng = random.Random(seed)
     c = canvas.Canvas(str(out / name), pagesize=letter, invariant=1)
     c.setFont("Helvetica-Bold", 15)
     c.drawString(50, 740, "Harbor Credit Union - Share draft account")
     c.setFont("Helvetica", 9.5)
-    c.drawString(50, 724, "Statement period 05/01/2026 to 05/31/2026")
+    c.drawString(50, 724, f"Statement period {month:02d}/01/2026 to {month:02d}/{last_day:02d}/2026")
     xs = [50, 115, 330, 410, 500]
     y = 690
     c.setFont("Helvetica-Bold", 9.5)
@@ -521,7 +525,7 @@ def statement_dc(plant: bool):
     c.drawString(xs[1], y, "Description")
     for x, h in zip(xs[2:], ["Debit", "Credit", "Balance"]):
         c.drawRightString(x + 60, y, h)
-    opening = bal = 2450.00
+    bal = opening
     debits = credits = 0.0
     c.setFont("Helvetica", 9.5)
     for i in range(18):
@@ -536,7 +540,7 @@ def statement_dc(plant: bool):
         shown = amt
         if plant and i == 9:
             shown = round(amt + 5, 2)  # one digit misread, e.g. 82.51 -> 87.51
-        c.drawString(xs[0], y, f"05/{i + 2:02d}/2026")
+        c.drawString(xs[0], y, f"{month:02d}/{i + 2:02d}/2026")
         c.drawString(xs[1], y, ("Payroll deposit" if credit else f"Card purchase {4100 + i}"))
         c.drawRightString(xs[3 if credit else 2] + 60, y, f"{shown:,.2f}")
         c.drawRightString(xs[4] + 60, y, f"{bal:,.2f}")
@@ -549,6 +553,15 @@ def statement_dc(plant: bool):
         c.drawString(50, y, label)
         c.drawRightString(300, y, f"{v:,.2f}")
     c.save()
+
+
+def batch_statements():
+    """fixtures/batch/: five statements in one layout (one with a misread credit) and one invoice."""
+    (out / "batch").mkdir(parents=True, exist_ok=True)
+    months = [(1, 31, 1820.40), (2, 28, 2310.75), (3, 31, 1975.10), (4, 30, 2604.33), (5, 31, 2188.90)]
+    for k, (month, last_day, opening) in enumerate(months):
+        _statement_dc(f"batch/statement-{k + 1:02d}.pdf", seed=100 + k, month=month, last_day=last_day, opening=opening, plant=k == 3)
+    _invoice("batch/invoice-01.pdf", "INVOICE #6001", INVOICE_LINES)
 
 
 def _invoice(name: str, title: str, lines, wrong_line=None, total_delta=0.0):
@@ -630,7 +643,7 @@ if __name__ == "__main__":
         "financial_report": financial_report, "mixed": mixed, "dense_wide": dense_wide, "side_by_side": side_by_side,
         "no_header": no_header, "protected": protected,
         "statement_dc": lambda: (statement_dc(False), statement_dc(True)), "invoice_lines": invoice_lines,
-        "invoice_tie": invoice_tie, "report_fy": report_fy,
+        "invoice_tie": invoice_tie, "report_fy": report_fy, "batch_statements": batch_statements,
     }
     # Optional names after the output dir regenerate only those fixtures.
     for name in sys.argv[2:] or fixtures:

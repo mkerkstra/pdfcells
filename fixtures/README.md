@@ -46,3 +46,12 @@ These exercise the deterministic checks in `src/lib/checks/` (`review()` / `revi
 | `report-fy.pdf` | Q1–Q4 + FY + Growth %, one FY printed `233,600` (sum 232,700) | One `crossfoot` issue on that FY, expected 232,700 |
 
 Existing fixtures double as false-positive guards: `statement.pdf` ties its running balance on both pages, `dense-wide.pdf` and both `mixed-document.pdf` tables cross-foot, `eu-invoice.pdf` checks its line totals and ties Nettobetrag + USt. to Gesamtbetrag, and `financial-report.pdf` foots without mistaking its quarters for addends.
+
+## Batch
+
+`batch_statements` writes `fixtures/batch/` for the batch conversion tests (`src/batch.corpus.test.ts`): five Harbor Credit Union statements in the `statement-dc.pdf` layout, one month each with different amounts, plus one invoice in the `invoice-lines.pdf` layout. Byte-stable (`invariant=1`).
+
+| File | What it plants | Expected result |
+|---|---|---|
+| `batch/statement-01.pdf` … `05.pdf` | Same letterhead and columns, different periods and amounts; `statement-04.pdf` prints one credit 5.00 too high (balances unchanged) | The five group together; only `statement-04.pdf` needs a look |
+| `batch/invoice-01.pdf` | A different document type | Its own group, ready on its own |
