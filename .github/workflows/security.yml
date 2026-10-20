@@ -42,6 +42,7 @@ jobs:
 
   codeql:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write # upload results to code scanning
@@ -50,8 +51,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Manual, not autobuild: autobuild runs `make`, whose default target
+          # (`dev`) starts the servers and never exits.
           - language: go
-            build-mode: autobuild
+            build-mode: manual
           - language: javascript-typescript
             build-mode: none
           - language: actions
@@ -69,6 +72,8 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+      - if: matrix.build-mode == 'manual'
+        run: go build ./...
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: /language:${{ matrix.language }}

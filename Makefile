@@ -1,4 +1,9 @@
-.PHONY: dev api web qg qg-go qg-ts fmt
+.PHONY: help dev api web qg qg-go qg-ts fmt
+
+# Default target prints help: tools that run a bare `make` (CI autobuilders)
+# must never start the long-running dev servers.
+help:
+	@echo 'make dev | api | web | qg | qg-go | qg-ts | fmt'
 
 dev: ## run API (:8080) and web (:5173) together
 	@trap 'kill 0' INT; go run ./cmd/server & pnpm dev & wait
