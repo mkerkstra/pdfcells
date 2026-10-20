@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terms of Service | PDFCells</title>
+    <meta name="description" content="Terms for using PDFCells and buying AI credits." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root { --ink: #1d2622; --muted: #5b6863; --paper: #fafcfb; --accent: #127a4b; }
+      @media (prefers-color-scheme: dark) { :root { --ink: #e7eeea; --muted: #a2b0aa; --paper: #121a16; --accent: #4cc38a; } }
+      body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      main { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+      a { color: var(--accent); }
+      h1 { font-size: 1.75rem; margin: 0.5rem 0 0.25rem; }
+      h2 { font-size: 1.125rem; margin: 2rem 0 0.25rem; }
+      .muted { color: var(--muted); font-size: 0.875rem; }
+      li { margin: 0.25rem 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/">← PDFCells</a>
+      <h1>Terms of Service</h1>
+      <p class="muted">Last updated October 20, 2026</p>
+
+      <p>By using PDFCells (pdfcells.com) you agree to these terms. They are written to be short and readable. If you don't agree, please don't use the service.</p>
+
+      <h2>The service</h2>
+      <p>PDFCells converts tables in PDF files into spreadsheets. The free engines run in your browser. Optional AI conversion sends individual pages to Anthropic's Claude API, as described in the <a href="/privacy">Privacy Policy</a>. Features, models and limits (including the daily free AI pages) may change.</p>
+
+      <h2>Check your output</h2>
+      <p>Extraction, OCR and AI can all make mistakes, especially with scans and unusual layouts. PDFCells flags cells that look suspect, but it cannot guarantee that every value is correct. <strong>Review the spreadsheet before relying on it</strong>, especially for financial, tax, legal or medical use.</p>
+
+      <h2>Your content</h2>
+      <p>You keep all rights to your documents and the spreadsheets made from them. Only upload or send to AI documents you have the right to process. We claim no ownership of your content.</p>
+
+      <h2>Credits and payments</h2>
+      <ul>
+        <li>Credits are prepaid, never expire, and are used only for AI pages. Each AI page costs Anthropic's token price for the model used, plus 15%. Every charge is itemized in your account.</li>
+        <li>Before each AI page, credits are held for the most that page could cost. After the page, you are charged its exact cost and the rest of the hold is released.</li>
+        <li>Payments are processed by Stripe as merchant of record. Taxes are calculated at checkout. Refunds follow Stripe's merchant-of-record policies and applicable consumer law, including any statutory cooling-off period. If a payment is refunded, the corresponding unspent credits are removed.</li>
+        <li>Credits have no cash value and can't be transferred.</li>
+      </ul>
+
+      <h2>Acceptable use</h2>
+      <p>Don't use PDFCells to break the law, to infringe others' rights, to process content you aren't allowed to process, or to abuse the free tier. Examples of abuse are automated scraping, creating multiple accounts to multiply free pages, and attempts to disrupt the service. We may suspend accounts that do.</p>
+
+      <h2>Bring your own key</h2>
+      <p>If you use your own Anthropic API key, your use of the model is billed by Anthropic and governed by your agreement with Anthropic.</p>
+
+      <h2>No warranty and limitation of liability</h2>
+      <p>PDFCells is provided "as is" without warranties of any kind. To the extent permitted by law, our total liability for any claim is limited to the amount you paid for credits in the 12 months before the claim.</p>
+
+      <h2>Open source</h2>
+      <p>The PDFCells source code is published at <a href="https://github.com/mkerkstra/pdfcells">github.com/mkerkstra/pdfcells</a> under the MIT License. These terms cover the hosted service at pdfcells.com.</p>
+
+      <h2>Trademarks</h2>
+      <p>Microsoft Excel is a trademark of Microsoft Corporation. PDFCells is not affiliated with or endorsed by Microsoft.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about these terms: open an issue at <a href="https://github.com/mkerkstra/pdfcells/issues">github.com/mkerkstra/pdfcells</a>.</p>
+    </main>
+  </body>
+</html>

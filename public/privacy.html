@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy | PDFCells</title>
+    <meta name="description" content="How PDFCells handles your PDFs, account and payment data." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root { --ink: #1d2622; --muted: #5b6863; --paper: #fafcfb; --accent: #127a4b; }
+      @media (prefers-color-scheme: dark) { :root { --ink: #e7eeea; --muted: #a2b0aa; --paper: #121a16; --accent: #4cc38a; } }
+      body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      main { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+      a { color: var(--accent); }
+      h1 { font-size: 1.75rem; margin: 0.5rem 0 0.25rem; }
+      h2 { font-size: 1.125rem; margin: 2rem 0 0.25rem; }
+      .muted { color: var(--muted); font-size: 0.875rem; }
+      li { margin: 0.25rem 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/">← PDFCells</a>
+      <h1>Privacy Policy</h1>
+      <p class="muted">Last updated October 20, 2026</p>
+
+      <p>PDFCells (pdfcells.com) converts tables in PDF files into spreadsheets. It is built to keep your documents on your own device. This page explains exactly what leaves it and why.</p>
+
+      <h2>Your PDFs</h2>
+      <ul>
+        <li><strong>By default nothing is uploaded.</strong> Opening a PDF, the pre-check, reading text-based pages, OCR on scans, editing and exporting all run in your browser.</li>
+        <li><strong>Pages you send to AI.</strong> When you choose AI for a page (or "Fix with AI" on a table), that single page is sent to our server as a rendered image, together with the page's text and any tables you are correcting. Our server forwards it to Anthropic's Claude API, returns the result to your browser, and does not store the page, its text or the result.</li>
+        <li>Anthropic processes these requests under its commercial API terms, which do not permit using API inputs or outputs to train models. Anthropic may retain API data for a limited period for safety and abuse monitoring; see <a href="https://www.anthropic.com/legal/privacy">Anthropic's privacy policy</a>.</li>
+        <li>If you add your own Anthropic API key, it is stored only in your browser's local storage and sent with each AI request. Our server uses it for that request and never stores or logs it.</li>
+      </ul>
+
+      <h2>Your account</h2>
+      <p>Signing in is optional. It is needed only for free AI pages and credits. Sign-in is provided by <a href="https://clerk.com/legal/privacy">Clerk</a>, which stores your email address and, if you use Google or another provider, the basic profile that provider shares (name, email, avatar). We keep an internal account ID linked to your credit balance and usage history.</p>
+
+      <h2>Payments</h2>
+      <p>Credits are sold through Stripe Managed Payments. <strong>Stripe is the merchant of record</strong>: it processes your payment, calculates and remits sales tax and VAT, and handles receipts, fraud screening and disputes under <a href="https://stripe.com/privacy">Stripe's privacy policy</a>. We never see or store your card details. We store the Stripe checkout and payment IDs for each top-up so credits can be added once, and reversed if a payment is refunded.</p>
+
+      <h2>Usage records</h2>
+      <p>For every AI page we record the time, the model used, the number of input and output tokens, Anthropic's cost and the amount charged. These records make up the itemized history shown in your account and are kept for as long as your account exists. They never contain document content.</p>
+
+      <h2>Logs and hosting</h2>
+      <p>The site is hosted on <a href="https://vercel.com/legal/privacy-policy">Vercel</a>, and the database runs on Neon (Postgres). Like any web server, Vercel keeps short-lived request logs (IP address, user agent, URL, status). We do not log document content, page images or API keys. We use no advertising or third-party tracking cookies. The only cookies are Clerk's sign-in session cookies, plus a few local-storage preferences such as your chosen AI tier.</p>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>Use PDFCells without an account and without AI. Nothing leaves your device.</li>
+        <li>Ask us to delete your account. We will delete your sign-in account, account ID, balance and usage history, except payment records the law requires us to keep.</li>
+        <li>Ask what we hold about you, or request a correction, by opening an issue at <a href="https://github.com/mkerkstra/pdfcells/issues">github.com/mkerkstra/pdfcells</a>.</li>
+      </ul>
+
+      <h2>Changes</h2>
+      <p>If this policy changes in a way that matters, we will update the date above and say what changed in the project's public repository.</p>
+    </main>
+  </body>
+</html>
