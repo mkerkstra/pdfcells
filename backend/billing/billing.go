@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/stripe/stripe-go/v87"
 	"github.com/stripe/stripe-go/v87/webhook"
@@ -32,16 +33,51 @@ type Billing struct {
 	client        *stripe.Client
 	webhookSecret string
 	appURL        string
+	// prices maps a pack's cents to a catalog Price ID; packs without one
+	// are created inline with the same tax code.
+	prices map[int64]string
 }
 
-func New(secretKey, webhookSecret, appURL string) *Billing {
-	return &Billing{client: stripe.NewClient(secretKey), webhookSecret: webhookSecret, appURL: appURL}
+func New(secretKey, webhookSecret, appURL string, prices map[int64]string) *Billing {
+	return &Billing{client: stripe.NewClient(secretKey), webhookSecret: webhookSecret, appURL: appURL, prices: prices}
+}
+
+// ParsePriceIDs reads "1000=price_a,2500=price_b" (STRIPE_PRICE_IDS).
+func ParsePriceIDs(s string) (map[int64]string, error) {
+	out := map[int64]string{}
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		cents, err := strconv.ParseInt(strings.TrimSpace(k), 10, 64)
+		if !ok || err != nil || !slices.Contains(TopupAmountsCents, cents) || !strings.HasPrefix(strings.TrimSpace(v), "price_") {
+			return nil, fmt.Errorf("STRIPE_PRICE_IDS: bad entry %q", pair)
+		}
+		out[cents] = strings.TrimSpace(v)
+	}
+	return out, nil
 }
 
 // Checkout creates a hosted Managed Payments Checkout session for a credit pack.
 func (b *Billing) Checkout(ctx context.Context, userID string, amountCents int64) (string, error) {
 	if !slices.Contains(TopupAmountsCents, amountCents) {
 		return "", fmt.Errorf("amount must be one of %v cents", TopupAmountsCents)
+	}
+	item := &stripe.CheckoutSessionCreateLineItemParams{Quantity: stripe.Int64(1)}
+	if id, ok := b.prices[amountCents]; ok {
+		item.Price = stripe.String(id)
+	} else {
+		item.PriceData = &stripe.CheckoutSessionCreateLineItemPriceDataParams{
+			Currency:   stripe.String("usd"),
+			UnitAmount: stripe.Int64(amountCents),
+			ProductData: &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{
+				Name:        stripe.String(fmt.Sprintf("PDFCells AI credits ($%d)", amountCents/100)),
+				Description: stripe.String("Prepaid credits for AI page conversions. Credits never expire."),
+				TaxCode:     stripe.String(taxCode),
+			},
+		}
 	}
 	s, err := b.client.V1CheckoutSessions.Create(ctx, &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModePayment)),
@@ -53,18 +89,7 @@ func (b *Billing) Checkout(ctx context.Context, userID string, amountCents int64
 		Metadata:   map[string]string{"user_id": userID, metaCredit: strconv.FormatInt(amountCents, 10)},
 		SuccessURL: stripe.String(b.appURL + "/?topup=success"),
 		CancelURL:  stripe.String(b.appURL + "/?topup=cancelled"),
-		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{{
-			Quantity: stripe.Int64(1),
-			PriceData: &stripe.CheckoutSessionCreateLineItemPriceDataParams{
-				Currency:   stripe.String("usd"),
-				UnitAmount: stripe.Int64(amountCents),
-				ProductData: &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{
-					Name:        stripe.String(fmt.Sprintf("PDFCells AI credits ($%d)", amountCents/100)),
-					Description: stripe.String("Prepaid credits for AI page conversions. Credits never expire."),
-					TaxCode:     stripe.String(taxCode),
-				},
-			},
-		}},
+		LineItems:  []*stripe.CheckoutSessionCreateLineItemParams{item},
 	})
 	if err != nil {
 		return "", err

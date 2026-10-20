@@ -33,6 +33,7 @@ type Config struct {
 	ClerkPublishableKey string
 	StripeSecretKey     string
 	StripeWebhookSecret string
+	StripePriceIDs      string
 	AppURL              string
 	MarkupBps           int64
 	FreePagesPerDay     int
@@ -47,6 +48,7 @@ func ConfigFromEnv() Config {
 		ClerkPublishableKey: envOr("CLERK_PUBLISHABLE_KEY", os.Getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")), // the Vercel Clerk integration uses the Next.js name
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		StripePriceIDs:      os.Getenv("STRIPE_PRICE_IDS"),
 		AppURL:              envOr("APP_URL", "http://localhost:5173"),
 		MarkupBps:           int64(envInt("CREDIT_MARKUP_BPS", 1500)),
 		FreePagesPerDay:     envInt("FREE_PAGES_PER_DAY", 25),
@@ -78,7 +80,12 @@ func New(cfg Config) *Server {
 		clerk.SetKey(cfg.ClerkSecretKey)
 	}
 	if cfg.Payments() {
-		s.billing = billing.New(cfg.StripeSecretKey, cfg.StripeWebhookSecret, cfg.AppURL)
+		prices, err := billing.ParsePriceIDs(cfg.StripePriceIDs)
+		if err != nil {
+			// Inline pricing still works; a typo here shouldn't take payments down.
+			s.log.Error("ignoring STRIPE_PRICE_IDS", "err", err)
+		}
+		s.billing = billing.New(cfg.StripeSecretKey, cfg.StripeWebhookSecret, cfg.AppURL, prices)
 	}
 	return s
 }
