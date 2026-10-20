@@ -197,11 +197,11 @@ func (s *Store) Release(ctx context.Context, userID string, id int64) error {
 }
 
 // CreditTopup records a paid Checkout session exactly once.
-func (s *Store) CreditTopup(ctx context.Context, userID, sessionID string, amount int64) (credited bool, err error) {
+func (s *Store) CreditTopup(ctx context.Context, userID, sessionID, paymentIntent string, amount int64) (credited bool, err error) {
 	err = s.tx(ctx, userID, func(tx pgx.Tx, _ int64) error {
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO ledger (user_id, kind, amount_micros, stripe_session_id)
-			VALUES ($1, 'topup', $2, $3) ON CONFLICT (stripe_session_id) DO NOTHING`, userID, amount, sessionID)
+			INSERT INTO ledger (user_id, kind, amount_micros, stripe_session_id, stripe_payment_intent)
+			VALUES ($1, 'topup', $2, $3, NULLIF($4, '')) ON CONFLICT (stripe_session_id) DO NOTHING`, userID, amount, sessionID, paymentIntent)
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
@@ -210,6 +210,44 @@ func (s *Store) CreditTopup(ctx context.Context, userID, sessionID string, amoun
 		return err
 	})
 	return credited, err
+}
+
+// ReverseTopup takes back the share of a top-up that Stripe has refunded.
+// refunded/total is the cumulative refunded fraction of the charge, so
+// replayed or incremental refund events converge on the same result. The
+// balance may go negative if the credits were already spent; that blocks
+// further paid pages until the next top-up.
+func (s *Store) ReverseTopup(ctx context.Context, paymentIntent string, refunded, total int64) (reversed int64, err error) {
+	if total <= 0 || paymentIntent == "" {
+		return 0, nil
+	}
+	var userID string
+	var credited int64
+	err = s.pool.QueryRow(ctx, `SELECT user_id, amount_micros FROM ledger WHERE kind = 'topup' AND stripe_payment_intent = $1`, paymentIntent).Scan(&userID, &credited)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	err = s.tx(ctx, userID, func(tx pgx.Tx, _ int64) error {
+		var already int64
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(-SUM(amount_micros), 0) FROM ledger WHERE kind = 'refund' AND stripe_payment_intent = $1`, paymentIntent).Scan(&already); err != nil {
+			return err
+		}
+		target := credited * min(refunded, total) / total
+		reversed = target - already
+		if reversed <= 0 {
+			reversed = 0
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO ledger (user_id, kind, amount_micros, stripe_payment_intent) VALUES ($1, 'refund', $2, $3)`, userID, -reversed, paymentIntent); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE accounts SET balance_micros = balance_micros - $2 WHERE user_id = $1`, userID, reversed)
+		return err
+	})
+	return reversed, err
 }
 
 // Entry is one ledger row for display.

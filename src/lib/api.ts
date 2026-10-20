@@ -19,7 +19,7 @@ export interface AppConfig {
 }
 
 export interface LedgerEntry {
-  kind: 'topup' | 'usage' | 'free' | 'adjust'
+  kind: 'topup' | 'usage' | 'free' | 'adjust' | 'refund'
   amount_micros: number
   anthropic_cost_micros: number
   model: string

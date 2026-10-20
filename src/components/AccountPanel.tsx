@@ -11,6 +11,7 @@ const KIND: Record<string, string> = {
   usage: 'AI page',
   free: 'Free AI page',
   adjust: 'Adjustment',
+  refund: 'Refund',
 }
 
 export function AccountPanel({ onClose }: { onClose: () => void }) {

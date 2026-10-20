@@ -14,7 +14,7 @@
 |---|---|
 | PDF text, in-browser OCR | Free, unlimited, on your device |
 | AI, signed in | 25 Fast (Claude Haiku 5.5) pages per day free |
-| AI with credits | Anthropic's exact token cost **+ 15%** (covers Stripe fees), prepaid in $5 / $10 / $25 packs. Every charge is itemised with token counts |
+| AI with credits | Anthropic's exact token cost **+ 15%** (covers payment and merchant-of-record fees), prepaid in $10 / $25 / $50 packs. Every charge is itemised with token counts |
 | AI with your own Anthropic key | Billed by Anthropic directly. The key stays in your browser's storage and is sent per request, never stored server-side |
 
 Tiers: **Fast** = `claude-haiku-5-5`, **Accurate** = `claude-sonnet-5-5`, **Max** = `claude-opus-5-5`.
@@ -22,7 +22,7 @@ Tiers: **Fast** = `claude-haiku-5-5`, **Accurate** = `claude-sonnet-5-5`, **Max*
 ## Stack
 
 - **Web**: Vite + React 19 + TypeScript (strict), Tailwind 4, TanStack Query, pdf.js, tesseract.js, write-excel-file, Clerk. Lint and format with oxlint and oxfmt, tests with vitest.
-- **API**: Go, chi, and the Anthropic Go SDK with structured outputs (JSON schema). Database access is pgx with golang-migrate, plus Stripe Checkout. It deploys as a single Vercel Go function (`api/index.go`), and every `/api/*` path is rewritten to it.
+- **API**: Go, chi, and the Anthropic Go SDK with structured outputs (JSON schema). Database access is pgx with golang-migrate, plus Stripe Checkout with Managed Payments (Stripe is merchant of record for sales tax and VAT). It deploys as a single Vercel Go function (`api/index.go`), and every `/api/*` path is rewritten to it.
 - **DB**: Postgres, used only for the credits ledger. Money is stored as int64 micro-dollars. A paid page reserves a worst-case hold under a row lock and then settles to the exact cost, so concurrent requests can't overspend.
 
 ```

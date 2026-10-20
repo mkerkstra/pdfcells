@@ -28,7 +28,7 @@ func TestTopupIsIdempotent(t *testing.T) {
 	s, u := open(t)
 	ctx := context.Background()
 	for range 2 {
-		if _, err := s.CreditTopup(ctx, u, "cs_"+u, 5_000_000); err != nil {
+		if _, err := s.CreditTopup(ctx, u, "cs_"+u, "pi_"+u, 5_000_000); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -44,7 +44,7 @@ func TestTopupIsIdempotent(t *testing.T) {
 func TestHoldSettleRefundsDifference(t *testing.T) {
 	s, u := open(t)
 	ctx := context.Background()
-	if _, err := s.CreditTopup(ctx, u, "cs_"+u, 1_000_000); err != nil {
+	if _, err := s.CreditTopup(ctx, u, "cs_"+u, "pi_"+u, 1_000_000); err != nil {
 		t.Fatal(err)
 	}
 	id, err := s.ReservePaid(ctx, u, 400_000)
@@ -63,7 +63,7 @@ func TestHoldSettleRefundsDifference(t *testing.T) {
 func TestConcurrentHoldsCannotOverspend(t *testing.T) {
 	s, u := open(t)
 	ctx := context.Background()
-	if _, err := s.CreditTopup(ctx, u, "cs_"+u, 1_000_000); err != nil {
+	if _, err := s.CreditTopup(ctx, u, "cs_"+u, "pi_"+u, 1_000_000); err != nil {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
@@ -93,7 +93,7 @@ func TestConcurrentHoldsCannotOverspend(t *testing.T) {
 func TestReleaseRestoresBalance(t *testing.T) {
 	s, u := open(t)
 	ctx := context.Background()
-	if _, err := s.CreditTopup(ctx, u, "cs_"+u, 1_000_000); err != nil {
+	if _, err := s.CreditTopup(ctx, u, "cs_"+u, "pi_"+u, 1_000_000); err != nil {
 		t.Fatal(err)
 	}
 	id, err := s.ReservePaid(ctx, u, 250_000)
@@ -129,5 +129,30 @@ func TestFreeQuota(t *testing.T) {
 	a, _ := s.Account(ctx, u)
 	if a.FreeUsedToday != 2 || a.BalanceMicros != 0 {
 		t.Fatalf("free=%d balance=%d; free pages must never charge", a.FreeUsedToday, a.BalanceMicros)
+	}
+}
+
+func TestRefundReversesCreditsIdempotently(t *testing.T) {
+	s, u := open(t)
+	ctx := context.Background()
+	if _, err := s.CreditTopup(ctx, u, "cs_"+u, "pi_"+u, 10_000_000); err != nil {
+		t.Fatal(err)
+	}
+	// Half refunded (in the charge's own currency units), event delivered twice.
+	for range 2 {
+		if _, err := s.ReverseTopup(ctx, "pi_"+u, 460, 920); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, _ := s.Account(ctx, u)
+	if a.BalanceMicros != 5_000_000 {
+		t.Fatalf("balance %d after half refund, want 5000000", a.BalanceMicros)
+	}
+	// Then fully refunded.
+	if n, _ := s.ReverseTopup(ctx, "pi_"+u, 920, 920); n != 5_000_000 {
+		t.Fatalf("second reversal %d", n)
+	}
+	if n, _ := s.ReverseTopup(ctx, "pi_unknown", 1, 1); n != 0 {
+		t.Fatal("unknown payment intent must be a no-op")
 	}
 }

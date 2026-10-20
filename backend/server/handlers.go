@@ -220,7 +220,7 @@ func (s *Server) checkout(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, 1<<10, &body) {
 		return
 	}
-	url, err := s.billing.Checkout(r.Context(), uid, "", body.AmountCents)
+	url, err := s.billing.Checkout(r.Context(), uid, body.AmountCents)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "checkout", err.Error())
 		return
@@ -238,7 +238,7 @@ func (s *Server) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_body", "could not read body")
 		return
 	}
-	t, err := s.billing.ParseWebhook(payload, r.Header.Get("Stripe-Signature"))
+	ev, err := s.billing.ParseWebhook(payload, r.Header.Get("Stripe-Signature"))
 	if errors.Is(err, billing.ErrIgnored) {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -252,11 +252,23 @@ func (s *Server) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, r, "database unavailable", err)
 		return
 	}
-	credited, err := st.CreditTopup(r.Context(), t.UserID, t.SessionID, t.AmountMicros)
-	if err != nil {
-		s.internal(w, r, "could not credit top-up", err)
-		return
+	switch {
+	case ev.Topup != nil:
+		t := ev.Topup
+		credited, err := st.CreditTopup(r.Context(), t.UserID, t.SessionID, t.PaymentIntent, t.AmountMicros)
+		if err != nil {
+			s.internal(w, r, "could not credit top-up", err)
+			return
+		}
+		s.log.Info("topup", "user", t.UserID, "session", t.SessionID, "micros", t.AmountMicros, "new", credited)
+	case ev.Refund != nil:
+		f := ev.Refund
+		reversed, err := st.ReverseTopup(r.Context(), f.PaymentIntent, f.Refunded, f.Total)
+		if err != nil {
+			s.internal(w, r, "could not reverse refunded top-up", err)
+			return
+		}
+		s.log.Info("refund", "payment_intent", f.PaymentIntent, "reversed_micros", reversed)
 	}
-	s.log.Info("topup", "user", t.UserID, "session", t.SessionID, "micros", t.AmountMicros, "new", credited)
 	w.WriteHeader(http.StatusOK)
 }
