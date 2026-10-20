@@ -1,9 +1,13 @@
 // In-browser OCR (tesseract.js, WASM). The worker downloads its core and the
-// English model once (~15 MB, cached by the browser); pages never leave the device.
+// English model once (~7 MB, cached by the browser); pages never leave the device.
+// All three come from our own origin (see tesseractAssets in vite.config.ts), not
+// tesseract.js's jsDelivr defaults, so OCR works under a 'self'-only CSP.
 
 import type { Worker } from 'tesseract.js'
 
 import type { Word } from './types'
+
+declare const __TESSERACT_BASE__: string
 
 let worker: Promise<Worker> | null = null
 // The worker's logger is fixed at creation; route progress to the current page.
@@ -14,6 +18,11 @@ function getWorker(): Promise<Worker> {
   worker ??= import('tesseract.js')
     .then(({ createWorker }) =>
       createWorker('eng', 1, {
+        workerPath: `${__TESSERACT_BASE__}worker.min.js`,
+        // A blob: bootstrap would need worker-src blob:; load the script directly.
+        workerBlobURL: false,
+        corePath: __TESSERACT_BASE__,
+        langPath: __TESSERACT_BASE__,
         logger: m => {
           if (m.status === 'recognizing text') onProgress?.(m.progress)
         },
