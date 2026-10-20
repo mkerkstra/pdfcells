@@ -1,0 +1,107 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "PDFCells dependency policy. See docs/dependencies.md.",
+    "pnpm quarantines every release for 7 days (minimumReleaseAge + strict), so Renovate waits the same 7 days for npm.",
+    "pnpm-workspace.yaml allowBuilds is an allowlist: a new package that needs an install/build script is NOT approved by Renovate. A human must add it to allowBuilds in the PR."
+  ],
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "timezone": "America/Chicago",
+  "schedule": ["* 0-5 * * 1"],
+  "dependencyDashboard": true,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": ["dependencies"],
+  "rangeStrategy": "bump",
+  "prConcurrentLimit": 5,
+  "internalChecksFilter": "strict",
+  "platformAutomerge": true,
+  "pinDigests": true,
+  "postUpdateOptions": ["gomodTidy"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["dependencies", "security"],
+    "automerge": false
+  },
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 0-5 1 * *"],
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Match pnpm's 7-day quarantine; otherwise installs fail under minimumReleaseAgeStrict.",
+      "matchManagers": ["npm"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Go has no built-in quarantine; a short wait filters yanked and broken tags.",
+      "matchManagers": ["gomod"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Dev tooling in one PR, automerged when CI is green. Majors fall through to their own PRs.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev tooling",
+      "automerge": true
+    },
+    {
+      "description": "React runtime and its type packages move together; never automerged.",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "react",
+      "automerge": false
+    },
+    {
+      "description": "Renders every page, so a regression hits all users: always its own PR, manual merge.",
+      "matchPackageNames": ["pdfjs-dist"],
+      "automerge": false,
+      "addLabels": ["risky"],
+      "prBodyNotes": [
+        "pdfjs-dist renders every page. Run the PDF corpus tests and open a few real PDFs before merging."
+      ]
+    },
+    {
+      "description": "WASM OCR engine: its own PR, manual merge.",
+      "matchPackageNames": ["tesseract.js"],
+      "automerge": false,
+      "addLabels": ["risky"]
+    },
+    {
+      "description": "Auth SDKs: their own PR, manual merge.",
+      "matchPackageNames": ["@clerk/**", "github.com/clerk/clerk-sdk-go/**"],
+      "automerge": false,
+      "addLabels": ["auth"]
+    },
+    {
+      "description": "Go minor/patch in one PR, never automerged (runtime deps).",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin"],
+      "groupName": "go modules",
+      "automerge": false
+    },
+    {
+      "description": "Actions: one PR for version/digest bumps, automerged when CI is green.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "groupName": "github actions",
+      "automerge": true
+    },
+    {
+      "description": "Majors: separate PR per package, never grouped, never automerged. Last so it wins.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["major"]
+    }
+  ]
+}
