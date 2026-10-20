@@ -30,8 +30,8 @@ src/lib/layout.ts     words → lines → segments → table blocks → columns 
 src/lib/triage.ts     per-page classification + engine recommendation
 src/lib/cells.ts      number/date/percent parsing, per-column typing
 src/lib/validate.ts   checks that drive the correction UI
-internal/extract      one Claude call per page, structured output, exact per-model billing
-internal/store        ledger: topups, holds, settlement, free quota
+backend/extract       one Claude call per page, structured output, exact per-model billing
+backend/store         ledger: topups, holds, settlement, free quota
 ```
 
 ## Develop

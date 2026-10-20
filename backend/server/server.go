@@ -18,8 +18,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/mkerkstra/pdf2excel/internal/billing"
-	"github.com/mkerkstra/pdf2excel/internal/store"
+	"github.com/mkerkstra/pdf2excel/backend/billing"
+	"github.com/mkerkstra/pdf2excel/backend/store"
 )
 
 // Config is read from the environment. Each hosted feature switches on only

@@ -9,10 +9,10 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/mkerkstra/pdf2excel/internal/billing"
-	"github.com/mkerkstra/pdf2excel/internal/extract"
-	"github.com/mkerkstra/pdf2excel/internal/pricing"
-	"github.com/mkerkstra/pdf2excel/internal/store"
+	"github.com/mkerkstra/pdf2excel/backend/billing"
+	"github.com/mkerkstra/pdf2excel/backend/extract"
+	"github.com/mkerkstra/pdf2excel/backend/pricing"
+	"github.com/mkerkstra/pdf2excel/backend/store"
 )
 
 type tierInfo struct {
