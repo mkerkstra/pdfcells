@@ -32,6 +32,8 @@
     }
   },
   "include": [
-    "src/corpus.test.ts"
+    "src/corpus.test.ts",
+    "src/images.test.ts",
+    "src/types"
   ]
 }
