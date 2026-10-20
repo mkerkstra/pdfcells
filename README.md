@@ -59,4 +59,4 @@ uv run --with reportlab --with pillow --with pypdfium2 python fixtures/make_fixt
 
 ## License
 
-MIT
+MIT. Third-party code keeps its own license: notably [libheif-js](https://github.com/catdad-experiments/libheif-js) (LGPL-3.0), used unmodified as a separately loaded module for HEIC photos, and [tesseract.js](https://github.com/naptha/tesseract.js) with its English model (Apache-2.0), self-hosted under `/tesseract/`.
