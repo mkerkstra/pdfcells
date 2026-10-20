@@ -117,7 +117,9 @@ export function TriageView({
               <>
                 Checked {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}.{' '}
                 {source.kind === 'image'
-                  ? `${doc.pages.length === 1 ? 'It’s an image' : 'They’re images'}, so ${doc.pages.length === 1 ? 'it’s' : 'they’re'} read from the pixels.`
+                  ? doc.pages.length === 1
+                    ? 'It’s an image, so it’s read with OCR or AI.'
+                    : 'They’re images, so they’re read with OCR or AI.'
                   : tables === 0
                     ? 'No tables found in the PDF text.'
                     : `Found ${tables} ${tables === 1 ? 'table' : 'tables'} in the PDF text.`}
