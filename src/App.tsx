@@ -29,7 +29,7 @@ function Shell() {
       <header className='sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-line bg-card/90 px-4 backdrop-blur'>
         <a href='/' className='flex items-center gap-2 font-semibold tracking-tight'>
           <img src='/favicon.svg' alt='' className='size-5' />
-          pdf2excel
+          PDFCells
         </a>
         <span className='hidden text-xs text-muted sm:inline'>
           Your PDF stays in your browser unless you send a page to AI.

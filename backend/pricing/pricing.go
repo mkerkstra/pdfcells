@@ -1,6 +1,6 @@
 // Package pricing converts Anthropic token usage into micro-dollars (µ$).
 //
-// All money in pdf2excel is int64 micro-dollars: 1 USD = 1_000_000 µ$.
+// All money in PDFCells is int64 micro-dollars: 1 USD = 1_000_000 µ$.
 // Rates are µ$ per million tokens, so cost = ceil(tokens × rate / 1e6).
 package pricing
 

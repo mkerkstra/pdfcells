@@ -82,7 +82,7 @@ export function setTokenGetter(fn: (() => Promise<string | null>) | null) {
   tokenGetter = fn
 }
 
-const BYOK_STORAGE = 'pdf2excel.byok'
+const BYOK_STORAGE = 'pdfcells.byok'
 
 export function getByok(): string {
   try {

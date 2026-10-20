@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/mkerkstra/pdf2excel/migrations"
+	"github.com/mkerkstra/pdfcells/migrations"
 )
 
 // ErrInsufficientCredits means the balance can't cover the hold.
@@ -30,9 +30,14 @@ const holdTTL = 15 * time.Minute
 
 type Store struct{ pool *pgxpool.Pool }
 
-// Open connects and applies pending migrations.
-func Open(ctx context.Context, databaseURL string) (*Store, error) {
-	if err := migrateUp(databaseURL); err != nil {
+// Open applies pending migrations over migrateURL, then pools databaseURL.
+// Migrations take a session advisory lock, which a transaction-mode pooler
+// (Neon's default DATABASE_URL) can't hold, so pass the direct URL there.
+func Open(ctx context.Context, databaseURL, migrateURL string) (*Store, error) {
+	if migrateURL == "" {
+		migrateURL = databaseURL
+	}
+	if err := migrateUp(migrateURL); err != nil {
 		return nil, err
 	}
 	cfg, err := pgxpool.ParseConfig(databaseURL)

@@ -1,0 +1,22 @@
+# PDFCells
+
+> PDFCells (https://pdfcells.com) is a free PDF to Excel converter that runs in the browser. It turns tables in PDFs (bank statements, invoices, financial reports, scanned documents) into .xlsx spreadsheets, and lets the user check and correct every cell before downloading.
+
+## How it works
+- Pre-check: each page is classified as digital text, scanned, broken text encoding or blank, and given a recommended engine.
+- Digital PDFs are read exactly from their embedded text with pdf.js, free and on-device.
+- Scanned PDFs are read with tesseract.js OCR in the browser, free and on-device, or with Claude AI for difficult scans.
+- Correction grid: edit cells, insert or delete rows and columns, merge or split columns, set header rows, undo and redo. Totals that don't add up, non-numeric values in number columns and low-confidence OCR cells are flagged. "Fix with AI" applies a plain-English correction against the page image.
+- Export: real Excel numbers, percentages, currencies and dates, consistent column formats, frozen header rows, and tables that span pages joined into one sheet.
+
+## Pricing
+- Free and unlimited: digital PDFs and in-browser OCR.
+- AI: 25 free pages per day when signed in (Claude Haiku 5.5). After that, prepaid credits at Anthropic's token cost plus 15%. Bring-your-own Anthropic API key is supported at no markup.
+- Tiers: Fast (Claude Haiku 5.5), Accurate (Claude Sonnet 5.5), Max (Claude Opus 5.5).
+
+## Privacy
+- PDFs are processed on the user's device. Only pages the user sends to AI leave the browser, as one rendered page image per request, and they are not stored.
+
+## Links
+- App: https://pdfcells.com/
+- Source: https://github.com/mkerkstra/pdfcells

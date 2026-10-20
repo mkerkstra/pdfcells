@@ -46,7 +46,7 @@ func (b *Billing) Checkout(ctx context.Context, userID, email string, amountCent
 				Currency:   stripe.String("usd"),
 				UnitAmount: stripe.Int64(amountCents),
 				ProductData: &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{
-					Name: stripe.String(fmt.Sprintf("pdf2excel credits ($%d)", amountCents/100)),
+					Name: stripe.String(fmt.Sprintf("PDFCells credits ($%d)", amountCents/100)),
 				},
 			},
 		}},

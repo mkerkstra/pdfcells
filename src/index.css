@@ -46,3 +46,31 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
+
+/* Static SEO copy from index.html, styled to sit under the landing page. */
+.about {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.about h2 {
+  margin: 2rem 0 0.5rem;
+  color: var(--color-ink);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.about h3 {
+  margin: 1rem 0 0.25rem;
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.about a {
+  text-decoration: underline;
+}
+.about .fine {
+  margin-top: 2rem;
+  font-size: 0.75rem;
+}

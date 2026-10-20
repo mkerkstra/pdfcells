@@ -1,6 +1,6 @@
-# pdf2excel
+# PDFCells
 
-PDF → Excel. Vite/React SPA in the repo root (`src/`), Go API as one Vercel function (`api/index.go` → `backend/server`), Postgres only for the credits ledger.
+PDFCells (pdfcells.com): PDF → Excel. Vite/React SPA in the repo root (`src/`), Go API as one Vercel function (`api/index.go` → `backend/server`), Postgres only for the credits ledger.
 
 ## Rules
 

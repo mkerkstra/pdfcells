@@ -18,8 +18,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/mkerkstra/pdf2excel/backend/billing"
-	"github.com/mkerkstra/pdf2excel/backend/store"
+	"github.com/mkerkstra/pdfcells/backend/billing"
+	"github.com/mkerkstra/pdfcells/backend/store"
 )
 
 // Config is read from the environment. Each hosted feature switches on only
@@ -28,6 +28,7 @@ import (
 type Config struct {
 	AnthropicKey        string
 	DatabaseURL         string
+	DatabaseURLDirect   string
 	ClerkSecretKey      string
 	ClerkPublishableKey string
 	StripeSecretKey     string
@@ -41,6 +42,7 @@ func ConfigFromEnv() Config {
 	return Config{
 		AnthropicKey:        os.Getenv("ANTHROPIC_API_KEY"),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		DatabaseURLDirect:   os.Getenv("DATABASE_URL_UNPOOLED"),
 		ClerkSecretKey:      os.Getenv("CLERK_SECRET_KEY"),
 		ClerkPublishableKey: os.Getenv("CLERK_PUBLISHABLE_KEY"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
@@ -110,7 +112,7 @@ func (s *Server) db(ctx context.Context) (*store.Store, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	st, err := store.Open(ctx, s.cfg.DatabaseURL)
+	st, err := store.Open(ctx, s.cfg.DatabaseURL, s.cfg.DatabaseURLDirect)
 	if err != nil {
 		return nil, err
 	}

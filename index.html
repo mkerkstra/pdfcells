@@ -3,12 +3,146 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Convert PDF tables to Excel in your browser. Free and local, with optional AI for scans and messy layouts." />
+    <title>PDF to Excel Converter: Free, Private, Accurate | PDFCells</title>
+    <meta
+      name="description"
+      content="Convert PDF tables to Excel (.xlsx) free in your browser. Bank statements, invoices and reports, including scanned PDFs. Check every page, fix any cell, then download. Nothing is uploaded unless you choose AI."
+    />
+    <link rel="canonical" href="https://pdfcells.com/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>pdf2excel</title>
+    <meta name="theme-color" content="#127a4b" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PDFCells" />
+    <meta property="og:title" content="PDFCells: PDF to Excel, checked before you download" />
+    <meta
+      property="og:description"
+      content="Free, in-browser PDF to Excel conversion with OCR for scans, an editable correction grid, and optional AI at cost."
+    />
+    <meta property="og:url" content="https://pdfcells.com/" />
+    <meta property="og:image" content="https://pdfcells.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "PDFCells",
+            "url": "https://pdfcells.com/",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Any (web browser)",
+            "description": "Convert PDF tables to Excel spreadsheets in the browser. Reads digital PDFs exactly from their text, scans with in-browser OCR, and hard pages with Claude AI. Every cell is editable before export.",
+            "featureList": [
+              "PDF to Excel (.xlsx) conversion",
+              "Scanned PDF OCR in the browser",
+              "Per-page pre-check with engine recommendation",
+              "Editable grid with undo, merge and split columns",
+              "Totals and number validation",
+              "Tables spanning pages joined into one sheet",
+              "Real numbers, dates and currencies in the output"
+            ],
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD",
+              "description": "Free and unlimited for text PDFs and OCR. AI pages: 25 free per day, then token cost plus 15%."
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is PDFCells free?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Converting digital PDFs and running OCR on scans is free and unlimited because it runs in your browser. Signed-in users also get 25 free AI pages a day. Beyond that, AI pages cost Anthropic's token price plus 15%, usually well under a cent per page on the Fast tier. You can also use your own Anthropic API key."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is my PDF uploaded?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. The PDF is opened and converted on your device. Only pages you explicitly send to AI leave the browser, as a single rendered page image, and they are not stored."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can it convert scanned PDFs to Excel?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Each page is checked first. Scanned pages can be read with free OCR in your browser or with Claude AI, which handles skewed, low-quality and photographed pages better."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How do I fix mistakes before downloading?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Every table opens in an editable grid next to the page. Cells that look wrong are flagged, such as totals that don't add up, text in a number column, or low OCR confidence. You can edit, merge or split columns, or ask AI to fix a table with a plain-English instruction."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it keep numbers as numbers in Excel?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Amounts, percentages, parenthesised negatives, currencies, decimal-comma formats and dates become real Excel values with consistent column formats. Header rows are frozen."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Static copy: crawlable without JS (search and answer engines). The app hides it while a document is open. -->
+    <section id="about" class="about">
+      <h2>Convert PDF to Excel without retyping</h2>
+      <p>
+        PDFCells turns tables in PDF files into Excel spreadsheets (.xlsx). It handles bank and credit card statements,
+        invoices, financial reports, price lists and scanned paperwork. Drop in a PDF and every page gets a pre-check:
+        digital pages are read exactly from their embedded text, scanned pages go through OCR, and broken or irregular
+        pages can go to AI. Before you download, every table opens in an editable grid next to the page, with
+        suspect cells flagged.
+      </p>
+      <h2>Frequently asked questions</h2>
+      <h3>Is PDFCells free?</h3>
+      <p>
+        Yes. Converting digital PDFs and running OCR on scans is free and unlimited because it runs in your browser.
+        Signed-in users also get 25 free AI pages a day. Beyond that, AI pages cost Anthropic's token price plus 15%,
+        usually well under a cent per page on the Fast tier. You can also use your own Anthropic API key.
+      </p>
+      <h3>Is my PDF uploaded?</h3>
+      <p>
+        No. The PDF is opened and converted on your device. Only pages you explicitly send to AI leave the browser, as
+        a single rendered page image, and they are not stored.
+      </p>
+      <h3>Can it convert scanned PDFs to Excel?</h3>
+      <p>
+        Yes. Each page is checked first. Scanned pages can be read with free OCR in your browser or with Claude AI,
+        which handles skewed, low-quality and photographed pages better.
+      </p>
+      <h3>How do I fix mistakes before downloading?</h3>
+      <p>
+        Every table opens in an editable grid next to the page. Cells that look wrong are flagged, such as totals that
+        don't add up, text in a number column, or low OCR confidence. You can edit, merge or split columns, or ask AI
+        to fix a table with a plain-English instruction.
+      </p>
+      <h3>Does it keep numbers as numbers in Excel?</h3>
+      <p>
+        Yes. Amounts, percentages, parenthesised negatives, currencies, decimal-comma formats and dates become real
+        Excel values with consistent column formats. Header rows are frozen, and tables that continue across pages are
+        joined into one sheet.
+      </p>
+      <p class="fine">
+        Open source on <a href="https://github.com/mkerkstra/pdfcells">GitHub</a>. Microsoft Excel is a trademark of
+        Microsoft Corporation. PDFCells is not affiliated with or endorsed by Microsoft.
+      </p>
+    </section>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

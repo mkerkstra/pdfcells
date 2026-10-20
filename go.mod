@@ -1,4 +1,4 @@
-module github.com/mkerkstra/pdf2excel
+module github.com/mkerkstra/pdfcells
 
 go 1.27.1
 

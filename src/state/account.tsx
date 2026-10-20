@@ -70,7 +70,7 @@ export function useAccount(): Account {
   return a
 }
 
-const TIER_KEY = 'pdf2excel.tier'
+const TIER_KEY = 'pdfcells.tier'
 
 function useBase() {
   const cfg = useQuery({ queryKey: ['config'], queryFn: api.config, staleTime: Infinity })

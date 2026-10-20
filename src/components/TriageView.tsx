@@ -82,7 +82,12 @@ export function TriageView({
 
   const start = () => {
     onContinue()
-    void onRun(account.aiReady ? pending : pending.filter(p => p.engine !== 'ai'))
+    // Without AI access, read AI-recommended pages with free OCR rather than skipping them.
+    void onRun(
+      account.aiReady
+        ? pending
+        : pending.map(p => (p.engine === 'ai' ? { ...p, engine: 'ocr' as const } : p)),
+    )
   }
 
   return (
@@ -137,11 +142,7 @@ export function TriageView({
           <Button
             variant='primary'
             onClick={pending.length ? start : onContinue}
-            disabled={
-              !done ||
-              (pending.length > 0 && needsAuth && ocrPages.length === 0) ||
-              (pending.length === 0 && tables === 0)
-            }
+            disabled={!done || (pending.length === 0 && tables === 0)}
           >
             {pending.length
               ? `Convert ${pending.length} page${pending.length === 1 ? '' : 's'}`

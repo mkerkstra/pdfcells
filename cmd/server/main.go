@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/mkerkstra/pdf2excel/backend/server"
+	"github.com/mkerkstra/pdfcells/backend/server"
 )
 
 func main() {

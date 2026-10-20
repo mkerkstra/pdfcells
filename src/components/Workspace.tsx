@@ -97,6 +97,12 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
     [account, onNeedCredits],
   )
 
+  // The static FAQ in index.html belongs to the landing page only.
+  useEffect(() => {
+    const about = document.getElementById('about')
+    if (about) about.hidden = phase !== 'empty'
+  }, [phase])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (phase !== 'review' || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
@@ -122,7 +128,7 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
       <main className='mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-6 px-4 py-12'>
         <div className='space-y-2'>
           <h1 className='text-3xl font-semibold tracking-tight sm:text-4xl'>
-            PDF tables to Excel, checked before you download.
+            PDF to Excel, checked before you download.
           </h1>
           <p className='text-muted'>
             Digital PDFs are read exactly from their text, for free, without leaving your browser.

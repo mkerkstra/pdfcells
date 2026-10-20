@@ -1,6 +1,6 @@
-# pdf2excel
+# PDFCells
 
-Convert PDF tables into Excel files you can trust. Every page is checked first and handled by the cheapest engine that can read it. Every cell can be corrected before you download.
+**PDF to Excel converter** at [pdfcells.com](https://pdfcells.com). It turns PDF tables into Excel spreadsheets you can trust. Every page is checked first and handled by the cheapest engine that can read it. Every cell can be corrected before you download.
 
 - **Free and local by default.** Digital PDFs are read straight from their embedded text with pdf.js, and scans go through tesseract.js OCR (WASM). Both run in your browser, so the file is never uploaded.
 - **AI when the page needs it.** Scans, photos, broken font encodings and irregular layouts can go to Claude one page at a time. The page goes as a rendered image plus whatever text layer exists.

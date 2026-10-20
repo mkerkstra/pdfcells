@@ -17,7 +17,7 @@ func open(t *testing.T) (*Store, string) {
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
-	s, err := Open(context.Background(), url)
+	s, err := Open(context.Background(), url, "")
 	if err != nil {
 		t.Fatal(err)
 	}
