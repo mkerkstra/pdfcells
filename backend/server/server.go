@@ -129,7 +129,7 @@ func userID(r *http.Request) string {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"ok": true, "hosted": s.cfg.Hosted(), "payments": s.cfg.Payments()}
-	if s.cfg.Hosted() {
+	if s.cfg.DatabaseURL != "" {
 		st, err := s.db(r.Context())
 		if err == nil {
 			err = st.Ping(r.Context())
