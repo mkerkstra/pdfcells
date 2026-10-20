@@ -45,6 +45,7 @@
 
       <h2>Logs and hosting</h2>
       <p>The site is hosted on <a href="https://vercel.com/legal/privacy-policy">Vercel</a>, and the database runs on Neon (Postgres). Like any web server, Vercel keeps short-lived request logs (IP address, user agent, URL, status). We do not log document content, page images or API keys. We use no advertising or third-party tracking cookies. The only cookies are Clerk's sign-in session cookies, plus a few local-storage preferences such as your chosen AI quality.</p>
+      <p>To enforce the daily limit on free AI pages per network, each free AI page stores a keyed hash (HMAC) of your IP address alongside the usage record. We never store the IP address itself, and the hash can't be turned back into it.</p>
 
       <h2>Your choices</h2>
       <ul>

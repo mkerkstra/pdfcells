@@ -10,6 +10,7 @@ PDFCells (pdfcells.com): PDF → Excel. Vite/React SPA in the repo root (`src/`)
 - **Money.** Amounts are int64 micro-dollars end to end. Every balance change is a `ledger` row written in the same transaction as the locked `accounts` row. Paid pages hold the worst case before the model call and settle to the exact cost (`backend/store`). Price fallback iterations by the model that served them (`extract.usageOf`). Unknown models are an error, never $0.
 - **Request size.** Vercel caps function bodies at 4.5 MB, so the client always sends one rendered JPEG page per request, never the PDF.
 - **Models.** Fast = `claude-haiku-5-5`, Accurate = `claude-sonnet-5-5`, Max = `claude-opus-5-5`. Use structured outputs (`output_config.format`), not forced tool use, which returns a 400 on 5.5 models. When rates change, update `backend/pricing` and its tests together.
+- **Migrations.** They run on cold start, in one implicit transaction per file, against the live ledger. A future migration that touches `ledger` or `accounts` sets a bounded `lock_timeout` and builds indexes with `CREATE INDEX CONCURRENTLY`, each in its own non-transactional file. Never edit a migration that is already on main.
 - Named exports, no barrels. Tests sit next to the code (`*.test.ts`, `*_test.go`).
 - Commits: `{type}(scope): desc`. No Co-Authored-By trailers.
 
