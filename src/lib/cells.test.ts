@@ -70,6 +70,9 @@ describe('inferColumn', () => {
     expect(c.kind).toBe('number')
     expect(c.outliers).toEqual([4])
   })
+  it('treats n/a, n/m and dashes as blanks, not outliers', () => {
+    expect(inferColumn(['5.9%', 'n/m', '7.6%', 'N/A', '—', '3.4%']).outliers).toEqual([])
+  })
   it('falls back to text', () => {
     expect(inferColumn(['Revenue', 'Cost', '800']).kind).toBe('text')
   })

@@ -14,6 +14,11 @@ export interface Issue {
 
 const TOTAL = /^\s*(grand\s+)?(sub)?total\b|^\s*sum\b/i
 
+/** A row labelled as a total or subtotal. */
+export function isTotalRow(row: string[]): boolean {
+  return row.some(c => TOTAL.test(c))
+}
+
 export function columnTypes(t: Table): ColumnType[] {
   const width = t.rows[0]?.length ?? 0
   const body = t.rows.slice(t.headerRows)
@@ -62,7 +67,7 @@ export function validate(t: Table): Issue[] {
   let start = t.headerRows
   for (let i = t.headerRows; i < t.rows.length; i++) {
     const row = t.rows[i] ?? []
-    if (!row.some(c => TOTAL.test(c))) continue
+    if (!isTotalRow(row)) continue
     types.forEach((ct, c) => {
       if (ct.kind !== 'number' || percentColumn[c]) return
       const stated = parseNumber(row[c] ?? '', ct.locale)

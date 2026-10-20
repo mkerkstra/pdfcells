@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f2f6f0"/>
+  <g stroke="#ccddc8" stroke-width="2">
+    <line x1="0" y1="430" x2="1200" y2="430"/><line x1="0" y1="490" x2="1200" y2="490"/><line x1="0" y1="550" x2="1200" y2="550"/>
+  </g>
+  <g transform="translate(80,80)">
+    <rect width="64" height="64" rx="14" fill="#1f6b47"/>
+    <path d="M14 20h36M14 31h36" stroke="#dcebdf" stroke-width="4" stroke-linecap="round"/>
+    <path d="M30 44h20M30 51h20" stroke="#f6b4a8" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M15 47l4.4 4.4 7.6-8.8" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="86" y="47" font-family="Arial" font-size="44" font-weight="700" fill="#1c2a23">PDFCells</text>
+  </g>
+  <text x="80" y="280" font-family="Arial" font-size="68" font-weight="700" fill="#1c2a23">PDF tables into spreadsheets</text>
+  <text x="80" y="360" font-family="Arial" font-size="68" font-weight="700" fill="#1c2a23">you can check.</text>
+  <text x="80" y="470" font-family="Arial" font-size="30" fill="#5a6b62">Total</text>
+  <text x="1120" y="470" text-anchor="end" font-family="Arial" font-size="30" font-weight="700" fill="#1c2a23">(122.95)</text>
+  <line x1="960" y1="482" x2="1122" y2="482" stroke="#b0352b" stroke-width="2"/><line x1="960" y1="489" x2="1122" y2="489" stroke="#b0352b" stroke-width="2"/>
+  <rect x="200" y="442" width="150" height="40" rx="20" fill="#dfe8f6"/>
+  <path d="M220 462l6 6 11-12" fill="none" stroke="#2456a3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="246" y="472" font-family="Arial" font-size="24" font-weight="700" fill="#2456a3">Footed</text>
+</svg>

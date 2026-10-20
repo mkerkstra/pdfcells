@@ -19,8 +19,8 @@ import { ExportPanel } from './ExportPanel'
 import { PageImage } from './PageImage'
 import { TableEditor } from './TableEditor'
 import { TIER_LABEL, TierPicker } from './TierPicker'
-import { ENGINE_LABEL, KIND_LABEL } from './TriageView'
-import { Badge, Button, cn, Spinner } from './ui'
+import { KIND_LABEL } from './TriageView'
+import { Badge, Button, cn, Spinner, Tick } from './ui'
 import type { RunFn } from './Workspace'
 
 export function ReviewView({
@@ -76,9 +76,8 @@ export function ReviewView({
                   i === doc.selected ? 'bg-accent-soft text-accent' : 'hover:bg-paper',
                 )}
               >
-                <span className='w-7 font-medium'>p{p.n}</span>
+                <span className='w-14 font-medium'>Page {p.n}</span>
                 <PageStatusBadge page={p} />
-                <span className='ml-auto text-muted'>{p.tables.length || ''}</span>
               </button>
             </li>
           ))}
@@ -142,14 +141,14 @@ export function ReviewView({
             disabled={busy}
             onClick={() => void onRun([{ ...page, engine: 'ocr' }])}
           >
-            <ScanText className='size-3.5' /> OCR (free)
+            <ScanText className='size-3.5' /> OCR
           </Button>
           <Button
             size='sm'
             disabled={busy || !account.aiPossible}
             onClick={() => void onRun([{ ...page, engine: 'ai' }])}
           >
-            <Sparkles className='size-3.5' /> AI · {TIER_LABEL[account.tier]}
+            <Sparkles className='size-3.5' /> AI ({TIER_LABEL[account.tier]})
           </Button>
           <TierPicker />
           {busy && (
@@ -180,7 +179,7 @@ export function ReviewView({
           </ul>
         )}
 
-        <div className='grid gap-4 xl:grid-cols-2'>
+        <div className='grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]'>
           <div className='xl:sticky xl:top-16 xl:self-start'>
             <PageImage
               pdf={pdf}
@@ -227,17 +226,23 @@ export function ReviewView({
 function PageStatusBadge({ page }: { page: PageState }) {
   if (page.status === 'running' || page.status === 'queued')
     return <Spinner className='text-muted' />
-  if (page.status === 'error') return <Badge tone='bad'>error</Badge>
-  if (page.engine === 'skip' && !page.tables.length) return <Badge>skip</Badge>
-  if (page.status === 'done') return <Badge tone='good'>{page.run?.engine ?? 'done'}</Badge>
-  return <Badge tone='warn'>{ENGINE_LABEL[page.engine].split(' ')[0]}</Badge>
+  if (page.status === 'error') return <Badge tone='bad'>Failed</Badge>
+  if (page.engine === 'skip' && !page.tables.length)
+    return <span className='text-xs text-muted'>Skipped</span>
+  if (page.status === 'done')
+    return (
+      <span className='inline-flex items-center gap-1 text-xs text-tick'>
+        <Tick /> {page.tables.length === 1 ? '1 table' : `${page.tables.length} tables`}
+      </span>
+    )
+  return <span className='text-xs text-warn'>Not read yet</span>
 }
 
 function RunNote({ page }: { page: PageState }) {
   const r = page.run
   if (!r) return null
   if (r.engine !== 'ai')
-    return <Badge>{r.engine === 'text' ? 'from PDF text' : 'in-browser OCR'}</Badge>
+    return <Badge>{r.engine === 'text' ? 'Read from the PDF text' : 'Read with OCR'}</Badge>
   const cost =
     r.source === 'free'
       ? 'free page'

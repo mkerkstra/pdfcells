@@ -10,7 +10,8 @@ export type Typed =
   | { kind: 'date'; value: Date; format: string }
 
 const CURRENCY = /[$€£¥₹]|\b(?:USD|EUR|GBP|CAD|AUD|JPY|CHF)\b/g
-const DASHES = /^[-–—]$/
+// Placeholders that mean "no value" rather than a malformed number.
+const DASHES = /^(?:[-–—]|n\/?[am]|nil|none)$/i
 
 /** Guess the decimal separator from a column's values. */
 export function detectLocale(values: string[]): NumberLocale {

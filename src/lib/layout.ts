@@ -238,7 +238,8 @@ function headerRowCount(rows: string[][]): number {
   if (!hasNumbers) return rows.length >= 3 ? 1 : 0
   let n = 0
   for (const r of rows) {
-    if (r.some(isNumericCell) || n >= 3) break
+    // A section label ("Revenue") fills one cell; a header row fills several.
+    if (r.some(isNumericCell) || r.filter(c => c !== '').length < 2 || n >= 3) break
     n++
   }
   return n === rows.length ? 0 : n

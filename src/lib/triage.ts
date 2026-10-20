@@ -53,7 +53,7 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
         textHint: '',
         localTables: [],
         recommended: 'skip',
-        reason: 'No text or images on this page.',
+        reason: 'Nothing on this page.',
       }
     }
     return {
@@ -64,8 +64,8 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
       localTables: [],
       recommended: smart,
       reason: aiAvailable
-        ? 'Scanned page with no text layer. AI reads scans far more reliably than OCR.'
-        : 'Scanned page with no text layer. OCR will run in your browser.',
+        ? 'An image of a page with no text inside it. AI reads scans more reliably than OCR.'
+        : 'An image of a page with no text inside it, so it will be read with OCR.',
     }
   }
 
@@ -77,7 +77,8 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
       textHint: linesToText(words),
       localTables: [],
       recommended: smart,
-      reason: 'The embedded text uses a broken font encoding, so the page has to be read visually.',
+      reason:
+        'The text inside this PDF is scrambled (a broken font), so the page has to be read from its image.',
     }
   }
 
@@ -94,20 +95,23 @@ export function triage(facts: PageFacts, aiAvailable: boolean): PageTriage {
     return {
       ...common,
       recommended: 'skip',
-      reason: 'Digital text, but no table-like layout was found.',
+      reason: 'Text only. No table found.',
     }
   }
   if (best >= GOOD_LOCAL_CONFIDENCE || !aiAvailable) {
     return {
       ...common,
       recommended: 'text',
-      reason: `Digital text. ${localTables.length} table(s) read exactly from the PDF.`,
+      reason:
+        localTables.length === 1
+          ? 'One table, read exactly from the PDF text.'
+          : `${localTables.length} tables, read exactly from the PDF text.`,
     }
   }
   return {
     ...common,
     recommended: 'ai',
     reason:
-      'Digital text, but the layout is irregular (merged cells or wrapped rows). AI will rebuild the grid using the exact text.',
+      'The table layout is irregular (merged or wrapped cells). AI rebuilds the grid using the exact PDF text.',
   }
 }

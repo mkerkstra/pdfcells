@@ -8,16 +8,22 @@ export function cn(...xs: ClassValue[]) {
 }
 
 const button = cva(
-  'inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-semibold whitespace-nowrap transition-[background-color,border-color,color,filter] disabled:pointer-events-none disabled:opacity-45',
   {
     variants: {
       variant: {
-        primary: 'bg-accent text-white shadow-sm hover:brightness-110',
-        outline: 'border border-line bg-card hover:bg-paper',
-        ghost: 'hover:bg-line/50',
+        primary:
+          'bg-accent text-white shadow-[inset_0_-1px_0_rgb(0_0_0/0.18)] hover:brightness-110 dark:text-paper',
+        outline: 'border border-rule bg-card text-ink hover:border-accent hover:text-accent',
+        ghost: 'text-ink hover:bg-accent-soft',
         danger: 'text-bad hover:bg-bad-soft',
       },
-      size: { sm: 'h-7 px-2 text-xs', md: 'h-9 px-3', lg: 'h-11 px-5 text-base', icon: 'size-7' },
+      size: {
+        sm: 'h-7 px-2.5 text-xs',
+        md: 'h-9 px-3.5',
+        lg: 'h-12 rounded-lg px-6 text-base',
+        icon: 'size-8',
+      },
     },
     defaultVariants: { variant: 'outline', size: 'md' },
   },
@@ -35,9 +41,10 @@ export function Button({
 const badge = cva('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium', {
   variants: {
     tone: {
-      neutral: 'bg-line/60 text-muted',
+      neutral: 'bg-line/70 text-muted',
       good: 'bg-accent-soft text-accent',
-      warn: 'bg-warn-soft text-[oklch(0.45_0.1_70)] dark:text-warn',
+      tick: 'bg-tick-soft text-tick',
+      warn: 'bg-warn-soft text-warn',
       bad: 'bg-bad-soft text-bad',
     },
   },
@@ -53,7 +60,9 @@ export function Badge({
 }
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('rounded-lg border border-line bg-card', className)}>{children}</div>
+  return (
+    <div className={cn('rounded-[10px] border border-rule bg-card', className)}>{children}</div>
+  )
 }
 
 export function Spinner({ className }: { className?: string }) {
@@ -65,5 +74,21 @@ export function Spinner({ className }: { className?: string }) {
       )}
       aria-hidden
     />
+  )
+}
+
+/** The auditor's tick: a value or total that has been checked. */
+export function Tick({ className }: { className?: string }) {
+  return (
+    <svg viewBox='0 0 16 16' className={cn('size-3', className)} aria-hidden>
+      <path
+        d='M3 8.5 6.5 12 13 4.5'
+        fill='none'
+        stroke='currentColor'
+        strokeWidth='2.2'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+    </svg>
   )
 }

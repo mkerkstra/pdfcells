@@ -1,4 +1,4 @@
-import { FileUp, Lock } from 'lucide-react'
+import { Lock } from 'lucide-react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { ApiError } from '@/lib/api'
@@ -7,9 +7,10 @@ import { useAccount } from '@/state/account'
 import { initialDoc, reducer, type PageState } from '@/state/doc'
 import { pool, runPage, triageAll, type AiOptions } from '@/state/runner'
 
+import { DropOverlay, Landing } from './Landing'
 import { ReviewView } from './ReviewView'
 import { TriageView } from './TriageView'
-import { Button, Card, Spinner } from './ui'
+import { Button } from './ui'
 
 export type RunFn = (pages: PageState[], opts?: Partial<AiOptions>) => Promise<void>
 
@@ -63,7 +64,7 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
   const onFile = useCallback(
     async (f: File) => {
       if (f.type && f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-        setError('That file isn’t a PDF.')
+        setError('That file isn’t a PDF. Choose a file ending in .pdf.')
         return
       }
       await load(await f.arrayBuffer(), f.name)
@@ -125,41 +126,23 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
 
   if (phase === 'empty' || !pdf) {
     return (
-      <main className='mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-6 px-4 py-12'>
-        <div className='space-y-2'>
-          <h1 className='text-3xl font-semibold tracking-tight sm:text-4xl'>
-            PDF to Excel, checked before you download.
-          </h1>
-          <p className='text-muted'>
-            Digital PDFs are read exactly from their text, for free, without leaving your browser.
-            Scans, photos and messy layouts can go through in-browser OCR or Claude. Every cell is
-            editable before export.
-          </p>
-        </div>
-        <Dropzone onFile={f => void onFile(f)} busy={opening} />
-        {password && (
-          <PasswordPrompt
-            incorrect={password.incorrect}
-            onSubmit={pw => void load(password.data, password.name, pw)}
-            onCancel={() => setPassword(null)}
-          />
-        )}
-        {error && <p className='text-sm text-bad'>{error}</p>}
-        <ul className='grid gap-3 text-sm sm:grid-cols-3'>
-          <Feature title='1. Check'>
-            Each page is classified (digital, scanned, broken text) and gets the cheapest engine
-            that can read it.
-          </Feature>
-          <Feature title='2. Correct'>
-            Edit cells, merge and split columns, and ask AI to fix a table. Suspect cells are
-            flagged.
-          </Feature>
-          <Feature title='3. Export'>
-            Real numbers and dates, frozen headers, and tables continued across pages joined into
-            one sheet.
-          </Feature>
-        </ul>
-      </main>
+      <>
+        <DropOverlay onFile={f => void onFile(f)} />
+        <Landing
+          onFile={f => void onFile(f)}
+          busy={opening}
+          error={error}
+          password={
+            password && (
+              <PasswordPrompt
+                incorrect={password.incorrect}
+                onSubmit={pw => void load(password.data, password.name, pw)}
+                onCancel={() => setPassword(null)}
+              />
+            )
+          }
+        />
+      </>
     )
   }
 
@@ -187,67 +170,6 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
   )
 }
 
-function Feature({ title, children }: { title: string; children: string }) {
-  return (
-    <li className='rounded-lg border border-line bg-card p-3'>
-      <div className='font-medium'>{title}</div>
-      <div className='text-muted'>{children}</div>
-    </li>
-  )
-}
-
-function Dropzone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }) {
-  const [over, setOver] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
-  return (
-    <Card
-      className={`flex cursor-pointer flex-col items-center gap-3 border-2 border-dashed p-10 text-center transition-colors ${over ? 'border-accent bg-accent-soft' : ''}`}
-    >
-      <div
-        role='button'
-        tabIndex={0}
-        className='flex w-full flex-col items-center gap-3'
-        onClick={() => input.current?.click()}
-        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && input.current?.click()}
-        onDragOver={e => {
-          e.preventDefault()
-          setOver(true)
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={e => {
-          e.preventDefault()
-          setOver(false)
-          const f = e.dataTransfer.files[0]
-          if (f) onFile(f)
-        }}
-      >
-        {busy ? (
-          <Spinner className='size-6 text-accent' />
-        ) : (
-          <FileUp className='size-8 text-accent' />
-        )}
-        <div className='font-medium'>
-          {busy ? 'Opening…' : 'Drop a PDF here or click to choose'}
-        </div>
-        <div className='text-xs text-muted'>
-          Statements, invoices, reports, scans. Up to {MAX_PAGES} pages.
-        </div>
-      </div>
-      <input
-        ref={input}
-        type='file'
-        accept='application/pdf,.pdf'
-        className='hidden'
-        onChange={e => {
-          const f = e.target.files?.[0]
-          if (f) onFile(f)
-          e.target.value = ''
-        }}
-      />
-    </Card>
-  )
-}
-
 function PasswordPrompt({
   incorrect,
   onSubmit,
@@ -260,7 +182,7 @@ function PasswordPrompt({
   const [pw, setPw] = useState('')
   return (
     <form
-      className='flex items-center gap-2'
+      className='mt-5 flex max-w-md items-center gap-2'
       onSubmit={e => {
         e.preventDefault()
         onSubmit(pw)

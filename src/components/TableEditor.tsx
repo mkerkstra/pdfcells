@@ -13,10 +13,10 @@ import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import * as ops from '@/lib/tableOps'
 import type { Table } from '@/lib/types'
-import { columnTypes, validate, type Issue } from '@/lib/validate'
+import { columnTypes, isTotalRow, validate, type Issue } from '@/lib/validate'
 import { toCsv } from '@/lib/xlsx'
 
-import { Badge, Button, cn, Spinner } from './ui'
+import { Badge, Button, cn, Spinner, Tick } from './ui'
 
 const COL = (i: number): string =>
   i < 26
@@ -62,6 +62,11 @@ export function TableEditor({
     return m
   }, [issues])
   const width = table.rows[0]?.length ?? 0
+  const totalRows = useMemo(
+    () => table.rows.map((r, i) => i >= table.headerRows && isTotalRow(r)),
+    [table],
+  )
+  const footed = totalRows.some(Boolean) && !issues.some(i => i.kind === 'total')
 
   const focusCell = (r: number, c: number) => {
     const el = gridRef.current?.querySelector<HTMLInputElement>(
@@ -90,19 +95,22 @@ export function TableEditor({
         active ? 'border-accent shadow-[0_0_0_1px_var(--color-accent)]' : 'border-line',
       )}
     >
-      <header className='flex flex-wrap items-center gap-2 border-b border-line px-3 py-2'>
-        <span className='flex size-5 items-center justify-center rounded bg-accent text-[11px] font-semibold text-white'>
-          {index + 1}
-        </span>
-        <input
-          value={table.title}
-          onChange={e => onChange({ ...table, title: e.target.value })}
-          placeholder='Untitled table (sheet name)'
-          className='min-w-0 flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-muted'
-        />
-        <span className='text-xs text-muted'>
-          {table.rows.length}×{width}
-        </span>
+      <header className='flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5'>
+        <div className='flex w-full min-w-0 items-center gap-2'>
+          <span className='flex size-5 shrink-0 items-center justify-center rounded bg-accent text-[11px] font-semibold text-white dark:text-paper'>
+            {index + 1}
+          </span>
+          <input
+            value={table.title}
+            onChange={e => onChange({ ...table, title: e.target.value })}
+            placeholder='Name this table (becomes the sheet name)'
+            aria-label='Table name'
+            className='min-w-0 flex-1 rounded bg-transparent px-1 text-[0.9375rem] font-semibold outline-none placeholder:font-normal placeholder:text-muted focus:bg-paper'
+          />
+          <span className='shrink-0 text-xs text-muted'>
+            {table.rows.length} rows, {width} columns
+          </span>
+        </div>
         <label className='flex items-center gap-1 text-xs'>
           Header rows
           <input
@@ -122,10 +130,20 @@ export function TableEditor({
           />
           Export
         </label>
+        {footed && (
+          <Badge tone='tick' className='gap-1'>
+            <Tick /> Footed
+          </Badge>
+        )}
         {issues.length > 0 && (
-          <button type='button' onClick={nextIssue} className='text-xs'>
+          <button
+            type='button'
+            onClick={nextIssue}
+            title='Go to the next cell that needs a look'
+            className='rounded text-xs focus-visible:outline-2'
+          >
             <Badge tone={issues.some(i => i.kind === 'total') ? 'bad' : 'warn'}>
-              {issues.length} to check →
+              {issues.length} {issues.length === 1 ? 'cell' : 'cells'} to check
             </Badge>
           </button>
         )}
@@ -204,7 +222,7 @@ export function TableEditor({
 
       {sel && (
         <div className='flex flex-wrap items-center gap-1 border-b border-line px-3 py-1 text-xs text-muted'>
-          <span className='mr-1 font-mono text-ink'>
+          <span className='mr-1 font-semibold text-ink'>
             {COL(sel.c)}
             {sel.r + 1}
           </span>
@@ -256,14 +274,14 @@ export function TableEditor({
       )}
 
       <div className='max-h-[60vh] overflow-auto'>
-        <table ref={gridRef} className='border-collapse font-mono text-xs'>
-          <thead className='sticky top-0 z-10 bg-paper'>
+        <table ref={gridRef} className='w-max min-w-full border-collapse text-[0.8125rem]'>
+          <thead className='sticky top-0 z-10 bg-accent-soft'>
             <tr>
               <th className='w-8 border-r border-b border-line' aria-label='Row' />
               {Array.from({ length: width }, (_, c) => (
                 <th
                   key={c}
-                  className='min-w-20 border-r border-b border-line px-1 py-0.5 text-left font-normal text-muted'
+                  className='min-w-20 border-r border-b border-rule px-2 py-1 text-left text-xs font-medium text-muted'
                 >
                   {COL(c)} <span className='opacity-60'>{KIND_ICON[types[c]?.kind ?? 'text']}</span>
                 </th>
@@ -274,9 +292,12 @@ export function TableEditor({
             {table.rows.map((row, r) => (
               <tr
                 key={r}
-                className={r < table.headerRows ? 'bg-accent-soft/50 font-semibold' : undefined}
+                className={cn(
+                  r < table.headerRows && 'bg-accent-soft/40 font-semibold',
+                  totalRows[r] && 'font-semibold',
+                )}
               >
-                <td className='border-r border-b border-line px-1 text-right text-muted select-none'>
+                <td className='border-r border-b border-line bg-accent-soft/40 px-2 text-right text-xs text-muted select-none'>
                   {r + 1}
                 </td>
                 {row.map((v, c) => (
@@ -287,6 +308,7 @@ export function TableEditor({
                     value={v}
                     issue={issueAt.get(`${r}:${c}`)}
                     numeric={types[c]?.kind === 'number'}
+                    total={totalRows[r] === true && types[c]?.kind === 'number' && v.trim() !== ''}
                     onSelect={() => setSel({ r, c })}
                     onCommit={nv => apply(t => ops.setCell(t, r, c, nv))}
                     onMove={(dr, dc) =>
@@ -337,6 +359,7 @@ function Cell({
   value,
   issue,
   numeric,
+  total,
   onSelect,
   onCommit,
   onMove,
@@ -346,6 +369,7 @@ function Cell({
   value: string
   issue: Issue | undefined
   numeric: boolean
+  total: boolean
   onSelect: () => void
   onCommit: (v: string) => void
   onMove: (dr: number, dc: number) => void
@@ -383,6 +407,7 @@ function Cell({
       aria-label={`${COL(c)}${r + 1}`}
       className={cn(
         'border-r border-b border-line p-0',
+        total && 'double-rule',
         issue?.kind === 'total' && 'bg-bad-soft',
         (issue?.kind === 'type' || issue?.kind === 'low-confidence') && 'bg-warn-soft',
       )}
@@ -397,7 +422,8 @@ function Cell({
         onBlur={commit}
         onKeyDown={onKey}
         spellCheck={false}
-        size={Math.max(4, Math.min(40, (draft ?? value).length + 1))}
+        // Proportional figures run ~0.8ch per character.
+        size={Math.max(3, Math.min(36, Math.ceil((draft ?? value).length * 0.85) + 1))}
         className={cn(
           'w-full bg-transparent px-1.5 py-1 outline-none focus:bg-card focus:ring-2 focus:ring-accent focus:ring-inset',
           numeric && 'text-right',

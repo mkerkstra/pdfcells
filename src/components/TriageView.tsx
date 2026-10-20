@@ -1,4 +1,4 @@
-import { ArrowRight, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import type { Dispatch } from 'react'
 
 import { formatUsd } from '@/lib/api'
@@ -10,21 +10,21 @@ import type { Action, DocState, PageState } from '@/state/doc'
 
 import { PageThumb } from './PageThumb'
 import { TIER_LABEL, TierPicker } from './TierPicker'
-import { Badge, Button, Spinner } from './ui'
+import { Badge, Button, cn, Spinner } from './ui'
 import type { RunFn } from './Workspace'
 
 export const KIND_LABEL: Record<PageKind, string> = {
-  digital: 'Digital text',
+  digital: 'Text',
   scanned: 'Scanned',
   garbled: 'Broken text',
   blank: 'Blank',
 }
 const KIND_TONE = { digital: 'good', scanned: 'warn', garbled: 'bad', blank: 'neutral' } as const
 export const ENGINE_LABEL: Record<Engine | 'skip', string> = {
-  text: 'PDF text (free)',
-  ocr: 'OCR in browser (free)',
+  text: 'Read the PDF text',
+  ocr: 'OCR in browser',
   ai: 'AI',
-  skip: 'Skip',
+  skip: 'Skip page',
 }
 
 // A rendered 2000px page ≈ 4k image tokens; typical table output ≈ 1.5k tokens.
@@ -46,6 +46,7 @@ export function useAiEstimate(pages: number) {
   return {
     free: Math.min(pages, freeLeft),
     paid,
+    perPage: Math.ceil(per * markup),
     cost: Math.ceil(paid * per * markup),
     byok: byok !== '',
   }
@@ -69,8 +70,6 @@ export function TriageView({
   const account = useAccount()
   const analyzed = doc.pages.filter(p => p.triage || p.status === 'error').length
   const done = analyzed === doc.pages.length
-  const counts = { digital: 0, scanned: 0, garbled: 0, blank: 0 }
-  for (const p of doc.pages) if (p.triage) counts[p.triage.kind]++
   const pending = doc.pages.filter(
     p => p.status !== 'done' && p.engine !== 'skip' && p.engine !== 'text',
   )
@@ -90,53 +89,114 @@ export function TriageView({
     )
   }
 
+  const costLine =
+    aiPages.length === 0
+      ? 'Free'
+      : est.byok
+        ? 'Billed to your API key'
+        : est.paid === 0
+          ? 'Free (daily AI pages)'
+          : `About ${formatUsd(est.cost)}`
+
   return (
-    <main className='mx-auto w-full max-w-6xl flex-1 space-y-5 px-4 py-6'>
-      <div className='flex flex-wrap items-end gap-3'>
-        <div>
-          <h1 className='text-xl font-semibold'>{doc.fileName}</h1>
-          <p className='text-sm text-muted'>
-            {done ? 'Pre-check complete.' : `Checking pages… ${analyzed}/${doc.pages.length}`}{' '}
-            {doc.pages.length} pages · {counts.digital} digital · {counts.scanned} scanned ·{' '}
-            {counts.garbled} broken text · {counts.blank} blank
+    <main className='mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6'>
+      <div className='flex flex-wrap items-start gap-x-6 gap-y-3'>
+        <div className='min-w-0'>
+          <h1 className='truncate text-2xl font-bold tracking-[-0.02em]'>{doc.fileName}</h1>
+          <p className='mt-1 text-muted'>
+            {done ? (
+              <>
+                Checked {doc.pages.length} {doc.pages.length === 1 ? 'page' : 'pages'}. {tables}{' '}
+                {tables === 1 ? 'table' : 'tables'} already read exactly from the PDF text.
+              </>
+            ) : (
+              <span className='inline-flex items-center gap-2'>
+                <Spinner className='text-accent' /> Checking page{' '}
+                {Math.min(analyzed + 1, doc.pages.length)} of {doc.pages.length}
+              </span>
+            )}
           </p>
         </div>
         <Button variant='ghost' size='sm' className='ml-auto' onClick={onReset}>
-          <RotateCcw className='size-3.5' /> Different file
+          <RotateCcw className='size-3.5' /> Open a different PDF
         </Button>
       </div>
 
-      <section className='flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-line bg-card p-4'>
-        <div className='space-y-0.5 text-sm'>
-          <div>
-            <span className='font-medium'>{tables}</span> table{tables === 1 ? '' : 's'} already
-            read from the PDF text
+      <div className='mt-6 overflow-hidden rounded-[10px] border border-rule bg-card'>
+        <table className='w-full border-collapse text-sm'>
+          <thead>
+            <tr className='border-b border-rule bg-accent-soft/50 text-left text-xs text-muted'>
+              <th className='w-16 py-2 pl-3 font-medium'>Page</th>
+              <th className='py-2 pr-3 font-medium'>What’s on it</th>
+              <th className='hidden w-20 py-2 pr-3 text-right font-medium sm:table-cell'>Tables</th>
+              <th className='w-56 py-2 pr-3 font-medium'>Read with</th>
+            </tr>
+          </thead>
+          <tbody>
+            {doc.pages.map((p, i) => (
+              <PageRow
+                key={p.n}
+                page={p}
+                pdf={pdf}
+                aiPossible={account.aiPossible}
+                onEngine={e => dispatch({ type: 'engine', index: i, engine: e })}
+              />
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className='border-t border-rule'>
+              <td className='py-3 pl-3 text-center align-top text-xs text-muted'>
+                {doc.pages.length}
+              </td>
+              <td className='py-3 pr-3 align-top'>
+                <div className='font-semibold'>To convert</div>
+                <div className='text-muted'>
+                  {pending.length === 0
+                    ? 'Nothing left to read. Every table came from the PDF text.'
+                    : [
+                        ocrPages.length && `${ocrPages.length} with OCR`,
+                        aiPages.length && `${aiPages.length} with AI (${TIER_LABEL[account.tier]})`,
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
+                </div>
+              </td>
+              <td className='hidden py-3 pr-3 text-right align-top font-semibold sm:table-cell'>
+                <span className='double-rule px-1'>{tables}</span>
+              </td>
+              <td className='py-3 pr-3 align-top'>
+                <div className='font-semibold'>{costLine}</div>
+                {aiPages.length > 0 && !est.byok && est.paid > 0 && (
+                  <div className='text-xs text-muted'>
+                    {est.free > 0 && `${est.free} free, then `}≈{formatUsd(est.perPage)} a page,
+                    charged at exact cost
+                  </div>
+                )}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className='sticky bottom-0 mt-4 flex flex-wrap items-center gap-3 border-t border-rule bg-paper/95 py-4 backdrop-blur'>
+        {aiPages.length > 0 && (
+          <div className='flex items-center gap-2 text-sm'>
+            <span className='text-muted'>AI quality</span>
+            <TierPicker />
           </div>
-          <div className='text-muted'>
-            {ocrPages.length > 0 && `${ocrPages.length} page(s) for in-browser OCR · `}
-            {aiPages.length > 0 ? (
-              <>
-                {aiPages.length} page(s) for AI ({TIER_LABEL[account.tier]}):{' '}
-                {est.byok
-                  ? 'billed to your Anthropic key'
-                  : est.paid === 0
-                    ? `free (${est.free} of today’s free pages)`
-                    : `≈ ${formatUsd(est.cost)} in credits${est.free ? ` + ${est.free} free` : ''}`}
-              </>
-            ) : (
-              'No AI needed.'
-            )}
-          </div>
-        </div>
-        {aiPages.length > 0 && <TierPicker />}
-        <div className='ml-auto flex items-center gap-2'>
+        )}
+        <div className='ml-auto flex flex-wrap items-center gap-2'>
           {needsAuth &&
-            (account.signIn ?? (
-              <span className='text-xs text-muted'>Add an API key in Settings to use AI</span>
+            (account.signIn ? (
+              <span className='flex items-center gap-2 text-sm text-muted'>
+                Sign in for free AI pages {account.signIn}
+              </span>
+            ) : (
+              <span className='text-sm text-muted'>No API key: AI pages will use OCR instead</span>
             ))}
           {pending.length > 0 && (
             <Button variant='outline' onClick={onContinue} disabled={!done || tables === 0}>
-              Review only
+              Review without converting
             </Button>
           )}
           <Button
@@ -145,29 +205,16 @@ export function TriageView({
             disabled={!done || (pending.length === 0 && tables === 0)}
           >
             {pending.length
-              ? `Convert ${pending.length} page${pending.length === 1 ? '' : 's'}`
-              : 'Review & export'}{' '}
-            <ArrowRight className='size-4' />
+              ? `Convert ${pending.length} ${pending.length === 1 ? 'page' : 'pages'}`
+              : 'Review tables'}
           </Button>
         </div>
-      </section>
-
-      <ul className='grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'>
-        {doc.pages.map((p, i) => (
-          <PageCard
-            key={p.n}
-            page={p}
-            pdf={pdf}
-            aiPossible={account.aiPossible}
-            onEngine={e => dispatch({ type: 'engine', index: i, engine: e })}
-          />
-        ))}
-      </ul>
+      </div>
     </main>
   )
 }
 
-function PageCard({
+function PageRow({
   page,
   pdf,
   aiPossible,
@@ -182,42 +229,56 @@ function PageCard({
   const engines: (Engine | 'skip')[] =
     t?.kind === 'digital' ? ['text', 'ocr', 'ai', 'skip'] : ['ocr', 'ai', 'skip']
   return (
-    <li className='space-y-1.5 rounded-lg border border-line bg-card p-2'>
-      <PageThumb pdf={pdf} n={page.n} />
-      <div className='flex items-center gap-1.5 text-xs'>
-        <span className='font-medium'>p{page.n}</span>
+    <tr
+      className={cn(
+        'border-b border-line align-top last:border-b-0',
+        page.engine === 'skip' && t && 'text-muted',
+      )}
+    >
+      <td className='py-3 pl-3'>
+        <div className='w-10'>
+          <PageThumb pdf={pdf} n={page.n} width={40} />
+        </div>
+        <div className='mt-1 text-center text-xs text-muted'>{page.n}</div>
+      </td>
+      <td className='py-3 pr-3'>
         {t ? (
-          <Badge tone={KIND_TONE[t.kind]}>{KIND_LABEL[t.kind]}</Badge>
+          <>
+            <Badge tone={KIND_TONE[t.kind]}>{KIND_LABEL[t.kind]}</Badge>
+            <p className='mt-1.5 max-w-prose leading-snug text-muted'>{t.reason}</p>
+          </>
         ) : page.status === 'error' ? (
-          <Badge tone='bad'>Error</Badge>
+          <p className='text-bad'>Couldn’t read this page: {page.error}</p>
         ) : (
-          <Spinner className='text-muted' />
+          <span className='inline-flex items-center gap-2 text-muted'>
+            <Spinner /> Checking
+          </span>
         )}
-        {page.tables.length > 0 && (
-          <span className='ml-auto text-muted'>{page.tables.length} tbl</span>
-        )}
-      </div>
-      {t && (
-        <>
+      </td>
+      <td className='hidden py-3 pr-3 text-right sm:table-cell'>{page.tables.length || ''}</td>
+      <td className='py-3 pr-3'>
+        {t && (
           <select
             value={page.engine}
             onChange={e => onEngine(e.target.value as Engine | 'skip')}
-            className='h-7 w-full rounded border border-line bg-paper px-1 text-xs'
-            aria-label={`Engine for page ${page.n}`}
+            className='h-8 w-full rounded-md border border-rule bg-card px-2 text-sm text-ink'
+            aria-label={`How to read page ${page.n}`}
           >
             {engines.map(e => (
               <option key={e} value={e} disabled={e === 'ai' && !aiPossible}>
                 {ENGINE_LABEL[e]}
-                {e === t.recommended ? ' ✓' : ''}
               </option>
             ))}
           </select>
-          <p className='line-clamp-3 text-[11px] leading-snug text-muted' title={t.reason}>
-            {t.reason}
+        )}
+        {t && (
+          <p className='mt-1 text-xs text-muted'>
+            {page.engine === t.recommended
+              ? 'Recommended'
+              : `Recommended: ${ENGINE_LABEL[t.recommended].toLowerCase()}`}
           </p>
-        </>
-      )}
-      {page.error && <p className='text-[11px] text-bad'>{page.error}</p>}
-    </li>
+        )}
+      </td>
+    </tr>
   )
 }

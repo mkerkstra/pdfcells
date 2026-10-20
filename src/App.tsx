@@ -26,14 +26,14 @@ function Shell() {
 
   return (
     <div className='flex min-h-dvh flex-col'>
-      <header className='sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-line bg-card/90 px-4 backdrop-blur'>
-        <a href='/' className='flex items-center gap-2 font-semibold tracking-tight'>
-          <img src='/favicon.svg' alt='' className='size-5' />
+      <header className='sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-rule bg-paper/90 px-4 backdrop-blur sm:px-6'>
+        <a
+          href='/'
+          className='flex items-center gap-2.5 text-[1.0625rem] font-bold tracking-[-0.015em]'
+        >
+          <img src='/favicon.svg' alt='' className='size-6' />
           PDFCells
         </a>
-        <span className='hidden text-xs text-muted sm:inline'>
-          Your PDF stays in your browser unless you send a page to AI.
-        </span>
         <div className='ml-auto flex items-center gap-2'>
           {account.signedIn && me && (
             <Button
@@ -42,10 +42,10 @@ function Shell() {
               onClick={() => setAccountOpen(true)}
               title='Credits and usage'
             >
-              <span className='tabular-nums'>{formatUsd(me.balance_micros, 2)}</span>
-              <span className='text-muted'>
-                · {Math.max(0, account.config.free_pages_per_day - me.free_used_today)} free pages
-                left
+              <span className='tabular-nums'>{formatUsd(me.balance_micros, 2)} credit</span>
+              <span className='hidden font-normal text-muted sm:inline'>
+                {Math.max(0, account.config.free_pages_per_day - me.free_used_today)} free AI pages
+                left today
               </span>
             </Button>
           )}

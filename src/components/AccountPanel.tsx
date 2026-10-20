@@ -38,9 +38,7 @@ export function AccountPanel({ onClose }: { onClose: () => void }) {
         </p>
       )}
       <div className='flex items-baseline gap-3'>
-        <span className='text-3xl font-semibold tabular-nums'>
-          {formatUsd(a?.balance_micros ?? 0, 2)}
-        </span>
+        <span className='text-3xl font-semibold'>{formatUsd(a?.balance_micros ?? 0, 2)}</span>
         <span className='text-muted'>
           {Math.max(0, account.config.free_pages_per_day - (a?.free_used_today ?? 0))} of{' '}
           {account.config.free_pages_per_day} free pages left today

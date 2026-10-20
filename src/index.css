@@ -1,32 +1,48 @@
 @import 'tailwindcss';
 
+/*
+ * Ledger pad: pale green columnar paper, green rules, green-black ink.
+ * Three inks with fixed jobs: pad green = act, ledger red = totals rule and
+ * problems, tick blue = verified ("footed").
+ */
 @theme {
-  --font-sans: 'Inter var', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --color-ink: oklch(0.22 0.01 160);
-  --color-muted: oklch(0.5 0.01 160);
-  --color-line: oklch(0.9 0.006 160);
-  --color-paper: oklch(0.985 0.003 160);
-  --color-card: #fff;
-  --color-accent: oklch(0.5 0.12 155);
-  --color-accent-soft: oklch(0.95 0.035 155);
-  --color-warn: oklch(0.72 0.15 75);
-  --color-warn-soft: oklch(0.96 0.05 85);
-  --color-bad: oklch(0.58 0.19 25);
-  --color-bad-soft: oklch(0.96 0.03 25);
+  --font-sans: 'Schibsted Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-paper: #f2f6f0;
+  --color-card: #fbfdfa;
+  --color-line: #ccddc8;
+  --color-rule: #a9c5a3;
+  --color-ink: #1c2a23;
+  --color-muted: #5a6b62;
+  --color-accent: #1f6b47;
+  --color-accent-soft: #dcebdf;
+  --color-red: #b0352b;
+  --color-bad: #b0352b;
+  --color-bad-soft: #f6e1dc;
+  --color-warn: #a86a12;
+  --color-warn-soft: #f6ead2;
+  --color-tick: #2456a3;
+  --color-tick-soft: #dfe8f6;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --color-ink: oklch(0.93 0.005 160);
-    --color-muted: oklch(0.68 0.01 160);
-    --color-line: oklch(0.32 0.01 160);
-    --color-paper: oklch(0.17 0.008 160);
-    --color-card: oklch(0.21 0.008 160);
-    --color-accent: oklch(0.7 0.13 155);
-    --color-accent-soft: oklch(0.3 0.05 155);
-    --color-warn-soft: oklch(0.32 0.06 80);
-    --color-bad-soft: oklch(0.32 0.06 25);
+@layer base {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --color-paper: #111814;
+      --color-card: #17201b;
+      --color-line: #263a2f;
+      --color-rule: #35513f;
+      --color-ink: #e3ece5;
+      --color-muted: #94a69b;
+      --color-accent: #5cc08d;
+      --color-accent-soft: #1d3628;
+      --color-red: #e0705f;
+      --color-bad: #e0705f;
+      --color-bad-soft: #3a1f1b;
+      --color-warn: #e0a54a;
+      --color-warn-soft: #36291a;
+      --color-tick: #82a9ec;
+      --color-tick-soft: #1c2840;
+    }
   }
 }
 
@@ -38,34 +54,68 @@ body {
 
 body {
   font-family: var(--font-sans);
-  font-feature-settings: 'cv11', 'ss01', 'tnum';
+  /* No 'tnum': this face's tabular set also widens commas and periods, and
+     its default figures are already close to even width. */
+  font-feature-settings: 'lnum';
   -webkit-font-smoothing: antialiased;
 }
 
 :focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
-/* Static SEO copy from index.html, styled to sit under the landing page. */
+/* The accounting double rule under a total. */
+.double-rule {
+  border-bottom: 3px double var(--color-red);
+}
+
+/* Columnar pad: horizontal ruling every row, as on ledger paper. */
+.ruled {
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(100% - 1px),
+    var(--color-line) calc(100% - 1px)
+  );
+  background-size: 100% 2rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Static SEO copy from index.html, styled as ledger lines under the landing page. */
 .about {
-  max-width: 48rem;
+  max-width: 46rem;
   margin: 0 auto;
-  padding: 0 1rem 4rem;
+  padding: 1rem 1rem 5rem;
   color: var(--color-muted);
-  font-size: 0.875rem;
-  line-height: 1.6;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+.about p {
+  margin: 0.25rem 0 0;
 }
 .about h2 {
-  margin: 2rem 0 0.5rem;
+  margin: 3rem 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-rule);
   color: var(--color-ink);
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .about h3 {
-  margin: 1rem 0 0.25rem;
+  margin: 1.25rem 0 0;
   color: var(--color-ink);
-  font-weight: 500;
+  font-size: 1rem;
+  font-weight: 600;
 }
 .about a {
   text-decoration: underline;
@@ -73,4 +123,36 @@ body {
 .about .fine {
   margin-top: 2rem;
   font-size: 0.75rem;
+}
+
+/* Landing demo: one orchestrated fill-in on first paint. */
+@keyframes ink-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes rule-draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes tick-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+.ledger-demo .ledger-row {
+  animation: ink-in 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.ledger-demo .ledger-total {
+  animation: ink-in 380ms 1050ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.ledger-demo .ledger-rule {
+  transform-origin: right;
+  animation: rule-draw 420ms 1350ms cubic-bezier(0.6, 0, 0.2, 1) both;
+}
+.ledger-demo .ledger-tick {
+  animation: tick-in 300ms 1750ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
 }
