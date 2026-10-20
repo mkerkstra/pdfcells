@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { assess, combineStatements, combineTables, type BatchPage } from './batch'
+import { assess, combineStatements, combineTables, uniqueNames, type BatchPage } from './batch'
 import { readStatement, type Statement } from './statement'
 import { toOfx } from './statementExport'
 import type { Table } from './types'
@@ -177,5 +177,12 @@ describe('combineStatements', () => {
       now: new Date(0),
     })
     expect(ofx.match(/<STMTTRN>/g)).toHaveLength(5)
+  })
+})
+
+describe('uniqueNames', () => {
+  it('never hands out a name twice, even one another file already has', () => {
+    expect(uniqueNames(['a', 'A', 'a 2', 'b'])).toEqual(['a', 'A 3', 'a 2', 'b'])
+    expect(uniqueNames(['x', 'x', 'x'])).toEqual(['x', 'x 2', 'x 3'])
   })
 })

@@ -14,8 +14,9 @@ import {
   type BatchItem,
   type BatchState,
   type ReadChoice,
+  pendingMembers,
 } from '@/state/batch'
-import { checkItem, enginesOf, proposeGroups, readAll, rereads, toRead } from '@/state/batchRunner'
+import { checkItem, enginesOf, readAll, regroup, rereads, toRead } from '@/state/batchRunner'
 import { clearBatch, saveBatch } from '@/state/batchStore'
 import type { Action, PageState } from '@/state/doc'
 import { runPages, type RunHooks } from '@/state/runner'
@@ -47,7 +48,12 @@ export type Verdict = 'ready' | 'look' | 'setup' | null
 export function verdictOf(it: BatchItem, groups: BatchGroup[]): Verdict {
   if (it.status !== 'read') return null
   const g = groups.find(x => x.members.includes(it.id))
-  if (g?.state === 'confirmed' && !g.recipe && g.members[0] !== it.id) return 'setup'
+  if (
+    g?.state === 'confirmed' &&
+    g.members[0] !== it.id &&
+    (!g.recipe || !(g.applied ?? []).includes(it.id))
+  )
+    return 'setup'
   return assessed(it).ready ? 'ready' : 'look'
 }
 
@@ -160,6 +166,9 @@ export function BatchView({
   const inFlight = useRef(new Set<string>())
   const read = useCallback(
     async (items: BatchItem[]) => {
+      // Save the choice as made (OCR when AI isn't available), so a resume
+      // never reads with an engine the person didn't pick.
+      dispatch({ type: 'choice', choice })
       dispatch({ type: 'started' })
       const jobs = items.flatMap(item => {
         const file = attached.get(item.id)
@@ -168,9 +177,11 @@ export function BatchView({
         return [{ item, file, pages: toRead(item, choice) }]
       })
       if (jobs.length === 0) return
-      await readAll(jobs, account.tier, account.aiPossible, dispatch, hooks)
+      await readAll(jobs, account.tier, account.aiPossible, dispatch, {
+        ...hooks,
+        signal: exit.current?.signal,
+      })
       for (const j of jobs) inFlight.current.delete(j.item.id)
-      await readAll(jobs, account.tier, account.aiPossible, dispatch, hooks)
       account.refreshMe()
     },
     [attached, choice, account, hooks],
@@ -197,12 +208,14 @@ export function BatchView({
     if (state.started || (checkedAll && toReadNow.needing === 0)) void read(stateRef.current.items)
   }, [readable, state.started, checkedAll, toReadNow.needing, read])
 
-  // Once every file is read, propose format groups (once).
+  // Once every file that can be read is read, group them; a file read later
+  // (added again after a resume) joins a group then.
+  const fresh = items.some(it => it.status === 'read' && !state.considered.includes(it.id))
   useEffect(() => {
-    if (state.grouped || busy || waitingFiles.length > 0) return
-    if (!items.some(it => it.status === 'read')) return
-    dispatch({ type: 'groups', groups: proposeGroups(items) })
-  }, [state.grouped, busy, waitingFiles.length, items])
+    if (busy || waitingFiles.length > 0 || !fresh) return
+    const s = stateRef.current
+    dispatch({ type: 'groups', ...regroup(s.items, s.groups, s.considered) })
+  }, [busy, waitingFiles.length, fresh])
 
   const missing = items.filter(it => !attached.has(it.id) && it.status !== 'error')
   const unread = missing.filter(it => it.status === 'waiting' || it.status === 'checked').length
@@ -253,39 +266,76 @@ export function BatchView({
 
   useEffect(() => () => void source?.destroy(), [source])
 
-  const applySetup = async (g: BatchGroup, first: BatchItem) => {
+  const saveSetup = (g: BatchGroup, first: BatchItem) => {
     const recipe = buildRecipe(
       first.fileName,
       readTables(first.read ?? first.doc.pages),
       readTables(first.doc.pages),
       enginesOf(first.doc.pages),
     )
-    dispatch({ type: 'group', id: g.id, patch: { recipe } })
+    // Applied to nobody yet: the effect below takes it to every other member.
+    dispatch({ type: 'group', id: g.id, patch: { recipe, applied: [] } })
     dispatch({ type: 'item', id: first.id, patch: { reviewed: true } })
     closeReview()
-    const jobs = g.members.slice(1).flatMap(id => {
-      const it = stateRef.current.items.find(x => x.id === id)
-      const file = attached.get(id)
-      if (!it || it.status !== 'read' || !file) return []
-      const base = it.read ?? it.doc.pages
-      const pages = rereads(recipe, base)
-      return pages.length ? [{ it, file, base, pages }] : []
-    })
-    for (const j of jobs)
-      dispatch({
-        type: 'item',
-        id: j.it.id,
-        patch: { doc: { ...j.it.doc, pages: j.base }, read: undefined, status: 'checked' },
-      })
-    await readAll(
-      jobs.map(j => ({ item: j.it, file: j.file, pages: j.pages })),
-      account.tier,
-      account.aiPossible,
-      dispatch,
-      hooks,
-    )
-    dispatch({ type: 'apply', id: g.id })
   }
+
+  // Take a group's recipe to members it hasn't reached: right after set-up,
+  // after a resume that cut it short, or to a file that joined later. Pages
+  // the set-up file read with another engine are read again first; a member
+  // that needs that but isn't attached waits for its file.
+  const finishing = useRef(new Set<string>())
+  const finishSetup = useCallback(
+    async (gid: string) => {
+      const s = stateRef.current
+      const g = s.groups.find(x => x.id === gid)
+      const recipe = g?.recipe
+      if (!g || !recipe || finishing.current.has(gid)) return
+      const now: string[] = []
+      const jobs: { it: BatchItem; file: File; base: PageState[]; pages: PageState[] }[] = []
+      for (const id of pendingMembers(g, s.items)) {
+        const it = s.items.find(x => x.id === id)
+        if (!it || it.status !== 'read') continue
+        const base = it.read ?? it.doc.pages
+        const pages = rereads(recipe, base)
+        const file = attached.get(id)
+        if (pages.length === 0) now.push(id)
+        else if (file) jobs.push({ it, file, base, pages })
+      }
+      if (now.length === 0 && jobs.length === 0) return
+      finishing.current.add(gid)
+      try {
+        if (now.length) dispatch({ type: 'apply', id: gid, ids: now })
+        for (const j of jobs)
+          dispatch({
+            type: 'item',
+            id: j.it.id,
+            patch: { doc: { ...j.it.doc, pages: j.base }, read: undefined, status: 'reading' },
+          })
+        if (jobs.length) {
+          await readAll(
+            jobs.map(j => ({ item: j.it, file: j.file, pages: j.pages })),
+            account.tier,
+            account.aiPossible,
+            dispatch,
+            { ...hooks, signal: exit.current?.signal },
+          )
+          dispatch({ type: 'apply', id: gid, ids: jobs.map(j => j.it.id) })
+        }
+      } finally {
+        finishing.current.delete(gid)
+      }
+    },
+    [attached, account.tier, account.aiPossible, hooks],
+  )
+
+  const pendingGroups = state.groups
+    .filter(g => pendingMembers(g, items).length > 0)
+    .map(g => g.id)
+    .join(' ')
+  useEffect(() => {
+    if (busy || !pendingGroups) return
+    for (const id of pendingGroups.split(' ')) void finishSetup(id)
+  }, [busy, pendingGroups, items, finishSetup])
 
   const current = reviewing && items.find(it => it.id === reviewing.id)
   if (reviewing && current && source) {
@@ -303,7 +353,7 @@ export function BatchView({
               group={g}
               first={current}
               items={items}
-              onApply={() => void applySetup(g, current)}
+              onApply={() => saveSetup(g, current)}
               onBack={closeReview}
             />
           ) : (
@@ -341,6 +391,8 @@ export function BatchView({
 
   const discard = () => {
     if (!confirm('Discard this batch? Tables read so far are deleted from this browser.')) return
+    // Stop pages that haven't been read yet, so nothing more is sent or charged.
+    exit.current?.abort()
     void clearBatch()
     onExit()
   }

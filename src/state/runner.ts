@@ -201,6 +201,8 @@ export interface RunHooks {
   onBalance?: (micros: number) => void
   /** Called once, after the run, when a page failed for lack of credits. */
   onNeedCredits?: () => void
+  /** Stops pages that haven't started yet (a discarded batch); they go back to not read. */
+  signal?: AbortSignal
 }
 
 /** Read pages with their chosen engines: OCR one at a time, AI three at a time. */
@@ -215,13 +217,17 @@ export async function runPages(
   let needCredits = false
   const isOcr = (p: PageState) => p.engine === 'ocr' && !ai.current
   const job = (p: PageState) =>
-    (isOcr(p) ? ocrSlots : aiSlots)(() => runPage(doc, p, dispatch, ai, hooks.onBalance)).catch(
-      (e: unknown) => {
-        if (e instanceof ApiError && (e.code === 'insufficient_credits' || e.code === 'balance_negative'))
-          needCredits = true
-        throw e
-      },
-    )
+    (isOcr(p) ? ocrSlots : aiSlots)(async () => {
+      if (hooks.signal?.aborted) {
+        dispatch({ type: 'status', index: p.n - 1, status: 'ready' })
+        return
+      }
+      await runPage(doc, p, dispatch, ai, hooks.onBalance)
+    }).catch((e: unknown) => {
+      if (e instanceof ApiError && (e.code === 'insufficient_credits' || e.code === 'balance_negative'))
+        needCredits = true
+      throw e
+    })
   await pool(pages, pages.length, job)
   if (needCredits) hooks.onNeedCredits?.()
 }

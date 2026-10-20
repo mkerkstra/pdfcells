@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import type { PageKind, PageTriage } from '@/lib/triage'
 import type { Engine } from '@/lib/types'
 
-import { newBatch } from './batch'
-import { engineFor, enginesOf, rereads, toRead } from './batchRunner'
+import { newBatch, type BatchItem } from './batch'
+import { engineFor, enginesOf, regroup, rereads, toRead } from './batchRunner'
 import type { PageState } from './doc'
 
 const triage = (kind: PageKind, image = false): PageTriage => ({
@@ -89,5 +89,52 @@ describe('engine per page kind', () => {
     expect(
       rereads({ ...recipe, engines: { scanned: 'text' } }, [page(1, 'scanned', 'ocr', 'ocr')]),
     ).toEqual([])
+  })
+})
+
+describe('regroup', () => {
+  const head = ['Date', 'Description', 'Debit', 'Credit', 'Balance']
+  const stmt = (id: string): BatchItem => {
+    const [base] = newBatch([new File(['x'], `${id}.pdf`)]).items
+    if (!base) throw new Error('no item')
+    const tables = [
+      {
+        id: `${id}t`,
+        title: '',
+        headerRows: 1,
+        rows: [head, ['05/01/2026', 'Card', '1.00', '', '9.00']],
+        notes: '',
+        include: true,
+      },
+    ]
+    return {
+      ...base,
+      id,
+      status: 'read',
+      letterhead: 'Harbor Credit Union - Share draft account',
+      doc: { ...base.doc, pages: [{ ...page(1, 'digital', 'text', 'text'), tables }] },
+    }
+  }
+
+  it('groups what is read, and a file read later joins its group', () => {
+    const a = stmt('a')
+    const b = stmt('b')
+    const c = { ...stmt('c'), status: 'checked' as const }
+    const first = regroup([a, b, c], [], [])
+    expect(first.groups.map(g => g.members)).toEqual([['a', 'b']])
+    expect(first.considered).toEqual(['a', 'b'])
+    const confirmed = first.groups.map(g => ({ ...g, state: 'confirmed' as const }))
+    const later = regroup([a, b, { ...c, status: 'read' }], confirmed, first.considered)
+    expect(later.groups.map(g => [g.members, g.state])).toEqual([[['a', 'b', 'c'], 'confirmed']])
+  })
+
+  it('a lone file read earlier and one read later form a new group', () => {
+    const a = stmt('a')
+    const lone = regroup([a], [], [])
+    expect(lone.groups).toEqual([])
+    const b = stmt('b')
+    expect(regroup([a, b], lone.groups, lone.considered).groups.map(g => g.members)).toEqual([
+      ['a', 'b'],
+    ])
   })
 })

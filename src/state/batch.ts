@@ -47,6 +47,18 @@ export interface BatchGroup {
   /** Whether the members read as bank statements. */
   statements: boolean
   recipe?: Recipe
+  /** Members the recipe has been applied to. Saved, so an apply cut short by a closed tab finishes on resume. */
+  applied?: string[]
+}
+
+/** Members (after the first) the group's recipe still has to reach. */
+export function pendingMembers(g: BatchGroup, items: BatchItem[]): string[] {
+  if (g.state !== 'confirmed' || !g.recipe) return []
+  const done = new Set(g.applied ?? [])
+  return g.members.slice(1).filter(id => {
+    const it = items.find(x => x.id === id)
+    return it !== undefined && it.status !== 'error' && !done.has(id)
+  })
 }
 
 export type ReadChoice = 'ai' | 'ocr'
@@ -60,8 +72,10 @@ export interface BatchState {
   choice: ReadChoice
   /** Set once the person has started reading. */
   started: boolean
-  /** Set once groups have been proposed (after every file is read). */
+  /** Set once groups have first been proposed (once every file that can be read is read). */
   grouped: boolean
+  /** Files already considered for grouping; a file read later is grouped then. */
+  considered: string[]
 }
 
 export type BatchAction =
@@ -71,10 +85,10 @@ export type BatchAction =
   | { type: 'forget'; id: string }
   | { type: 'choice'; choice: ReadChoice }
   | { type: 'started' }
-  | { type: 'groups'; groups: BatchGroup[] }
+  | { type: 'groups'; groups: BatchGroup[]; considered: string[] }
   | { type: 'group'; id: string; patch: Partial<BatchGroup> }
-  /** Replay the group's recipe on every member but the first. */
-  | { type: 'apply'; id: string }
+  /** Replay the group's recipe on these members (read ones only). */
+  | { type: 'apply'; id: string; ids: string[] }
 
 export function newItem(file: File, id: string): BatchItem {
   return {
@@ -99,6 +113,7 @@ export function newBatch(files: File[], now = Date.now()): BatchState {
     choice: 'ai',
     started: false,
     grouped: false,
+    considered: [],
   }
 }
 
@@ -137,16 +152,20 @@ export function batchReducer(s: BatchState, a: BatchAction): BatchState {
     case 'started':
       return { ...s, started: true }
     case 'groups':
-      return { ...s, groups: a.groups, grouped: true }
+      return { ...s, groups: a.groups, grouped: true, considered: a.considered }
     case 'group':
       return { ...s, groups: s.groups.map(g => (g.id === a.id ? { ...g, ...a.patch } : g)) }
     case 'apply': {
       const g = s.groups.find(x => x.id === a.id)
       const recipe = g?.recipe
       if (!g || !recipe) return s
-      const rest = new Set(g.members.slice(1))
+      const rest = new Set(a.ids.filter(id => g.members.slice(1).includes(id)))
+      const done = s.items.filter(it => rest.has(it.id) && it.status === 'read').map(it => it.id)
       return {
         ...s,
+        groups: s.groups.map(x =>
+          x.id === g.id ? { ...x, applied: [...new Set([...(x.applied ?? []), ...done])] } : x,
+        ),
         items: s.items.map(it => {
           if (!rest.has(it.id) || it.status !== 'read') return it
           const base = it.read ?? it.doc.pages
@@ -208,7 +227,11 @@ export function deserialize(x: unknown): BatchState | null {
   if (!x || typeof x !== 'object') return null
   const saved = x as Partial<SavedBatch>
   if (saved.v !== SAVE_VERSION || !saved.state || !Array.isArray(saved.state.items)) return null
-  return { ...saved.state, items: saved.state.items.map(settleItem) }
+  return {
+    ...saved.state,
+    considered: saved.state.considered ?? [],
+    items: saved.state.items.map(settleItem),
+  }
 }
 
 export interface BatchProgress {

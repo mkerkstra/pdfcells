@@ -1,7 +1,7 @@
 import { Download } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import { combineStatements, combineTables, readTables } from '@/lib/batch'
+import { combineStatements, combineTables, readTables, uniqueNames } from '@/lib/batch'
 import { baseName } from '@/lib/filetype'
 import { zip } from '@/lib/plaintext'
 import { readStatement, type Statement } from '@/lib/statement'
@@ -40,19 +40,6 @@ const EXT: Record<StatementFormat, string> = {
   qbo: 'qbo',
   xero: 'xero.csv',
   csv: 'csv',
-}
-
-/** Names inside a ZIP must be unique; a repeat gets " 2", " 3". */
-function unique(names: string[]): string[] {
-  const seen = new Map<string, number>()
-  return names.map(n => {
-    const k = n.toLowerCase()
-    const i = (seen.get(k) ?? 0) + 1
-    seen.set(k, i)
-    if (i === 1) return n
-    const dot = n.indexOf('.')
-    return dot < 0 ? `${n} ${i}` : `${n.slice(0, dot)} ${i}${n.slice(dot)}`
-  })
 }
 
 interface StatementSet {
@@ -140,8 +127,8 @@ export function BatchExport({
             return new Uint8Array(await blob.arrayBuffer())
           }),
         )
-        const names = unique(docs.map(d => `${baseName(d.name)}.xlsx`))
-        const files = enc.map((data, i) => ({ name: names[i] ?? `file ${i + 1}.xlsx`, data }))
+        const names = uniqueNames(docs.map(d => baseName(d.name)))
+        const files = enc.map((data, i) => ({ name: `${names[i] ?? `file ${i + 1}`}.xlsx`, data }))
         download(
           new Blob([zip(files)], { type: 'application/zip' }),
           `batch of ${ready.length} files.zip`,
@@ -165,16 +152,24 @@ export function BatchExport({
                     currency,
                     now: new Date(),
                   })
-          return { name: `${set.name}.${EXT[format]}`, text }
+          return { base: set.name, text }
         })
+        const names = uniqueNames(built.map(b => b.base)).map(n => `${n}.${EXT[format]}`)
         const only = built[0]
-        if (built.length === 1 && only) download(new Blob([only.text]), only.name)
+        if (built.length === 1 && only)
+          download(new Blob([only.text]), names[0] ?? `statement.${EXT[format]}`)
         else {
           const enc = new TextEncoder()
-          const names = unique(built.map(b => b.name))
           download(
             new Blob(
-              [zip(built.map((b, i) => ({ name: names[i] ?? b.name, data: enc.encode(b.text) })))],
+              [
+                zip(
+                  built.map((b, i) => ({
+                    name: names[i] ?? `statement ${i + 1}.${EXT[format]}`,
+                    data: enc.encode(b.text),
+                  })),
+                ),
+              ],
               {
                 type: 'application/zip',
               },

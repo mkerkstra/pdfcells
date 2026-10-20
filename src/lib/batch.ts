@@ -177,6 +177,26 @@ export function combineTables(
   return [...sheets.values()]
 }
 
+/**
+ * File names (without extension) made unique for a ZIP, case-insensitively:
+ * a repeat becomes "name 2", "name 3", skipping any name already taken,
+ * including one another file was given.
+ */
+export function uniqueNames(names: string[]): string[] {
+  const taken = new Set(names.map(n => n.toLowerCase()))
+  const used = new Set<string>()
+  return names.map(n => {
+    let name = n
+    if (used.has(name.toLowerCase())) {
+      let i = 2
+      while (taken.has(`${n} ${i}`.toLowerCase()) || used.has(`${n} ${i}`.toLowerCase())) i++
+      name = `${n} ${i}`
+    }
+    used.add(name.toLowerCase())
+    return name
+  })
+}
+
 export interface CombinedStatement {
   transactions: (Transaction & { source: string })[]
   period: { start: string; end: string }

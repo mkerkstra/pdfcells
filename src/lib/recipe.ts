@@ -187,9 +187,12 @@ export function buildRecipe(
     const i = rules.findIndex(x => key(x.match, soft) === k)
     const cur = rules[i]
     if (!cur) rules.push(r)
-    // Repeats of one table (a statement's page 2 and 3) share a rule: keep the edited one.
-    else if (r.edits.length > cur.edits.length) rules[i] = r
+    // Repeats of one table (a statement's page 2 and 3) share a rule: keep
+    // the one changed most, counting renames and Include as changes too.
+    else if (changes(r) > changes(cur)) rules[i] = r
   }
+  const changes = (r: TableRule) =>
+    r.edits.length + (r.title === undefined ? 0 : 1) + (r.include ? 0 : 1)
   for (const p of after)
     p.tables.forEach((t, position) => {
       const match = t.origin ?? originOf(t)

@@ -9,6 +9,7 @@ import {
   batchReducer,
   deserialize,
   newBatch,
+  pendingMembers,
   progress,
   serialize,
   slimTriage,
@@ -140,8 +141,9 @@ describe('applying a group recipe', () => {
           recipe,
         },
       ],
+      considered: ['f1', 'f2', 'f3'],
     })
-    s = batchReducer(s, { type: 'apply', id: 'g1' })
+    s = batchReducer(s, { type: 'apply', id: 'g1', ids: ['f2', 'f3'] })
     const [a, b, c] = s.items
     expect(a?.doc.pages[0]?.tables[0]).toBe(edited)
     expect(b?.doc.pages[0]?.tables[0]?.rows).toEqual([
@@ -150,12 +152,16 @@ describe('applying a group recipe', () => {
     ])
     expect(b?.read?.[0]?.tables[0]).toBe(other)
     expect(b?.recipeProblems).toEqual([])
+    expect(s.groups[0]?.applied).toEqual(['f2', 'f3'])
+    const g1 = s.groups[0]
+    if (!g1) throw new Error('no group')
+    expect(pendingMembers(g1, s.items)).toEqual([])
     expect(c?.recipeProblems).toEqual([
       'Page 1, table 1 doesn’t match any table in a.pdf',
       'None of its tables match a.pdf',
     ])
     // Applying again starts from the pages as read, not from the last result.
-    const again = batchReducer(s, { type: 'apply', id: 'g1' })
+    const again = batchReducer(s, { type: 'apply', id: 'g1', ids: ['f2'] })
     expect(again.items[1]?.doc.pages[0]?.tables[0]?.rows[0]).toEqual(['Date', 'Amount'])
   })
 })

@@ -6,7 +6,14 @@
 
 import { MAX_BATCH_PAGES, readTables } from '@/lib/batch'
 import type { DocSource } from '@/lib/document'
-import { cluster, evidence, fingerprint, type Fingerprint } from '@/lib/fingerprint'
+import {
+  cluster,
+  evidence,
+  fingerprint,
+  SAME_FORMAT,
+  similarity,
+  type Fingerprint,
+} from '@/lib/fingerprint'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import type { Recipe, ReadKind } from '@/lib/recipe'
@@ -140,6 +147,7 @@ export async function readItem(
   hooks: RunHooks,
 ): Promise<void> {
   const id = item.id
+  if (hooks.signal?.aborted) return
   if (pages.length === 0) {
     dispatch({ type: 'item', id, patch: { status: 'read' } })
     return
@@ -156,7 +164,8 @@ export async function readItem(
     }
     await runPages(doc, full, action => dispatch({ type: 'doc', id, action }), { tier }, hooks)
     dispatch({ type: 'forget', id })
-    dispatch({ type: 'item', id, patch: { status: 'read' } })
+    // Stopped part-way: the pages left are not read, and a resume picks them up.
+    dispatch({ type: 'item', id, patch: { status: hooks.signal?.aborted ? 'checked' : 'read' } })
   } catch (e) {
     dispatch({ type: 'item', id, patch: { status: 'error', error: message(e) } })
   } finally {
@@ -196,23 +205,57 @@ export function fingerprintOf(item: BatchItem): Fingerprint | null {
 
 /** Groups of two or more files that look like one format, for the person to confirm. */
 export function proposeGroups(items: BatchItem[]): BatchGroup[] {
-  const fps = items.map(fingerprintOf)
-  return cluster(fps)
-    .filter(g => g.length >= 2 && g.every(i => fps[i]))
-    .map((g, k) => {
-      const members = g.flatMap(i => {
-        const it = items[i]
-        return it ? [it] : []
-      })
-      const first = members[0]
-      return {
-        id: `g${k + 1}`,
-        members: members.map(m => m.id),
-        state: 'proposed' as const,
-        evidence: evidence(g.flatMap(i => fps[i] ?? [])),
-        statements: first ? readStatement(readTables(first.doc.pages)) !== null : false,
+  return regroup(items, [], []).groups
+}
+
+/**
+ * Group files read since the last pass. A new file joins the existing group
+ * whose first file it matches best (at SAME_FORMAT or better); the rest are
+ * clustered with every read file not in a group yet, and clusters of two or
+ * more become new proposals. Existing groups and their decisions are kept.
+ */
+export function regroup(
+  items: BatchItem[],
+  groups: BatchGroup[],
+  considered: string[],
+): { groups: BatchGroup[]; considered: string[] } {
+  const fps = new Map(items.map(it => [it.id, fingerprintOf(it)]))
+  const seen = new Set(considered)
+  const fresh = items.filter(it => it.status === 'read' && !seen.has(it.id))
+  const next = groups.map(g => ({ ...g, members: [...g.members] }))
+  const grouped = () => new Set(next.flatMap(g => g.members))
+  for (const it of fresh) {
+    const fp = fps.get(it.id)
+    if (!fp || grouped().has(it.id)) continue
+    let best: BatchGroup | null = null
+    let score = SAME_FORMAT
+    for (const g of next) {
+      const leader = fps.get(g.members[0] ?? '')
+      const v = leader ? similarity(leader, fp) : 0
+      if (v >= score) {
+        best = g
+        score = v
       }
+    }
+    best?.members.push(it.id)
+  }
+  const inGroup = grouped()
+  const pool = items.filter(it => it.status === 'read' && !inGroup.has(it.id))
+  const poolFps = pool.map(it => fps.get(it.id) ?? null)
+  let n = next.length
+  for (const c of cluster(poolFps)) {
+    if (c.length < 2) continue
+    const members = c.flatMap(i => pool[i] ?? [])
+    const first = members[0]
+    next.push({
+      id: `g${++n}`,
+      members: members.map(m => m.id),
+      state: 'proposed',
+      evidence: evidence(c.flatMap(i => poolFps[i] ?? [])),
+      statements: first ? readStatement(readTables(first.doc.pages)) !== null : false,
     })
+  }
+  return { groups: next, considered: [...considered, ...fresh.map(it => it.id)] }
 }
 
 /** The engine each kind of page ended up read with in the set-up file (majority, when mixed). */

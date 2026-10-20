@@ -152,6 +152,23 @@ describe('building a recipe', () => {
   })
 })
 
+describe('repeated tables', () => {
+  it('a rename or Include change on a later repeat wins over an untouched first', () => {
+    const p1 = txns(['A'])
+    const p2 = recordEdit(txns(['B']), { ...txns(['B']), title: 'Transactions' })
+    const recipe = buildRecipe(
+      'a.pdf',
+      [],
+      [
+        { page: 1, tables: [p1] },
+        { page: 2, tables: [p2] },
+      ],
+      {},
+    )
+    expect(recipe.tables.map(r => r.title)).toEqual(['Transactions'])
+  })
+})
+
 describe('applying a recipe', () => {
   it('replays on another document by header name', () => {
     const { recipe } = setUp()
