@@ -1,7 +1,7 @@
 // Executes page jobs: triage, OCR, AI. Kept outside React so long-running work
 // survives re-renders; results flow back through dispatch.
 
-import { api, toApiTable, type ExtractResponse } from '@/lib/api'
+import { api, ApiError, toApiTable, type ExtractRequest, type ExtractResponse } from '@/lib/api'
 import { toJpegBase64, type DocSource } from '@/lib/document'
 import { buildTables, type LocalTable } from '@/lib/layout'
 import { ocrWords } from '@/lib/ocr'
@@ -87,6 +87,15 @@ export interface AiOptions {
   instruction?: string
 }
 
+/**
+ * Every AI page read goes through here, single documents and batches alike.
+ * Today it is one request per page; a hosted batch endpoint can take over
+ * behind this function without touching the callers.
+ */
+export async function readWithAi(req: ExtractRequest): Promise<ExtractResponse> {
+  return api.extract(req)
+}
+
 export async function runPage(
   doc: DocSource,
   page: PageState,
@@ -119,7 +128,7 @@ export async function runPage(
       return
     }
     const { canvas } = await source.render(2000)
-    const res = await api.extract({
+    const res = await readWithAi({
       tier: ai.tier,
       image_base64: await toJpegBase64(canvas),
       media_type: 'image/jpeg',
@@ -165,4 +174,54 @@ export async function pool<T>(items: T[], limit: number, fn: (item: T) => Promis
       }
     }),
   )
+}
+
+/** A counting lock: at most `limit` holders at once, shared by every caller that uses it. */
+export function semaphore(limit: number) {
+  let active = 0
+  const waiting: (() => void)[] = []
+  return async function hold<T>(fn: () => Promise<T>): Promise<T> {
+    if (active >= limit) await new Promise<void>(resolve => waiting.push(resolve))
+    active++
+    try {
+      return await fn()
+    } finally {
+      active--
+      waiting.shift()?.()
+    }
+  }
+}
+
+/** AI pages in flight across the whole app, three at a time. */
+export const aiSlots = semaphore(3)
+/** One OCR worker: OCR pages run one at a time. */
+export const ocrSlots = semaphore(1)
+
+export interface RunHooks {
+  onBalance?: (micros: number) => void
+  /** Called once, after the run, when a page failed for lack of credits. */
+  onNeedCredits?: () => void
+}
+
+/** Read pages with their chosen engines: OCR one at a time, AI three at a time. */
+export async function runPages(
+  doc: DocSource,
+  pages: PageState[],
+  dispatch: Dispatch,
+  ai: AiOptions,
+  hooks: RunHooks = {},
+) {
+  pages.forEach(p => dispatch({ type: 'status', index: p.n - 1, status: 'queued' }))
+  let needCredits = false
+  const isOcr = (p: PageState) => p.engine === 'ocr' && !ai.current
+  const job = (p: PageState) =>
+    (isOcr(p) ? ocrSlots : aiSlots)(() => runPage(doc, p, dispatch, ai, hooks.onBalance)).catch(
+      (e: unknown) => {
+        if (e instanceof ApiError && (e.code === 'insufficient_credits' || e.code === 'balance_negative'))
+          needCredits = true
+        throw e
+      },
+    )
+  await pool(pages, pages.length, job)
+  if (needCredits) hooks.onNeedCredits?.()
 }

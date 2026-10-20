@@ -1,13 +1,12 @@
 import { Lock } from 'lucide-react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
-import { ApiError } from '@/lib/api'
 import { OpenError, type DocSource } from '@/lib/document'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import { useAccount } from '@/state/account'
 import { initialDoc, reducer, type PageState } from '@/state/doc'
-import { pool, runPage, triageAll, type AiOptions } from '@/state/runner'
+import { runPages, triageAll, type AiOptions } from '@/state/runner'
 
 import { DropOverlay, Landing } from './Landing'
 import { ReviewView } from './ReviewView'
@@ -80,23 +79,11 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
         current: opts.current,
         instruction: opts.instruction,
       }
-      pages.forEach(p => dispatch({ type: 'status', index: p.n - 1, status: 'queued' }))
-      let needCredits = false
-      // OCR shares one worker; AI pages run three at a time.
-      const ocr = pages.filter(p => p.engine === 'ocr' && !opts.current)
-      const rest = pages.filter(p => !ocr.includes(p))
-      const job = (p: PageState) =>
-        runPage(doc, p, dispatch, ai, () => account.refreshMe()).catch((e: unknown) => {
-          if (
-            e instanceof ApiError &&
-            (e.code === 'insufficient_credits' || e.code === 'balance_negative')
-          )
-            needCredits = true
-          throw e
-        })
-      await Promise.all([pool(rest, 3, job), pool(ocr, 1, job)])
+      await runPages(doc, pages, dispatch, ai, {
+        onBalance: () => account.refreshMe(),
+        onNeedCredits,
+      })
       account.refreshMe()
-      if (needCredits) onNeedCredits()
     },
     [account, onNeedCredits],
   )
