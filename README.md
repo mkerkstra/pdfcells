@@ -8,6 +8,12 @@
 - **Corrections built in.** The grid editor supports undo and redo, inserting and deleting rows and columns, merging and splitting columns, and setting header rows. Suspect cells are flagged: non-numbers in numeric columns, totals that don't add up, and low OCR confidence. "Fix with AI" sends the page plus your current table and an instruction, and returns a corrected version.
 - **Real spreadsheets.** Numbers, percents, currencies, parenthesised negatives, decimal-comma locales and dates become real cell values with consistent per-column formats. Header rows are frozen, and tables continued across pages are joined into one sheet.
 
+## Bank statements
+
+Choose **Bank statement (OFX, QBO, Xero CSV)** in the export bar to turn a statement into an import file for QuickBooks, Xero, Wave and similar: OFX 1.02, QuickBooks Web Connect (.qbo), Xero's statement CSV, or a plain bank CSV. Transactions are read from the same columns the running-balance check verified, joined across pages, signed money-in positive, with stable FITIDs.
+
+The download is only enabled when the numbers check out: the running balance ties on every row, or, without a balance column, the account summary ties and the transactions add up to it. Otherwise the panel names the cell to fix ("Balance doesn't tie on page 1, row 11: ..."). Only the plain CSV can be exported anyway, behind a confirm box. Import tips and format details, including QuickBooks' limits on .qbo files: [docs/bank-statements.md](docs/bank-statements.md).
+
 ## Pricing model
 
 | Path | Cost |
@@ -30,6 +36,7 @@ src/lib/layout.ts     words → lines → segments → table blocks → columns 
 src/lib/triage.ts     per-page classification + engine recommendation
 src/lib/cells.ts      number/date/percent parsing, per-column typing
 src/lib/validate.ts   checks that drive the correction UI
+src/lib/statement.ts  bank statement transactions + the export accuracy gate (writers in statementExport.ts)
 backend/extract       one Claude call per page, structured output, exact per-model billing
 backend/store         ledger: topups, holds, settlement, free quota
 ```
