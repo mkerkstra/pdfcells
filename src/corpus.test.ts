@@ -246,7 +246,7 @@ describe('accuracy cross-checks', () => {
   it('debit/credit statement: balance and summary tie', async () => {
     expect(tickLabels(await reviewed('statement-dc.pdf'))).toEqual([
       ['Balance ties'],
-      ['Footed', 'Opening and closing balances tie'],
+      ['Opening and closing balances tie'],
     ])
   })
 

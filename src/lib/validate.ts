@@ -5,7 +5,7 @@ import { inferColumn, type ColumnType } from './cells'
 import { lineArithmetic } from './checks/arithmetic'
 import { runningBalance } from './checks/balance'
 import { crossFoot } from './checks/crossfoot'
-import { buildGrid, cell, formatNumber, isTotalRow, raw, type Grid } from './checks/grid'
+import { buildGrid, cell, formatNumber, isTotalRow, raw, tolerance, type Grid } from './checks/grid'
 import type {
   CheckResult,
   DocCheckResult,
@@ -159,22 +159,36 @@ export function reviewDocument(doc: PageTables[]): DocumentReview {
 function foot(g: Grid, types: ColumnType[]): CheckResult {
   const t = g.table
   const issues: Issue[] = []
-  let checked = 0
+  let tied = 0
   let start = t.headerRows
-  const earlier: number[] = []
+  let totals = 0
+  // Per column: earlier total rows a later total may build on. A total that
+  // ties through them absorbs them, so they aren't counted twice.
+  const earlier = new Map<number, number[]>()
   for (let i = t.headerRows; i < t.rows.length; i++) {
     if (!g.totalRow[i]) continue
+    totals++
     types.forEach((ct, c) => {
       if (ct.kind !== 'number' || g.percentCol[c]) return
       const stated = cell(g, i, c)
       if (stated === null) return
+      const before = earlier.get(c) ?? []
       const strict = addUp(g, c, range(start, i))
-      const chain = addUp(g, c, [...earlier, ...range(start, i)])
-      if (strict.terms === 0 && chain.terms === 0) return
-      checked++
+      const chain = addUp(g, c, [...before, ...range(start, i)])
       const dec = Math.max(g.colDecimals[c] ?? 0, g.dec[i]?.[c] ?? 0)
-      const tol = Math.max(0.011, Math.abs(stated) * 1e-6)
-      if (Math.abs(strict.sum - stated) <= tol || Math.abs(chain.sum - stated) <= tol) return
+      const ties = (x: { sum: number; terms: number }) =>
+        x.terms > 0 && Math.abs(x.sum - stated) <= tolerance(dec, x.terms + 1, stated)
+      if (ties(strict)) {
+        tied++
+        earlier.set(c, [...before, i])
+        return
+      }
+      if (ties(chain)) {
+        tied++
+        earlier.set(c, [i])
+        return
+      }
+      earlier.set(c, [...before, i])
       // A "total" over a single value is more likely a label than a footing.
       const use = strict.terms >= 2 ? strict : chain.terms >= 2 ? chain : null
       if (!use) return
@@ -192,12 +206,11 @@ function foot(g: Grid, types: ColumnType[]): CheckResult {
         basis: `${over} add up to ${want}`,
       })
     })
-    earlier.push(i)
     start = i + 1
   }
   const ticks: Tick[] =
-    checked > 0 && issues.length === 0
-      ? [{ kind: 'total', label: 'Footed', cols: [], rows: earlier.length }]
+    tied > 0 && issues.length === 0
+      ? [{ kind: 'total', label: 'Footed', cols: [], rows: totals }]
       : []
   return { issues, ticks }
 }

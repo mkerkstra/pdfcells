@@ -103,6 +103,35 @@ describe('validate', () => {
     })
   })
 
+  it('does not count subtotals twice once a total has absorbed them', () => {
+    const t = table([
+      ['Item', 'Amount'],
+      ['A1', '10.00'],
+      ['A2', '20.00'],
+      ['Subtotal goods', '30.00'],
+      ['B1', '5.00'],
+      ['Subtotal services', '5.00'],
+      ['Total', '35.00'],
+      ['VAT', '7.00'],
+      ['Total due', '42.00'],
+    ])
+    expect(review(t)).toEqual({
+      issues: [],
+      ticks: [expect.objectContaining({ kind: 'total', label: 'Footed' })],
+    })
+  })
+
+  it('allows rounding when totals are shown in whole thousands', () => {
+    const t = table([
+      ['Line', 'USD 000s'],
+      ['A', '1,234'],
+      ['B', '2,346'],
+      ['C', '3,457'],
+      ['Total', '7,038'],
+    ])
+    expect(validate(t)).toEqual([])
+  })
+
   it('does not foot a "total" label over a single value', () => {
     const t = table(
       [
@@ -112,7 +141,8 @@ describe('validate', () => {
       ],
       { headerRows: 0 },
     )
-    expect(validate(t)).toEqual([])
+    // Silent, and no "Footed" tick either: nothing was verified.
+    expect(review(t)).toEqual({ issues: [], ticks: [] })
   })
 
   it('keeps one issue per cell, the most specific one', () => {
