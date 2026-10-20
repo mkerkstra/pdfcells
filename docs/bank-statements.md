@@ -53,7 +53,7 @@ OFX 1.02 SGML bank statement: `BANKMSGSRSV1` / `STMTTRNRS` / `STMTRS`, one `STMT
 - `BANKID` is the placeholder `000000000`. `ACCTID` is the account number you type (digits only, default `000000`). The account type is CHECKING.
 - Currency: USD, EUR, GBP, CAD or AUD.
 
-Accepted by QuickBooks Desktop (File > Utilities > Import > Web Connect Files, though see below), Xero, Wave, Sage, Quicken, GnuCash, Moneydance and most banks' import tools.
+OFX 1.x is the statement format QuickBooks Desktop (File > Utilities > Import > Web Connect Files, though see below), Xero, Wave, Quicken, GnuCash and many banks document for import. This file has been checked against the OFX 1.02 structure, not test-imported into each of those products.
 
 ### QuickBooks (.qbo)
 
@@ -92,3 +92,4 @@ Both CSVs start with a UTF-8 byte order mark and guard every text cell against s
 - **Credit card statements** where the balance is the amount owed come out with inverted signs (a purchase raises the balance, so it reads as money in). Export as bank CSV and flip the sign, or wait for a credit-card mode.
 - One account per export. A statement with several accounts exports the longest transaction table.
 - OFX/QBO always declare a checking account.
+- A row whose description starts with "Total" or "Sum" is treated as a total line and skipped, as the balance check does. A real payee such as "Total Wine" would be dropped, and the balance check then flags the next row.
