@@ -9,7 +9,7 @@ import {
   TriangleAlert,
   Undo2,
 } from 'lucide-react'
-import { useState, type Dispatch } from 'react'
+import { useState, type Dispatch, type ReactNode } from 'react'
 
 import { formatUsd } from '@/lib/api'
 import type { DocSource } from '@/lib/document'
@@ -31,13 +31,19 @@ export function ReviewView({
   onRun,
   onBack,
   onReset,
+  backLabel = 'Pre-check',
+  footer,
 }: {
   doc: DocState
   dispatch: Dispatch<Action>
   source: DocSource
   onRun: RunFn
   onBack: () => void
-  onReset: () => void
+  /** Omitted in a batch, where the batch screen offers its own way out. */
+  onReset?: () => void
+  backLabel?: string
+  /** Replaces the export bar (a batch exports from the batch screen). */
+  footer?: ReactNode
 }) {
   const account = useAccount()
   const page = doc.pages[doc.selected]
@@ -61,18 +67,20 @@ export function ReviewView({
       <aside className='border-b border-line bg-card lg:sticky lg:top-14 lg:h-[calc(100dvh-3.5rem)] lg:overflow-y-auto lg:border-r lg:border-b-0'>
         <div className='flex items-center gap-1 border-b border-line p-2'>
           <Button size='sm' variant='ghost' onClick={onBack}>
-            <ArrowLeft className='size-3.5' /> Pre-check
+            <ArrowLeft className='size-3.5' /> {backLabel}
           </Button>
-          <Button
-            size='icon'
-            variant='ghost'
-            className='ml-auto'
-            onClick={onReset}
-            title='Open a different file'
-            aria-label='Open a different file'
-          >
-            <RotateCcw className='size-3.5' />
-          </Button>
+          {onReset && (
+            <Button
+              size='icon'
+              variant='ghost'
+              className='ml-auto'
+              onClick={onReset}
+              title='Open a different file'
+              aria-label='Open a different file'
+            >
+              <RotateCcw className='size-3.5' />
+            </Button>
+          )}
         </div>
         <nav aria-label='Pages'>
           <ol className='flex gap-1 overflow-x-auto p-2 lg:flex-col'>
@@ -265,7 +273,7 @@ export function ReviewView({
           </div>
         </div>
 
-        <ExportPanel doc={doc} />
+        {footer ?? <ExportPanel doc={doc} />}
       </div>
     </main>
   )

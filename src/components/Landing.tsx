@@ -20,11 +20,14 @@ export function Landing({
   busy,
   error,
   password,
+  resume,
 }: {
   onFiles: (files: File[]) => void
   busy: boolean
   error: string
   password: React.ReactNode
+  /** A saved batch to pick up again. */
+  resume?: React.ReactNode
 }) {
   const input = useRef<HTMLInputElement>(null)
   return (
@@ -48,7 +51,9 @@ export function Landing({
             {busy ? <Spinner /> : <FileUp className='size-5' />}
             {busy ? 'Opening' : 'Choose a PDF or image'}
           </Button>
-          <span className='text-sm text-muted'>or drop or paste one anywhere on this page</span>
+          <span className='text-sm text-muted'>
+            or drop or paste one anywhere on this page. Several PDFs open as a batch.
+          </span>
           <input
             ref={input}
             type='file'
@@ -63,6 +68,7 @@ export function Landing({
           />
         </div>
         {password}
+        {resume}
         {error && <p className='mt-4 text-sm text-bad'>{error}</p>}
         <p className='mt-8 flex items-start gap-2 text-sm text-muted'>
           <Lock className='mt-0.5 size-4 shrink-0 text-accent' />

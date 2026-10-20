@@ -77,7 +77,10 @@ export async function checkItem(
     })
     let letterhead = ''
     for (let i = 0; i < doc.pages; i++) {
-      if (signal.aborted) return 0
+      if (signal.aborted) {
+        dispatch({ type: 'item', id, patch: { status: 'waiting' } })
+        return 0
+      }
       try {
         const t = classify(await (await doc.page(i + 1)).facts(), aiAvailable)
         if (i === 0) letterhead = t.textHint.split('\n').slice(0, 8).join('\n')

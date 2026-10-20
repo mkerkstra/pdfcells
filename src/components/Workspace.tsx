@@ -1,13 +1,17 @@
 import { Lock } from 'lucide-react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
+import { isBatch, tooMany } from '@/lib/batch'
 import { OpenError, type DocSource } from '@/lib/document'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import { useAccount } from '@/state/account'
+import { newBatch, progress, type BatchState } from '@/state/batch'
+import { clearBatch, loadBatch } from '@/state/batchStore'
 import { initialDoc, reducer, type PageState } from '@/state/doc'
 import { runPages, triageAll, type AiOptions } from '@/state/runner'
 
+import { BatchView } from './BatchView'
 import { DropOverlay, Landing } from './Landing'
 import { ReviewView } from './ReviewView'
 import { TriageView } from './TriageView'
@@ -20,7 +24,19 @@ const MAX_PAGES = 300
 export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
   const account = useAccount()
   const [doc, dispatch] = useReducer(reducer, initialDoc)
-  const [phase, setPhase] = useState<'empty' | 'triage' | 'review'>('empty')
+  const [phase, setPhase] = useState<'empty' | 'triage' | 'review' | 'batch'>('empty')
+  const [batch, setBatch] = useState<{ state: BatchState; files: File[] } | null>(null)
+  const [saved, setSaved] = useState<BatchState | null>(null)
+
+  useEffect(() => {
+    let live = true
+    void loadBatch().then(s => {
+      if (live) setSaved(s)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState('')
   const [password, setPassword] = useState<{ files: File[]; incorrect: boolean } | null>(null)
@@ -33,6 +49,17 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
       setError('')
       setOpening(true)
       try {
+        if (!pw && (await isBatch(files))) {
+          const limit = tooMany(files.length)
+          if (limit) {
+            setError(limit)
+            return
+          }
+          setSaved(null)
+          setBatch({ state: newBatch(files), files })
+          setPhase('batch')
+          return
+        }
         abortRef.current?.abort()
         await docRef.current?.destroy()
         const doc = await openDocument(files, pw)
@@ -114,6 +141,22 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
     setPhase('empty')
   }
 
+  if (phase === 'batch' && batch) {
+    return (
+      <BatchView
+        key={batch.state.id}
+        initial={batch.state}
+        files={batch.files}
+        onNeedCredits={onNeedCredits}
+        onExit={() => {
+          setBatch(null)
+          setSaved(null)
+          setPhase('empty')
+        }}
+      />
+    )
+  }
+
   if (phase === 'empty' || !source) {
     return (
       <>
@@ -123,6 +166,21 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
           onFiles={onFiles}
           busy={opening}
           error={error}
+          resume={
+            saved && (
+              <ResumePrompt
+                saved={saved}
+                onResume={() => {
+                  setBatch({ state: saved, files: [] })
+                  setPhase('batch')
+                }}
+                onDiscard={() => {
+                  void clearBatch()
+                  setSaved(null)
+                }}
+              />
+            )
+          }
           password={
             password && (
               <PasswordPrompt
@@ -177,6 +235,31 @@ function PasteImages({ onFiles }: { onFiles: (files: File[]) => void }) {
     return () => window.removeEventListener('paste', onPaste)
   }, [onFiles])
   return null
+}
+
+function ResumePrompt({
+  saved,
+  onResume,
+  onDiscard,
+}: {
+  saved: BatchState
+  onResume: () => void
+  onDiscard: () => void
+}) {
+  const { files, done } = progress(saved)
+  return (
+    <div className='mt-5 flex max-w-md flex-wrap items-center gap-2 rounded-[10px] border border-rule bg-card px-3 py-2.5 text-sm'>
+      <span className='min-w-0 flex-1'>
+        Resume your batch of {files} {files === 1 ? 'file' : 'files'}: {done} done
+      </span>
+      <Button size='sm' variant='primary' onClick={onResume}>
+        Resume
+      </Button>
+      <Button size='sm' variant='ghost' onClick={onDiscard}>
+        Discard batch
+      </Button>
+    </div>
+  )
 }
 
 function PasswordPrompt({
