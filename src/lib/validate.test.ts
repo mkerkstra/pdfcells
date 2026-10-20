@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Table } from './types'
-import { validate } from './validate'
+import { review, reviewDocument, validate } from './validate'
 
 const table = (rows: string[][], extra: Partial<Table> = {}): Table => ({
   id: 't',
@@ -83,5 +83,66 @@ describe('validate', () => {
       ),
     )
     expect(issues).toEqual([expect.objectContaining({ kind: 'low-confidence', row: 1, col: 0 })])
+  })
+
+  it('foots a total that follows a subtotal and tax', () => {
+    const t = table([
+      ['Item', 'Amount'],
+      ['A', '100.00'],
+      ['B', '50.00'],
+      ['Subtotal', '150.00'],
+      ['Tax', '12.00'],
+      ['Total', '162.00'],
+    ])
+    expect(review(t)).toEqual({
+      issues: [],
+      ticks: [
+        expect.objectContaining({ kind: 'total', label: 'Footed' }),
+        expect.objectContaining({ kind: 'tie', label: 'Subtotal and tax tie to total' }),
+      ],
+    })
+  })
+
+  it('does not foot a "total" label over a single value', () => {
+    const t = table(
+      [
+        ['Opening balance', '2,450.00'],
+        ['Total credits', '2,671.57'],
+        ['Total debits', '2,275.19'],
+      ],
+      { headerRows: 0 },
+    )
+    expect(validate(t)).toEqual([])
+  })
+
+  it('keeps one issue per cell, the most specific one', () => {
+    const t = table([
+      ['Item', 'Amount'],
+      ['A', '100.00'],
+      ['B', '50.00'],
+      ['Subtotal', '150.00'],
+      ['Tax', '12.00'],
+      ['Total', '172.00'],
+    ])
+    expect(validate(t)).toEqual([
+      expect.objectContaining({ kind: 'tie', row: 5, col: 1, expected: 162 }),
+    ])
+  })
+
+  it('merges cross-table ties into the table they point at', () => {
+    const items = table([['Subtotal', '150.00']], { id: 'a', headerRows: 0 })
+    const sums = table(
+      [
+        ['VAT 20%', '30.00'],
+        ['Total', '190.00'],
+      ],
+      { id: 'b', headerRows: 0 },
+    )
+    const res = reviewDocument([{ page: 1, tables: [items, sums] }])
+    expect(res.tables.map(t => [t.tableId, t.issues.map(i => [i.kind, i.row, i.col])])).toEqual([
+      ['a', []],
+      ['b', [['tie', 1, 1]]],
+    ])
+    expect(res.cross.issues).toHaveLength(1)
   })
 })

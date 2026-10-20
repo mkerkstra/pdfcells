@@ -13,6 +13,12 @@ const CURRENCY = /[$€£¥₹]|\b(?:USD|EUR|GBP|CAD|AUD|JPY|CHF)\b/g
 // Placeholders that mean "no value" rather than a malformed number.
 const DASHES = /^(?:[-–—]|n\/?[am]|nil|none)$/i
 
+/** A cell that means "no value" (blank, a dash, n/a). */
+export function isPlaceholder(raw: string): boolean {
+  const s = raw.trim()
+  return s === '' || DASHES.test(s)
+}
+
 /** Guess the decimal separator from a column's values. */
 export function detectLocale(values: string[]): NumberLocale {
   let comma = 0
