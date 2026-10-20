@@ -54,3 +54,24 @@ func TestBadRequests(t *testing.T) {
 		t.Fatalf("bad tier: %d", rec.Code)
 	}
 }
+
+func TestPreviewNeverGetsProductionDatabase(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://prod")
+	t.Setenv("DATABASE_URL_UNPOOLED", "postgres://prod-direct")
+	t.Setenv("VERCEL_ENV", "preview")
+	if c := ConfigFromEnv(); c.DatabaseURL != "" || c.DatabaseURLDirect != "" {
+		t.Fatalf("preview got a database: %+v", c.DatabaseURL)
+	}
+	t.Setenv("PREVIEW_DATABASE_URL", "postgres://branch")
+	if c := ConfigFromEnv(); c.DatabaseURL != "postgres://branch" {
+		t.Fatalf("preview should use PREVIEW_DATABASE_URL, got %q", c.DatabaseURL)
+	}
+	t.Setenv("VERCEL_ENV", "production")
+	if c := ConfigFromEnv(); c.DatabaseURL != "postgres://prod" {
+		t.Fatalf("production lost its database: %q", c.DatabaseURL)
+	}
+	t.Setenv("VERCEL_ENV", "")
+	if c := ConfigFromEnv(); c.DatabaseURL != "postgres://prod" {
+		t.Fatalf("local dev (no VERCEL_ENV) should use DATABASE_URL, got %q", c.DatabaseURL)
+	}
+}

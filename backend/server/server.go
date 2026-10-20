@@ -44,6 +44,19 @@ type Config struct {
 }
 
 func ConfigFromEnv() Config {
+	cfg := configFromEnv()
+	// Only production may touch the production ledger. Vercel exposes the Neon
+	// integration's DATABASE_URL to Preview and Development too, and a preview
+	// that migrates or writes it can take production down. Previews get a
+	// database only via PREVIEW_DATABASE_URL (e.g. a Neon branch).
+	if env := os.Getenv("VERCEL_ENV"); env != "" && env != "production" {
+		cfg.DatabaseURL = os.Getenv("PREVIEW_DATABASE_URL")
+		cfg.DatabaseURLDirect = os.Getenv("PREVIEW_DATABASE_URL_UNPOOLED")
+	}
+	return cfg
+}
+
+func configFromEnv() Config {
 	return Config{
 		AnthropicKey:        os.Getenv("ANTHROPIC_API_KEY"),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
