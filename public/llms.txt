@@ -20,3 +20,4 @@
 ## Links
 - App: https://pdfcells.com/
 - Source: https://github.com/mkerkstra/pdfcells
+- Contact: support@pdfcells.com
