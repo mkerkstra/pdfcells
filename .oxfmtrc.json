@@ -57,6 +57,7 @@
     "pnpm-lock.yaml",
     "src/generated/**",
     "public/assets/theme-init.js",
-    "public/brand/**"
+    "public/brand/**",
+    "eval/reports/**"
   ]
 }
