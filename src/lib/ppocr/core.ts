@@ -420,11 +420,15 @@ export interface OcrWord extends Rect {
 }
 
 /**
- * Splits a decoded line into words at spaces. Each character sits at its
- * CTC timesteps (input x = t · stride); a word spans its first character's
- * start to its last character's end, padded by half a mean character width
- * because CTC peaks are narrower than glyphs. `contentWidth` is the crop's
- * width in the rec input (before padding), mapped back onto `box`.
+ * Splits a decoded line into words at spaces. Each character sits at its CTC
+ * peak (input x = (t + ½) · stride); a word spans its first to its last peak,
+ * padded by half a character width on each side. The character width comes
+ * from the line's own glyphs (median gap between neighbouring peaks inside
+ * words), never from the det box, which includes the whitespace between
+ * table cells. The padding also stops halfway to the neighbouring word, so
+ * two cells one det box spans can't overlap and be merged by the layout.
+ * `contentWidth` is the crop's width in the rec input (before padding),
+ * mapped back onto `box`.
  */
 export function lineWords(
   chars: DecodedChar[],
@@ -435,32 +439,80 @@ export function lineWords(
 ): OcrWord[] {
   const stride = inputWidth / Math.max(1, steps)
   const toBox = (box.x1 - box.x0) / Math.max(1, contentWidth)
-  const visible = chars.filter(c => c.ch !== ' ')
-  const charW = visible.length ? contentWidth / visible.length : stride
-  const words: OcrWord[] = []
-  let cur: DecodedChar[] = []
-  const flush = () => {
-    const first = cur[0]
-    const last = cur[cur.length - 1]
-    if (!first || !last) return
-    const xa = Math.max(0, first.t0 * stride + stride / 2 - charW / 2)
-    const xb = Math.min(contentWidth, last.t1 * stride + stride / 2 + charW / 2)
-    words.push({
-      text: cur.map(c => c.ch).join(''),
-      conf: (100 * cur.reduce((s, c) => s + c.p, 0)) / cur.length,
+  const peak = (c: DecodedChar) => ((c.t0 + c.t1) / 2 + 0.5) * stride
+  const groups: DecodedChar[][] = [[]]
+  for (const c of chars) {
+    if (c.ch === ' ' || !c.ch.trim()) groups.push([])
+    else groups[groups.length - 1]?.push(c)
+  }
+  const ws = groups.filter(g => g.length > 0)
+  const gaps: number[] = []
+  for (const g of ws)
+    for (let i = 1; i < g.length; i++) {
+      const a = g[i - 1]
+      const b = g[i]
+      if (a && b) gaps.push(peak(b) - peak(a))
+    }
+  gaps.sort((a, b) => a - b)
+  // Rec inputs are 48 px high; a digit is about half as wide.
+  const charW = Math.min(
+    REC_HEIGHT * 0.75,
+    gaps.length ? (gaps[gaps.length >> 1] ?? 0) : REC_HEIGHT / 2,
+  )
+  return ws.map((g, i) => {
+    const first = g[0] as DecodedChar
+    const last = g[g.length - 1] as DecodedChar
+    const prev = ws[i - 1]
+    const next = ws[i + 1]
+    const prevEnd = prev ? peak(prev[prev.length - 1] as DecodedChar) : -Infinity
+    const nextStart = next ? peak(next[0] as DecodedChar) : Infinity
+    const lo = Math.max(0, (prevEnd + peak(first)) / 2)
+    const hi = Math.min(contentWidth, (peak(last) + nextStart) / 2)
+    const xa = Math.max(lo, peak(first) - charW / 2)
+    const xb = Math.min(hi, peak(last) + charW / 2)
+    return {
+      text: g.map(c => c.ch).join(''),
+      conf: (100 * g.reduce((s, c) => s + c.p, 0)) / g.length,
       x0: box.x0 + xa * toBox,
-      x1: box.x0 + Math.max(xa + 1, xb) * toBox,
+      x1: box.x0 + Math.max(xa + 0.5, xb) * toBox,
       y0: box.y0,
       y1: box.y1,
-    })
-    cur = []
+    }
+  })
+}
+
+/**
+ * Maps a box found on the levelled image (deskew(img, slope)) back to the
+ * original image: the bounding box of its four corners under the same
+ * rotation deskew samples with. Page areas (src/lib/region) are drawn on the
+ * original page, so words must come back in its coordinates.
+ */
+export function unskewBox<T extends Rect>(b: T, slope: number, width: number, height: number): T {
+  const a = Math.atan(slope)
+  const cos = Math.cos(a)
+  const sin = Math.sin(a)
+  const cx = width / 2
+  const cy = height / 2
+  const xs: number[] = []
+  const ys: number[] = []
+  for (const [x, y] of [
+    [b.x0, b.y0],
+    [b.x1, b.y0],
+    [b.x0, b.y1],
+    [b.x1, b.y1],
+  ] as const) {
+    const dx = x - cx
+    const dy = y - cy
+    xs.push(cx + dx * cos - dy * sin)
+    ys.push(cy + dx * sin + dy * cos)
   }
-  for (const c of chars) {
-    if (c.ch === ' ' || !c.ch.trim()) flush()
-    else cur.push(c)
+  return {
+    ...b,
+    x0: Math.min(...xs),
+    x1: Math.max(...xs),
+    y0: Math.min(...ys),
+    y1: Math.max(...ys),
   }
-  flush()
-  return words
 }
 
 /**

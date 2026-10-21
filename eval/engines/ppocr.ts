@@ -56,7 +56,7 @@ export function ppocrEngine(modelId: PpocrModelId): Engine {
   }
   return {
     id: `ppocr-${modelId}`,
-    version: `${modelId}+ort-web-${ort.env.versions.web}+det${detMaxSide}+2`,
+    version: `${modelId}+ort-web-${ort.env.versions.web}+det${detMaxSide}+3`,
     kind: 'local',
     async run(page) {
       // Model download and session creation are not charged to the first page.

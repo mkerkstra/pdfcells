@@ -15,6 +15,7 @@ import {
   recInput,
   recWidth,
   REC_HEIGHT,
+  unskewBox,
   type OcrWord,
   type Rgba,
 } from './core'
@@ -155,7 +156,11 @@ export async function createPpocr(
         progress?.(Math.min(1, (at + batch.length) / Math.max(1, order.length)))
       }
       return {
-        words: perBox.flat(),
+        // Back to the page as given: areas are drawn on it, not on the levelled copy.
+        words:
+          img === page
+            ? perBox.flat()
+            : perBox.flat().map(w => unskewBox(w, skew, page.width, page.height)),
         timing: {
           detMs: t1 - t0,
           recMs: performance.now() - t1,

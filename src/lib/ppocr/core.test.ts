@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { buildTables } from '../layout'
+
 import {
   ctcDecode,
   dbBoxes,
@@ -11,6 +13,7 @@ import {
   parseCharacterDict,
   recInput,
   sortReading,
+  unskewBox,
 } from './core'
 
 /** One-hot CTC probabilities: classes[t] is the argmax at timestep t. */
@@ -90,6 +93,45 @@ describe('lineWords', () => {
     expect(b.x1).toBeLessThanOrEqual(1100)
     expect(a.y0).toBe(10)
     expect(a.conf).toBeCloseTo(90, 0)
+  })
+
+  // One det box spanning two one-digit table cells: 200 px, input 200 px wide
+  // (25 steps of 8 px), digits at steps 4 and 16, whitespace between.
+  const twoCells = (a: number, b: number) => {
+    const steps = Array.from({ length: 25 }, () => 0)
+    steps[4] = a
+    steps[10] = 3 // space
+    steps[16] = b
+    return ctcDecode(onehot(steps, 4), 0, 25, 4, ['1', '2'])
+  }
+
+  it('pads words by glyph width, not by the det box, so adjacent cells stay apart', () => {
+    const [a, b] = lineWords(twoCells(1, 2), { x0: 0, y0: 0, x1: 200, y1: 20 }, 200, 200, 25)
+    expect(a?.text).toBe('1')
+    expect(b?.text).toBe('2')
+    if (!a || !b) return
+    // Before: [0, 85] and [75, 175] overlapped and the layout merged them.
+    expect(a.x1).toBeLessThan(b.x0)
+    expect(b.x0 - a.x1).toBeGreaterThan(40)
+  })
+
+  it('never pads past the midpoint to the next word', () => {
+    const steps = Array.from({ length: 10 }, () => 0)
+    steps[1] = 1
+    steps[2] = 3
+    steps[3] = 2
+    const chars = ctcDecode(onehot(steps, 4), 0, 10, 4, ['1', '2'])
+    const [a, b] = lineWords(chars, { x0: 0, y0: 0, x1: 80, y1: 20 }, 80, 80, 10)
+    expect(a && b && a.x1 <= b.x0).toBe(true)
+  })
+
+  it('keeps such cells as separate columns through the layout', () => {
+    const words = [0, 1, 2, 3].flatMap(r =>
+      lineWords(twoCells(1, 2), { x0: 0, y0: r * 30, x1: 200, y1: r * 30 + 20 }, 200, 200, 25),
+    )
+    const tables = buildTables(words)
+    expect(tables).toHaveLength(1)
+    expect(tables[0]?.rows.every(row => row.join('|') === '1|2')).toBe(true)
   })
 
   it('returns nothing for an empty line', () => {
@@ -213,5 +255,20 @@ describe('skew', () => {
       return best
     }
     expect(Math.abs(rowOf(20) - rowOf(80))).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('unskewBox', () => {
+  it('inverts deskew: a point levelled about the centre maps back where it was drawn', () => {
+    const slope = 0.06
+    const a = Math.atan(slope)
+    // Drawn at (100, 100) on a 1000×1000 page skewed by +a about the centre;
+    // deskew moves it to the levelled position below.
+    const [cx, cy] = [500, 500]
+    const lx = cx + (100 - cx) * Math.cos(a) + (100 - cy) * Math.sin(a)
+    const ly = cy - (100 - cx) * Math.sin(a) + (100 - cy) * Math.cos(a)
+    const b = unskewBox({ x0: lx, y0: ly, x1: lx, y1: ly }, slope, 1000, 1000)
+    expect(b.x0).toBeCloseTo(100, 6)
+    expect(b.y0).toBeCloseTo(100, 6)
   })
 })

@@ -1,17 +1,19 @@
-// PP-OCR model sets, fetched at runtime from PaddlePaddle's official ONNX
-// exports on Hugging Face, pinned by commit (a resolve URL at a commit SHA
-// never changes). The .onnx files are checked against the sha256 Hugging Face
-// publishes for them (its LFS oid). All Apache-2.0. Det/rec constants are the
-// ones in each repo's inference.yml. Sizes and provenance:
-// docs/research/ocr-sota-2026.md.
+// PP-OCR model sets: PaddlePaddle's official ONNX exports on Hugging Face,
+// pinned by commit (a resolve URL at a commit SHA never changes), each file
+// with its sha256 (the .onnx ones are Hugging Face's LFS oids). The eval
+// harness downloads these. The browser never talks to Hugging Face: it loads
+// the one set it supports, v6-tiny, from our own origin (PPOCR_BROWSER_MODEL,
+// files under public/ppocr/, same bytes and hashes). All Apache-2.0.
+// Det/rec constants are the ones in each repo's inference.yml. Sizes and
+// provenance: docs/research/ocr-sota-2026.md.
 
 import type { DetParams } from './core'
 
 export interface ModelFile {
   url: string
   bytes: number
-  /** sha256 of the file, hex; undefined for the small yml files. */
-  sha256?: string
+  /** sha256 of the file, hex. Every asset has one, dictionaries included. */
+  sha256: string
 }
 
 export interface PpocrModel {
@@ -53,7 +55,11 @@ export const PPOCR_MODELS: Record<PpocrModelId, PpocrModel> = {
       bytes: 4_462_639,
       sha256: '9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6',
     },
-    recYml: { url: hf('PP-OCRv6_tiny_rec_onnx', V6_TINY_REC, 'inference.yml'), bytes: 55_571 },
+    recYml: {
+      url: hf('PP-OCRv6_tiny_rec_onnx', V6_TINY_REC, 'inference.yml'),
+      bytes: 55_571,
+      sha256: '66170210bad538e83fff3c4a3867e547d6bf20b50d64b20347c4b913f3034ea1',
+    },
   },
   'v6-small': {
     id: 'v6-small',
@@ -68,7 +74,11 @@ export const PPOCR_MODELS: Record<PpocrModelId, PpocrModel> = {
       bytes: 21_159_378,
       sha256: '5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634',
     },
-    recYml: { url: hf('PP-OCRv6_small_rec_onnx', V6_SMALL_REC, 'inference.yml'), bytes: 150_579 },
+    recYml: {
+      url: hf('PP-OCRv6_small_rec_onnx', V6_SMALL_REC, 'inference.yml'),
+      bytes: 150_579,
+      sha256: 'ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1',
+    },
   },
   'v5-en-mobile': {
     id: 'v5-en-mobile',
@@ -83,7 +93,11 @@ export const PPOCR_MODELS: Record<PpocrModelId, PpocrModel> = {
       bytes: 7_848_423,
       sha256: 'b5f833dfc5d0eb71da397b4efa06ebeee9b431b690a47d6af40d77d8eabc557f',
     },
-    recYml: { url: hf('en_PP-OCRv5_mobile_rec_onnx', V5_EN_REC, 'inference.yml'), bytes: 3_964 },
+    recYml: {
+      url: hf('en_PP-OCRv5_mobile_rec_onnx', V5_EN_REC, 'inference.yml'),
+      bytes: 3_964,
+      sha256: '27e91d0582f40168aa218303c76e184bc78fa7a5d105aad0cfbad8458b441067',
+    },
   },
 }
 
@@ -94,4 +108,15 @@ export function isPpocrModelId(s: string): s is PpocrModelId {
 /** Total download for a model set, in bytes. */
 export function modelBytes(m: PpocrModel): number {
   return m.det.bytes + m.rec.bytes + m.recYml.bytes
+}
+
+/** Where public/ppocr/<dir>/ is served; the directory name carries both commits. */
+export const PPOCR_BROWSER_BASE = `/ppocr/PP-OCRv6_tiny-${V6_TINY_DET.slice(0, 7)}-${V6_TINY_REC.slice(0, 7)}/`
+
+/** The browser's model set: v6-tiny, self-hosted (bigger sets are eval-only). */
+export const PPOCR_BROWSER_MODEL: PpocrModel = {
+  ...PPOCR_MODELS['v6-tiny'],
+  det: { ...PPOCR_MODELS['v6-tiny'].det, url: `${PPOCR_BROWSER_BASE}det.onnx` },
+  rec: { ...PPOCR_MODELS['v6-tiny'].rec, url: `${PPOCR_BROWSER_BASE}rec.onnx` },
+  recYml: { ...PPOCR_MODELS['v6-tiny'].recYml, url: `${PPOCR_BROWSER_BASE}rec.yml` },
 }
