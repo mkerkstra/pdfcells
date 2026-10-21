@@ -4,7 +4,8 @@ import { table } from './checks/testing'
 import type { LedgerEntry } from './ledgerColumns'
 import { unescapeXml } from './ledgerFile'
 import { reconcile } from './reconcile'
-import { totals } from './reconcileRun'
+import { statementLines, totals } from './reconcileRun'
+import type { Statement } from './statement'
 import { buildWorkbook } from './xlsx'
 import { matchRule, type ReconcileSheetInput, type StatementLine } from './xlsxReconcile'
 import { unzip } from './zipTesting'
@@ -173,5 +174,27 @@ describe('Reconciliation sheet', () => {
       matchedDifference: 0,
     })
     expect(totals(input({ ledgerBalance: undefined })).difference).toBeUndefined()
+  })
+
+  it('statement ids follow the transaction, not its position', () => {
+    const txn = (date: string, amount: number, description: string, fitid: string) => ({
+      date,
+      amount,
+      description,
+      fitid,
+      page: 1,
+      row: 0,
+    })
+    const base = {
+      period: { start: '2026-03-01', end: '2026-03-31' },
+      decimals: 2,
+      dateOrder: 'mdy',
+    } as unknown as Statement
+    const a = statementLines({
+      ...base,
+      transactions: [txn('2026-03-02', -1, 'a', 'A'), txn('2026-03-03', -2, 'b', 'B')],
+    })
+    const b = statementLines({ ...base, transactions: [txn('2026-03-03', -2, 'b', 'B')] })
+    expect(a[1]?.id).toBe(b[0]?.id)
   })
 })

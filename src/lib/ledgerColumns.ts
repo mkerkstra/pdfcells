@@ -189,8 +189,10 @@ export function ledgerSource(rows: string[][], map: ColumnMap): LedgerSource {
   return null
 }
 
-const SUMMARY =
-  /^(?:total|subtotal|sum|opening balance|beginning balance|balance forward|brought forward|closing balance|ending balance|net change)\b/i
+// A dated row is an entry even when its payee starts with "Total" (Total
+// Wine); only balance lines are skipped when they carry a date.
+const BALANCE_LINE =
+  /^(?:opening balance|beginning balance|balance forward|brought forward|carried forward|closing balance|ending balance)\b/i
 
 /** Ledger rows as entries, signed money in positive (`flip` negates every amount). */
 export function readLedger(rows: string[][], map: ColumnMap, flip = false): LedgerRead {
@@ -225,7 +227,7 @@ export function readLedger(rows: string[][], map: ColumnMap, flip = false): Ledg
       const b = num(r, map.moneyOut, loc.out)
       amount = a === null && b === null ? null : Math.abs(a ?? 0) - Math.abs(b ?? 0)
     }
-    if (!d || amount === null || SUMMARY.test(description) || SUMMARY.test(text(r, 0))) {
+    if (!d || amount === null || BALANCE_LINE.test(description) || BALANCE_LINE.test(text(r, 0))) {
       skipped++
       continue
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { chooseFlip } from './ledgerColumns'
-import { matchKey, reconcile, type RecItem } from './reconcile'
+import { countSameAmount, matchKey, reconcile, type RecItem } from './reconcile'
 
 let n = 0
 const item = (prefix: string, date: string, amount: number, description = ''): RecItem => ({
@@ -234,5 +234,43 @@ describe('reconcile: overrides', () => {
       { manual: [{ statement: ['s999'], ledger: ['nope'] }], rejected: [] },
     )
     expect(odd.matches).toEqual([])
+  })
+})
+
+describe('reconcile: statement end cutoff', () => {
+  it('never matches a ledger entry booked after the cutoff', () => {
+    const st = [s('2026-03-31', -100, 'Rent')]
+    const lg = [l('2026-04-01', -100, 'Rent')]
+    expect(reconcile(st, lg).matches).toHaveLength(1)
+    const r = reconcile(st, lg, { cutoff: '2026-03-31' })
+    expect(r.matches).toEqual([])
+    expect(r.statementOnly).toEqual([st[0]?.id])
+    expect(r.ledgerOnly).toEqual([lg[0]?.id])
+    const manual = reconcile(
+      st,
+      lg,
+      { cutoff: '2026-03-31' },
+      {
+        manual: [{ statement: [st[0]?.id ?? ''], ledger: [lg[0]?.id ?? ''] }],
+        rejected: [],
+      },
+    )
+    expect(manual.matches).toEqual([])
+  })
+})
+
+describe('countSameAmount', () => {
+  it('finds the most pairs whatever the order', () => {
+    // A greedy first-fit pairs 03-05 with 03-01 and strands 03-02's partner.
+    const st = [s('2026-03-05', -10), s('2026-03-02', -10)]
+    const lg = [l('2026-03-01', -10), l('2026-03-10', -10)]
+    expect(countSameAmount(st, lg, 7)).toBe(2)
+    expect(countSameAmount(st.toReversed(), lg.toReversed(), 7)).toBe(2)
+  })
+
+  it('does not flip a correct ledger because of input order', () => {
+    const st = [s('2026-03-05', -10), s('2026-03-02', -10), s('2026-03-20', 10)]
+    const lg = [l('2026-03-01', -10), l('2026-03-10', -10), l('2026-03-20', -10)]
+    expect(chooseFlip(st, lg, 7)).toBe(false)
   })
 })

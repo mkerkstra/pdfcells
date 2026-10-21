@@ -43,6 +43,12 @@ export interface MatchOptions {
   /** Most lines on the many side of a split. */
   maxSplit: number
   payee: PayeeNormaliser
+  /**
+   * ISO date: ledger entries after it are never matched. The ledger balance
+   * is taken on the statement end date, so an entry booked later isn't in it
+   * and its statement line stays a reconciling item.
+   */
+  cutoff?: string
 }
 
 export const DEFAULT_MATCH: MatchOptions = {
@@ -322,6 +328,10 @@ export function reconcile(
   const sIds = new Set(statement.map(x => x.id))
   const lIds = new Set(ledger.map(x => x.id))
   const used = { s: new Set<string>(), l: new Set<string>() }
+  const late = new Set(
+    o.cutoff === undefined ? [] : ledger.filter(x => x.date > (o.cutoff ?? '')).map(x => x.id),
+  )
+  for (const id of late) used.l.add(id)
   const sDay = new Map(st.map(p => [p.item.id, p.day]))
   const lDay = new Map(lg.map(p => [p.item.id, p.day]))
 
@@ -351,32 +361,44 @@ export function reconcile(
   return {
     matches,
     statementOnly: statement.filter(x => !used.s.has(x.id)).map(x => x.id),
-    ledgerOnly: ledger.filter(x => !used.l.has(x.id)).map(x => x.id),
+    ledgerOnly: ledger.filter(x => late.has(x.id) || !used.l.has(x.id)).map(x => x.id),
   }
 }
 
-/** Same-amount pairs inside the window, for choosing between two sign conventions. */
+/**
+ * The most same-amount pairs inside the window, for choosing between two
+ * sign conventions. Per amount, both sides sorted by date and each statement
+ * line takes the earliest ledger entry still in reach: with one window width
+ * for every line that greedy is a maximum matching, whatever the input order.
+ */
 export function countSameAmount(
   statement: RecItem[],
   ledger: RecItem[],
   windowDays: number,
 ): number {
-  const byUnits = new Map<number, number[]>()
-  for (const l of ledger) {
-    const u = units(l.amount)
-    const list = byUnits.get(u) ?? []
-    list.push(dayNumber(l.date))
-    byUnits.set(u, list)
+  const group = (items: RecItem[]) => {
+    const by = new Map<number, number[]>()
+    for (const x of items) {
+      const u = units(x.amount)
+      if (u === 0) continue
+      const list = by.get(u) ?? []
+      list.push(dayNumber(x.date))
+      by.set(u, list)
+    }
+    for (const list of by.values()) list.sort((a, b) => a - b)
+    return by
   }
+  const lg = group(ledger)
   let n = 0
-  for (const s of statement) {
-    const list = byUnits.get(units(s.amount))
-    if (!list) continue
-    const d = dayNumber(s.date)
-    const i = list.findIndex(x => Math.abs(x - d) <= windowDays)
-    if (i >= 0) {
-      list.splice(i, 1)
-      n++
+  for (const [u, days] of group(statement)) {
+    const other = lg.get(u) ?? []
+    let j = 0
+    for (const d of days) {
+      while (j < other.length && (other[j] ?? 0) < d - windowDays) j++
+      if (j < other.length && (other[j] ?? 0) <= d + windowDays) {
+        n++
+        j++
+      }
     }
   }
   return n

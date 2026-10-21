@@ -211,6 +211,7 @@ export function ReconcileReview({
                   ids={ledgerOnly}
                   picked={pickL}
                   onPick={id => toggle(pickL, id, setPickL)}
+                  locked={id => (lById.get(id)?.date ?? '') > sheet.period.end}
                   render={id => {
                     const l = lById.get(id)
                     const after = l && l.date > sheet.period.end ? 'after the statement' : undefined
@@ -296,6 +297,7 @@ function Picker({
   picked,
   onPick,
   render,
+  locked = () => false,
 }: {
   title: string
   empty: string
@@ -303,6 +305,8 @@ function Picker({
   picked: Set<string>
   onPick: (id: string) => void
   render: (id: string) => ReactNode
+  /** Lines that can't be matched (ledger entries after the statement end). */
+  locked?: (id: string) => boolean
 }) {
   return (
     <section className='min-w-0'>
@@ -314,7 +318,17 @@ function Picker({
         {ids.map(id => (
           <li key={id}>
             <label className='flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent-soft'>
-              <input type='checkbox' checked={picked.has(id)} onChange={() => onPick(id)} />
+              <input
+                type='checkbox'
+                checked={picked.has(id)}
+                disabled={locked(id)}
+                title={
+                  locked(id)
+                    ? 'Booked after the statement end, so it isn’t in the ledger balance. It matches next month.'
+                    : undefined
+                }
+                onChange={() => onPick(id)}
+              />
               <div className='min-w-0 flex-1'>{render(id)}</div>
             </label>
           </li>

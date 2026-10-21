@@ -13,10 +13,15 @@ import { DEFAULT_MATCH, reconcile, units, type MatchOptions, type Overrides } fr
 import type { Statement } from './statement'
 import type { ReconcileSheetInput, StatementLine } from './xlsxReconcile'
 
-/** Statement transactions as reconciliation items, ids s1, s2… in statement order. */
+/**
+ * Statement transactions as reconciliation items. Ids are the FITIDs (date,
+ * amount, description, place among identical ones), so a manual match or a
+ * rejection stays on its transaction when other rows are edited or deleted,
+ * and drops when that transaction itself changes.
+ */
 export function statementLines(s: Statement): StatementLine[] {
-  return s.transactions.map((t, i) => ({
-    id: `s${i + 1}`,
+  return s.transactions.map(t => ({
+    id: `s:${t.fitid}`,
     date: t.date,
     description: t.description,
     amount: t.amount,
@@ -53,7 +58,7 @@ export function runReconciliation(
   const window = options.windowDays ?? DEFAULT_MATCH.windowDays
   const flip = choice.flip ?? chooseFlip(lines, readLedger(choice.rows, choice.map).entries, window)
   const ledger = readLedger(choice.rows, choice.map, flip)
-  const result = reconcile(lines, ledger.entries, options, overrides)
+  const result = reconcile(lines, ledger.entries, { ...options, cutoff: s.period.end }, overrides)
   // The Balance column is the books' own figure: flipping how the amount
   // columns are read doesn't change it.
   const fileBalance = ledgerBalanceAt(ledger.entries, s.period.end)

@@ -167,7 +167,7 @@ describe('statement.pdf reconciled against a Xero ledger', () => {
       expect(run.balanceFrom).toBe('ledger')
       expect(run.sheet.ledgerBalance).toBe(planted.balance)
       const { result } = run.sheet
-      const sid = (i: number) => `s${i + 1}`
+      const sid = (i: number) => `s:${s.transactions[i]?.fitid ?? ''}`
       const byStatement = new Map(result.matches.flatMap(m => m.statement.map(id => [id, m])))
       expect(byStatement.get(sid(planted.shifted))?.kind).toBe('window')
       const split = byStatement.get(sid(planted.split))

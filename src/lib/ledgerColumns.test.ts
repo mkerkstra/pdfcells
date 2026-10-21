@@ -100,6 +100,14 @@ describe('guessColumns: common exports', () => {
     expect(amounts(r)).toEqual([-39.51, 82.51, -900])
   })
 
+  it('keeps a dated entry whose payee starts with Total, skips undated totals and balance lines', () => {
+    const r = read(
+      'Date,Description,Amount\n,Opening balance,1000\n2026-03-01,Beginning balance,1000\n2026-03-02,Total Wine & More,-39.51\n,Total,-39.51\n',
+    )
+    expect(r.entries.map(e => e.description)).toEqual(['Total Wine & More'])
+    expect(r.skipped).toBe(3)
+  })
+
   it('flip negates every amount', () => {
     expect(
       amounts(read('Date,Description,Amount\n2026-03-02,a,5\n2026-03-03,b,-7\n', true)),
