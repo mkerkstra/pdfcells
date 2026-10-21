@@ -198,6 +198,37 @@ export function selectCell(xml: string, cell: string, sheetIndex: number): strin
   return `${xml.slice(0, at)}<selection ${attrs}/>${xml.slice(at)}`
 }
 
+// CT_Font child order from the SpreadsheetML schema.
+const FONT_ORDER = [
+  'b',
+  'i',
+  'strike',
+  'condense',
+  'extend',
+  'outline',
+  'shadow',
+  'u',
+  'vertAlign',
+  'sz',
+  'color',
+  'name',
+  'family',
+  'charset',
+  'scheme',
+]
+
+/** Reorder each <font>'s (self-closing) children into schema order. */
+export function orderFontChildren(xml: string): string {
+  return xml.replace(/<font>((?:\s*<[a-zA-Z]+\b[^>]*\/>)*)\s*<\/font>/g, (_, inner: string) => {
+    const kids = inner.match(/<[a-zA-Z]+\b[^>]*\/>/g) ?? []
+    const rank = (k: string) => {
+      const i = FONT_ORDER.indexOf(/^<([a-zA-Z]+)/.exec(k)?.[1] ?? '')
+      return i < 0 ? FONT_ORDER.length : i
+    }
+    return `<font>${[...kids].sort((a, b) => rank(a) - rank(b)).join('')}</font>`
+  })
+}
+
 /** The feature that writes every sheet's `parts`. */
 export const partsFeature: Feature<Content> = {
   files: {
@@ -219,6 +250,11 @@ export const partsFeature: Feature<Content> = {
             xml += `<Default ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing" Extension="vml"/>`
           return xml || undefined
         },
+      },
+      'xl/styles.xml': {
+        // write-excel-file emits <font> children out of schema order (e.g. <color>
+        // before <b>); the Open XML SDK validator flags it, so reorder them.
+        transform: xml => orderFontChildren(xml),
       },
       'xl/workbook.xml': {
         // No cached values are written, so ask for a full recalculation on open.

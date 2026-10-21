@@ -5,6 +5,7 @@ import {
   columnNames,
   commentsXml,
   numberParts,
+  orderFontChildren,
   selectCell,
   tableName,
   tableRef,
@@ -122,6 +123,18 @@ describe('selectCell', () => {
     )
     expect(selectCell(frozen, 'A2', 1)).toContain(
       '<pane ySplit="1" activePane="bottomRight" state="frozen"/><selection pane="bottomRight" activeCell="A2" sqref="A2"/></sheetView>',
+    )
+  })
+})
+
+describe('orderFontChildren', () => {
+  it('puts font children in schema order', () => {
+    expect(
+      orderFontChildren(
+        '<fonts><font><color rgb="FF666666"/><b/><sz val="13"/></font><font><sz val="11"/></font></fonts>',
+      ),
+    ).toBe(
+      '<fonts><font><b/><sz val="13"/><color rgb="FF666666"/></font><font><sz val="11"/></font></fonts>',
     )
   })
 })
