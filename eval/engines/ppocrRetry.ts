@@ -47,6 +47,22 @@ const asTable = (t: LocalTable, i: number): Table => ({
   include: true,
 })
 
+/** Cells under 70 % OCR confidence / non-empty cells, over every table. */
+function lowConf(tables: Table[]): string {
+  let low = 0
+  let all = 0
+  for (const t of tables)
+    t.rows.forEach((r, i) =>
+      r.forEach((c, j) => {
+        if (!c.trim()) return
+        all++
+        const conf = t.cellConf?.[i]?.[j]
+        if (conf !== null && conf !== undefined && conf < 70) low++
+      }),
+    )
+  return `${low}/${all}`
+}
+
 export function ppocrRetryEngine(mode: RetryMode, margin: number): Engine {
   let svc: Promise<Ppocr> | undefined
   let worker: Promise<Worker> | undefined
@@ -130,6 +146,7 @@ export function ppocrRetryEngine(mode: RetryMode, margin: number): Engine {
         costMicros: 0,
         notes: [
           `trigger: ${trigger}`,
+          `low-confidence cells: ${lowConf(tables)}`,
           `crop: ${(area * 100).toFixed(0)}% of the page`,
           `det ${Math.round(timing.detMs)} ms, rec ${Math.round(timing.recMs)} ms, ${timing.boxes} boxes`,
         ],
