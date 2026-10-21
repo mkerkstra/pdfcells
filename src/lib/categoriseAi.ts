@@ -6,7 +6,12 @@
 // the person's marked areas.
 
 import { ApiError, type CategorizeRequest, type CategorizeResponse } from './api'
-import { uncategorisedPayees, type Categorisable, type CategoryContext } from './categories'
+import {
+  answerMap,
+  uncategorisedPayees,
+  type Categorisable,
+  type CategoryContext,
+} from './categories'
 import type { Tier } from './types'
 
 /**
@@ -72,7 +77,7 @@ export async function categoriseWithAi(
   const batch = aiRequest(txns, ctx, tier)
   if (!batch) return { answers: {}, asked: 0, remaining: 0 }
   const res = await call(batch.request)
-  const answers: Record<string, string> = {}
+  const answers = answerMap()
   batch.keys.forEach((key, i) => {
     const c = res.categories[i]
     if (typeof c === 'string') answers[key] = c

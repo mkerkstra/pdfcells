@@ -367,14 +367,14 @@ export interface ReadOptions {
 }
 
 /**
- * Whether to read the document as a credit card when the person hasn't said:
- * card summary lines are printed (looksLikeCreditCard) and no table has a
- * running balance that ties. A tying balance reads correctly as a bank
- * account, so on that evidence bank wins; the person can still switch.
+ * Whether to read the document as a credit card when the person hasn't said.
+ * Only the account summary can tell: card-only lines with values, on undated
+ * rows of included tables (looksLikeCreditCard). A running balance ties
+ * under either reading, since the arithmetic of money held and money owed is
+ * the same, so it is no evidence either way.
  */
 export function detectCreditCard(pages: PageTables[]): boolean {
-  if (!looksLikeCreditCard(pages)) return false
-  return !joinWithOrigins(pages).some(j => balanceLayout(buildGrid(j.table)) !== null)
+  return looksLikeCreditCard(pages)
 }
 
 /** The document's bank or card statement, or null when no table reads as one. */

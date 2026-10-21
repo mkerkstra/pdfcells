@@ -157,6 +157,25 @@ export function ruleCategory(t: Categorisable, rules: CategoryRule[]): string | 
 /** AI answers are kept by payee, so the same payee is never asked about twice. */
 export const aiKey = (payee: string) => fold(payee)
 
+/**
+ * The AI answer stored for a payee. Own keys only: a payee named
+ * "Constructor" must not find Object.prototype.constructor.
+ */
+export function aiAnswer(
+  ai: Record<string, string> | undefined,
+  payee: string,
+): string | undefined {
+  const k = aiKey(payee)
+  return ai && Object.hasOwn(ai, k) ? ai[k] : undefined
+}
+
+/** A record with no prototype, so any payee (even "__proto__") is a plain key. */
+export function answerMap(entries: Iterable<[string, string]> = []): Record<string, string> {
+  const out = Object.create(null) as Record<string, string>
+  for (const [k, v] of entries) out[k] = v
+  return out
+}
+
 export interface CategoryContext {
   rules: CategoryRule[]
   /** AI answers by aiKey(payee). */
@@ -170,7 +189,7 @@ export function categoryOf(
 ): { category: string; source: CategorySource } {
   const rule = ruleCategory(t, ctx.rules)
   if (rule) return { category: rule, source: 'rule' }
-  const ai = ctx.ai?.[aiKey(t.payee)]
+  const ai = aiAnswer(ctx.ai, t.payee)
   if (ai && isCategory(ai) && ai !== UNCATEGORISED) return { category: ai, source: 'ai' }
   const kw = keywordCategory(t)
   if (kw) return { category: kw, source: 'keyword' }
@@ -190,7 +209,7 @@ export function uncategorisedPayees(txns: Categorisable[], ctx: CategoryContext)
   const out = new Map<string, string>()
   for (const t of txns) {
     // Already asked, even if the answer was "Uncategorised": asking again would bill again.
-    const asked = ctx.ai?.[aiKey(t.payee)] !== undefined
+    const asked = aiAnswer(ctx.ai, t.payee) !== undefined
     if (!asked && categoryOf(t, ctx).source === 'none' && t.payee.trim())
       out.set(aiKey(t.payee), t.payee)
   }

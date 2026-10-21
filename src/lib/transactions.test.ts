@@ -31,7 +31,7 @@ describe('prepareTransactions', () => {
     expect(rows.map(r => r.slice(4))).toEqual([
       ['Payee', 'Category'],
       ['', ''],
-      ['Blue Bottle Coffee', 'Meals and entertainment'],
+      ['Blue Bottle Coffee Oakland', 'Meals and entertainment'],
       ['', ''],
       ['Acme Corp Payroll', 'Income'],
       ['Shell Oil', 'Fuel and vehicle'],

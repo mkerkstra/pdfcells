@@ -2,6 +2,7 @@
 // credits − debits = closing. The values can sit in one table or spread over
 // several tables on a page or in a document.
 
+import { parseDate } from '../cells'
 import type { Table } from '../types'
 
 import { buildGrid, cell, formatNumber, raw, tolerance } from './grid'
@@ -261,7 +262,15 @@ export interface StatementSummary {
 
 /** The labelled summary values across the document, skipping any role printed twice with different values. */
 export function statementSummary(doc: PageTables[]): StatementSummary {
-  const es = doc.flatMap(({ page, tables }) => tables.flatMap(t => entries(t, page)))
+  // Summary lines only: included tables, and no dated row (a transaction
+  // described as "New balance" is not the statement's closing balance).
+  const dated = (c: string) =>
+    /^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s*$/.test(c) || parseDate(c) !== null
+  const es = doc.flatMap(({ page, tables }) =>
+    tables
+      .filter(t => t.include)
+      .flatMap(t => entries(t, page).filter(e => !(t.rows[e.row] ?? []).some(dated))),
+  )
   const pick = (role: Role): Entry | null => {
     const e = single(es, role)
     return e && e !== 'ambiguous' ? e : null

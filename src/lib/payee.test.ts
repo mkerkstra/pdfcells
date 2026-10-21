@@ -4,7 +4,8 @@ import { cleanPayee } from './payee'
 
 const CASES: [string, string][] = [
   // Processor prefixes hide the merchant.
-  ['SQ *BLUE BOTTLE COFFEE OAKLAND CA', 'Blue Bottle Coffee'],
+  ['SQ *BLUE BOTTLE COFFEE OAKLAND CA', 'Blue Bottle Coffee Oakland'],
+  ['SQ *BLUE BOTTLE COFFEE    OAKLAND      CA', 'Blue Bottle Coffee'],
   ['SQ*BLUE BOTTLE COFFEE', 'Blue Bottle Coffee'],
   ['TST* THE FRENCH LAUNDRY YOUNTVILLE CA', 'The French Laundry Yountville'],
   ['TST*SWEETGREEN 0123 NEW YORK NY', 'Sweetgreen'],
@@ -28,7 +29,7 @@ const CASES: [string, string][] = [
   ['CARD PAYMENT TO TESCO STORES 3297 ON 02-03', 'Tesco Stores'],
   ['ACH DEBIT VERIZON WIRELESS PAYMENTS', 'Verizon Wireless Payments'],
   ['VISA DEBIT PURCHASE CARD 1234 STARBUCKS STORE 112', 'Starbucks'],
-  ['CONTACTLESS PRET A MANGER LONDON GB', 'Pret A Manger'],
+  ['CONTACTLESS PRET A MANGER LONDON GB', 'Pret A Manger London'],
   // Card digits, references, dates, phones.
   ['NETFLIX.COM 866-579-7172 CA', 'Netflix'],
   ['APPLE.COM/BILL 866-712-7753 CA', 'Apple'],
@@ -43,7 +44,7 @@ const CASES: [string, string][] = [
   ['7-ELEVEN 34567 DALLAS TX', '7-Eleven'],
   ['WM SUPERCENTER #1234 BENTONVILLE AR', 'Walmart'],
   ['CHEVRON 0091234 LOS ANGELES CA', 'Chevron'],
-  ['BP#9431840CIRCLE K CHICAGO IL', 'BP Circle K'],
+  ['BP#9431840CIRCLE K CHICAGO IL', 'BP Circle K Chicago'],
   ['IKEA US 0042 EMERYVILLE CA', 'IKEA US'],
   ['CVS/PHARMACY #04512 BOSTON MA', 'CVS/Pharmacy'],
   ['AT&T*BILL PAYMENT 800-331-0500 TX', 'AT&T'],
@@ -53,13 +54,18 @@ const CASES: [string, string][] = [
   ['PAYMENT - THANK YOU', 'Payment Thank You'],
   ['AUTOPAY 260315 XXXXX1234', 'Autopay'],
   ['SPOTIFY USA 877-778-1161 NY 15JAN', 'Spotify'],
-  ['GITHUB INC. SAN FRANCISCO CA', 'Github'],
+  ['GITHUB INC. SAN FRANCISCO CA', 'Github Inc. San Francisco'],
+  ['GITHUB INC.          SAN FRANCISCO CA', 'Github'],
   ['ADOBE *CREATIVE CLD 408-536-6000 CA', 'Adobe Creative'],
   // Regression (Codex P2-5): a trailing state alone doesn't make the word before it a city.
   ['BANK OF AMERICA CA', 'Bank Of America'],
   ['THE HOME DEPOT CA', 'The Home Depot'],
   ['PAYPAL *JOHN SMITH CA', 'John Smith'],
   ['JOES PLUMBING NY', 'Joes Plumbing'],
+  // Review 2: no known-city list, so a city in a name stays.
+  ['UNIVERSITY OF CHICAGO IL', 'University Of Chicago'],
+  ['PAYPAL *JOHN AUSTIN TX', 'John Austin'],
+  ['TST* AUSTIN JAVA   AUSTIN   TX', 'Austin Java'],
   ['SALT LAKE CITY UT', 'Salt Lake City'],
   ['DELTA 0062 SALT LAKE CITY UT', 'Delta'],
   // Mixed case is someone's own wording: keep it.

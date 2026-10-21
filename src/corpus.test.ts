@@ -398,7 +398,7 @@ describe('credit card statement', () => {
     expect(s?.creditCard).toBe(true)
     expect(s?.transactions).toHaveLength(12)
     expect(s?.transactions.slice(0, 3).map(t => [t.amount, t.payee])).toEqual([
-      [-6.5, 'Blue Bottle Coffee'],
+      [-6.5, 'Blue Bottle Coffee Oakland'],
       [-98.45, 'Amazon'],
       [500, 'Payment Thank You'],
     ])
@@ -407,7 +407,7 @@ describe('credit card statement', () => {
     expect(
       categorise(s?.transactions ?? [], { rules: [] }).map(t => [t.payee, t.category]),
     ).toEqual([
-      ['Blue Bottle Coffee', 'Meals and entertainment'],
+      ['Blue Bottle Coffee Oakland', 'Meals and entertainment'],
       ['Amazon', 'Shopping'],
       ['Payment Thank You', 'Card payments'],
       ['Shell Oil', 'Fuel and vehicle'],
@@ -417,7 +417,7 @@ describe('credit card statement', () => {
       ['Whole Foods Mkt', 'Groceries'],
       ['Amazon Refund', 'Refunds'],
       ['Delta Air', 'Travel'],
-      ['Github', 'Software and subscriptions'],
+      ['Github Inc. San Francisco', 'Software and subscriptions'],
       ['Interest Charge On Purchases', 'Bank fees and interest'],
     ])
     if (!s || s.closing === undefined) throw new Error('no statement')
@@ -431,7 +431,9 @@ describe('credit card statement', () => {
     expect(ofx).toContain('<CREDITCARDMSGSRSV1>')
     expect(ofx).toContain('<CCACCTFROM>\r\n<ACCTID>4821\r\n</CCACCTFROM>')
     expect(ofx).toContain('<BALAMT>-1407.70')
-    expect(ofx).toContain('<NAME>Blue Bottle Coffee\r\n<MEMO>SQ *BLUE BOTTLE COFFEE OAKLAND CA')
+    expect(ofx).toContain(
+      '<NAME>Blue Bottle Coffee Oakland\r\n<MEMO>SQ *BLUE BOTTLE COFFEE OAKLAND CA',
+    )
   })
 
   it('bank statements are not read as cards', async () => {

@@ -101,7 +101,7 @@ describe('readStatement in card mode', () => {
   it('cleans payees on every transaction', () => {
     const s = readStatement(doc([SUMMARY, NO_BALANCE]))
     expect(s?.transactions.map(t => t.payee)).toEqual([
-      'Blue Bottle Coffee',
+      'Blue Bottle Coffee Oakland',
       'Payment Thank You',
       'Amazon',
       'Shell Oil',
@@ -219,12 +219,16 @@ describe('Codex review regressions', () => {
     expect(looksLikeCreditCard(doc([prose]))).toBe(false)
   })
 
-  // P1-1: a running balance that ties under bank signs beats card summary lines.
-  it('a tying running balance reads as a bank account unless the person picks card', () => {
-    expect(detectCreditCard(doc([SUMMARY, WITH_BALANCE]))).toBe(false)
-    expect(readStatement(doc([SUMMARY, WITH_BALANCE]))?.creditCard).toBe(false)
-    expect(readStatement(doc([SUMMARY, WITH_BALANCE]), { creditCard: true })?.creditCard).toBe(true)
-    expect(detectCreditCard(doc([SUMMARY, NO_BALANCE]))).toBe(true)
+  // Review 2, P1: a running balance ties under either reading, so it never
+  // decides; a card with a printed running balance owed is still a card.
+  it('a card with a running balance owed is detected from its summary', () => {
+    expect(detectCreditCard(doc([SUMMARY, WITH_BALANCE]))).toBe(true)
+    const s = readStatement(doc([SUMMARY, WITH_BALANCE]))
+    expect(s?.creditCard).toBe(true)
+    expect(s?.transactions.map(t => t.amount)).toEqual([-6.5, 500, -98.45, -25, -12.4])
+    expect(s?.gate.ok).toBe(true)
+    // Without card summary lines, the same table is a bank account.
+    expect(readStatement(doc([WITH_BALANCE]))?.creditCard).toBe(false)
   })
 
   // P1-2: a new balance worked out from the transactions can't check them.
@@ -249,6 +253,42 @@ describe('Codex review regressions', () => {
         'There’s no balance column and no account summary (previous balance and new balance) to check the amounts against',
       ],
     })
+  })
+
+  // Review 2, P1: a transaction described "New balance", or a New balance
+  // line in an excluded table, is not the printed closing balance.
+  it('a dated row or an excluded table never supplies the new balance', () => {
+    const partial = table([
+      ['Account summary', ''],
+      ['Previous balance', '1,000.00'],
+      ['Minimum payment due', '25.00'],
+      ['Credit limit', '20,000.00'],
+    ])
+    const txns = table([
+      ['Date', 'Description', 'Amount'],
+      ['03/02/2026', 'Coffee', '9,999.00'],
+      ['03/03/2026', 'Books', '20.00'],
+    ])
+    const dated = table([
+      ['Date', 'Description', 'Amount'],
+      ['03/02/2026', 'New balance', '9,999.00'],
+    ])
+    const excluded = table(
+      [
+        ['Old summary', ''],
+        ['New balance', '11,019.00'],
+      ],
+      { include: false },
+    )
+    const reason =
+      'There’s no balance column and no account summary (previous balance and new balance) to check the amounts against'
+    for (const extra of [dated, excluded]) {
+      const s = readStatement(doc([partial, txns, extra]), { creditCard: true })
+      expect(s?.gate).toEqual({ ok: false, reasons: [reason] })
+    }
+    // The same line in an included, undated summary row does count.
+    const printed = { ...excluded, include: true }
+    expect(readStatement(doc([partial, txns, printed]), { creditCard: true })?.gate.ok).toBe(true)
   })
 
   // P2-4: an overpaid card prints a negative (credit) new balance.

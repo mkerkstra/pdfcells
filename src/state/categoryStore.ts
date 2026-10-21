@@ -5,7 +5,7 @@
 
 import { useSyncExternalStore } from 'react'
 
-import { aiKey, isCategory, type CategoryRule } from '@/lib/categories'
+import { aiKey, answerMap, isCategory, type CategoryRule } from '@/lib/categories'
 
 import { run } from './batchStore'
 
@@ -21,7 +21,7 @@ export interface CategoryState {
 
 /** Only well-formed rules and answers survive a load: the store is the person's, but old or hand-edited data shouldn't break export. */
 export function sanitize(x: unknown): CategoryState {
-  const out: CategoryState = { rules: [], ai: {} }
+  const out: CategoryState = { rules: [], ai: answerMap() }
   if (typeof x !== 'object' || x === null) return out
   const o = x as { rules?: unknown; ai?: unknown }
   if (Array.isArray(o.rules))
@@ -44,7 +44,7 @@ export function sanitize(x: unknown): CategoryState {
   return out
 }
 
-let state: CategoryState = { rules: [], ai: {} }
+let state: CategoryState = { rules: [], ai: answerMap() }
 const listeners = new Set<() => void>()
 
 function emit() {
@@ -76,7 +76,7 @@ async function read() {
         ...state.rules,
         ...saved.rules.filter(r => !state.rules.some(x => x.contains === r.contains)),
       ],
-      ai: { ...saved.ai, ...state.ai },
+      ai: answerMap([...Object.entries(saved.ai), ...Object.entries(state.ai)]),
     }
     emit()
   } catch {
@@ -109,7 +109,7 @@ export function removeRule(contains: string) {
 
 /** Remember AI answers by payee; anything outside the category set is dropped. */
 export function rememberAi(answers: Record<string, string>) {
-  const ai = { ...state.ai }
+  const ai = answerMap(Object.entries(state.ai))
   for (const [payee, cat] of Object.entries(answers)) if (isCategory(cat)) ai[aiKey(payee)] = cat
   set({ ...state, ai })
 }

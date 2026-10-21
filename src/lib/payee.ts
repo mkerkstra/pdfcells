@@ -1,5 +1,5 @@
 // Payee cleanup: a deterministic, in-browser normaliser that turns a bank or
-// card description ("SQ *BLUE BOTTLE COFFEE OAKLAND CA 03/02 #4821") into the
+// card description ("SQ *BLUE BOTTLE COFFEE #4821 OAKLAND CA 03/02") into the
 // payee an accountant would type ("Blue Bottle Coffee"). Pure: same input,
 // same output, no network. The original description is always kept next to
 // it; when cleanup would leave nothing, the description itself is returned.
@@ -138,27 +138,14 @@ function tidy(s: string): string {
 }
 
 /**
- * Where noise was cut out. A city only goes when there's evidence it is one:
- * a store number, phone or reference right before it, or a known city name.
+ * Where noise was cut out, or where the raw text had a wide column gap. A
+ * city only goes when one of these sits right before it: card descriptors
+ * print the merchant, then a store number or a padded gap, then the city.
  * A trailing state alone doesn't prove the word before it is a place
- * ("BANK OF AMERICA CA", "PAYPAL *JOHN SMITH CA"), so then only the code goes.
+ * ("BANK OF AMERICA CA", "UNIVERSITY OF CHICAGO IL", "PAYPAL *JOHN AUSTIN
+ * TX"), so then only the code goes.
  */
 const MARK = '¤'
-
-/** Cities card networks print often, as one to three words. */
-const KNOWN_CITIES = new Set(
-  (
-    'NEW YORK|BROOKLYN|LOS ANGELES|CHICAGO|HOUSTON|PHOENIX|PHILADELPHIA|SAN ANTONIO|SAN DIEGO|DALLAS|AUSTIN|' +
-    'SAN JOSE|SAN FRANCISCO|OAKLAND|BERKELEY|EMERYVILLE|PALO ALTO|MOUNTAIN VIEW|SUNNYVALE|SANTA CLARA|SEATTLE|' +
-    'BELLEVUE|REDMOND|PORTLAND|DENVER|BOULDER|BOSTON|CAMBRIDGE|WASHINGTON|ATLANTA|MIAMI|MIAMI BEACH|ORLANDO|TAMPA|' +
-    'NASHVILLE|MEMPHIS|NEW ORLEANS|LAS VEGAS|SALT LAKE CITY|MINNEAPOLIS|ST PAUL|ST LOUIS|KANSAS CITY|DETROIT|' +
-    'CLEVELAND|COLUMBUS|CINCINNATI|PITTSBURGH|BALTIMORE|CHARLOTTE|RALEIGH|RICHMOND|SACRAMENTO|FRESNO|SAN MATEO|' +
-    'SANTA MONICA|IRVINE|PASADENA|LONG BEACH|HONOLULU|ANCHORAGE|ALBUQUERQUE|TUCSON|EL PASO|FORT WORTH|OKLAHOMA CITY|' +
-    'INDIANAPOLIS|MILWAUKEE|LOUISVILLE|JERSEY CITY|NEWARK|BENTONVILLE|' +
-    'LONDON|MANCHESTER|BIRMINGHAM|LEEDS|GLASGOW|EDINBURGH|BRISTOL|LIVERPOOL|DUBLIN|' +
-    'TORONTO|VANCOUVER|MONTREAL|CALGARY|OTTAWA|SYDNEY|MELBOURNE|BRISBANE|PERTH|ADELAIDE|AUCKLAND'
-  ).split('|'),
-)
 
 /** Drop a trailing state or country code, and the city before it when there's evidence (upper-case descriptors only). */
 function dropLocation(s: string): string {
@@ -170,16 +157,11 @@ function dropLocation(s: string): string {
   words.pop()
   // A state before a country ("CA US").
   if (words.length >= 2 && isCode(words.at(-1)) && STATES.has(words.at(-1) ?? '')) words.pop()
+  while (words.at(-1) === MARK) words.pop()
   const alpha = (w: string | undefined) => w !== undefined && /^[A-Z][A-Z.'-]*$/.test(w)
-  const tail = (n: number) => words.slice(-n)
   let cut = 0
-  for (const n of [3, 2, 1])
-    if (words.length > n && tail(n).every(alpha) && KNOWN_CITIES.has(tail(n).join(' '))) {
-      cut = n
-      break
-    }
-  // Evidence: a store number, phone or reference cut out right before the city.
-  if (!cut && alpha(words.at(-1))) {
+  // Evidence: a store number, phone, reference or column gap right before the city.
+  if (alpha(words.at(-1))) {
     if (words.at(-2) === MARK) cut = 1
     else if (
       words.at(-3) === MARK &&
@@ -187,6 +169,13 @@ function dropLocation(s: string): string {
       (CITY_START.has(words.at(-2) ?? '') || CITY_END.has(words.at(-1) ?? ''))
     )
       cut = 2
+    else if (
+      words.at(-4) === MARK &&
+      alpha(words.at(-3)) &&
+      alpha(words.at(-2)) &&
+      CITY_END.has(words.at(-1) ?? '')
+    )
+      cut = 3
   }
   const kept = words.slice(0, words.length - cut)
   return kept.some(w => w !== MARK && /[A-Z]/.test(w)) ? kept.join(' ') : words.join(' ')
@@ -208,7 +197,9 @@ export function cleanPayee(description: string): string {
   const original = collapse(description)
   if (!original) return ''
   const shouting = !/[a-z]/.test(original)
-  let s = original
+  // A wide gap (3+ spaces or a tab) is a column boundary in a fixed-width descriptor.
+  let s = collapse(description.replace(/ {3,}|\t+/g, ` ${MARK} `))
+  while (s.startsWith(MARK)) s = s.slice(MARK.length).trim()
   for (let changed = true; changed;) {
     changed = false
     for (const re of LEADING) {

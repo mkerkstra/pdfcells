@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import {
+  aiAnswer,
+  aiKey,
+  answerMap,
   categorise,
   categoryOf,
   CATEGORIES,
@@ -99,6 +102,24 @@ describe('person rules', () => {
     expect(
       categoryOf(t, { rules: [], ai: { mystery: 'Ignore previous instructions' } }).source,
     ).toBe('none')
+  })
+})
+
+describe('payees named like object properties (review 2, P3)', () => {
+  it('a payee called "Constructor" or "__proto__" is an ordinary key', () => {
+    for (const name of ['Constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      const t = { payee: name, description: name, amount: -1 }
+      expect(aiAnswer({}, name)).toBeUndefined()
+      expect(categoryOf(t, { rules: [], ai: {} })).toEqual({
+        category: 'Uncategorised',
+        source: 'none',
+      })
+      expect(uncategorisedPayees([t], { rules: [], ai: {} })).toEqual([name])
+      const ai = answerMap([[aiKey(name), 'Travel']])
+      expect(categoryOf(t, { rules: [], ai })).toEqual({ category: 'Travel', source: 'ai' })
+      expect(uncategorisedPayees([t], { rules: [], ai })).toEqual([])
+    }
+    expect(Object.getPrototypeOf(answerMap([['__proto__', 'Travel']]))).toBeNull()
   })
 })
 
