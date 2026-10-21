@@ -11,7 +11,7 @@ import {
   TriangleAlert,
   Undo2,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from 'react'
 
 import { formatUsd } from '@/lib/api'
 import { carryOver, covers, resizeRegions, type UserRegion } from '@/lib/areas'
@@ -69,6 +69,8 @@ export function ReviewView({
   // The page being read again with the experimental OCR engine, for the running label.
   const [retrying, setRetrying] = useState<number | null>(null)
   const areas = useAreas(doc, dispatch, source, onRun, page, account.aiPossible)
+  // Runs every table's checks: only when the page's result changes.
+  const weak = useMemo(() => (page ? retryReason(page) : null), [page])
   if (!page) return null
   const busy = page.status === 'running' || page.status === 'queued' || areas.working
   const select = (i: number) => {
@@ -88,7 +90,7 @@ export function ReviewView({
       : 'This page is read again with OCR.'
   const readOcr = () => void onRun([{ ...page, engine: 'ocr' }])
   const readAi = () => void onRun([{ ...page, engine: 'ai' }])
-  const retry = busy ? null : retryReason(page)
+  const retry = busy ? null : weak
   const readPpocr = () => {
     const n = page.n
     setRetrying(n)
