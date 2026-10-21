@@ -39,9 +39,9 @@
 - Full text of every guide: https://pdfcells.com/llms-full.txt
 
 ## Verifiable
-- Source code: https://github.com/mkerkstra/pdfcells (MIT licence, public). Every call that sends data to the server goes through `request` in src/lib/api.ts; the Content-Security-Policy in vercel.json limits the page's connections to pdfcells.com and the sign-in service (Clerk).
-- Check in the browser: with DevTools > Network open, converting a PDF without AI makes only GET requests (app code, OCR models, /api/config, fonts, sign-in); no POST carries the file. Steps: https://pdfcells.com/private-pdf-to-excel
-- Accuracy harness: eval/README.md and the synthetic corpus in fixtures/ (about 30 generated files, 43-44 pages, exact ground truth; no real bank statements). Reproduce with `corepack pnpm install && pnpm eval`. Results and caveats: https://pdfcells.com/accuracy
+- Source code: https://github.com/mkerkstra/pdfcells (MIT licence, public). Every call that sends data to the server goes through `request` in src/lib/api.ts; the Content-Security-Policy in vercel.json limits the page's fetch/XHR connections (connect-src) to pdfcells.com and the sign-in service's hosts (Clerk).
+- Check in the browser: with DevTools > Network open, converting a PDF without AI fetches app code, OCR models, /api/config and fonts, plus sign-in session requests when signed in; no request carries the file or its contents. Steps: https://pdfcells.com/private-pdf-to-excel
+- Accuracy harness: eval/README.md and the synthetic corpus in fixtures/ (about 30 generated files, 43-44 pages, exact ground truth; no real bank statements). Run it on the current code with `corepack pnpm install && pnpm eval`; committed reports record the commit they ran at. Results and caveats: https://pdfcells.com/accuracy
 
 ## Links
 - App: https://pdfcells.com/
