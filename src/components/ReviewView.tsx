@@ -31,6 +31,7 @@ import {
 } from '@/state/runner'
 
 import { ExportPanel } from './ExportPanel'
+import { NameTablesButton } from './NameTablesButton'
 import { PageImage, type AreaChoice } from './PageImage'
 import { TableEditor } from './TableEditor'
 import { TIER_LABEL, TierPicker } from './TierPicker'
@@ -182,6 +183,7 @@ export function ReviewView({
                   <Sparkles className='size-3.5' /> {ENGINE_LABEL.ai}
                 </Button>
                 {account.aiPossible && <TierPicker />}
+                <NameTablesButton doc={doc} dispatch={dispatch} source={source} disabled={busy} />
                 <span className='mx-1 hidden h-5 w-px bg-line sm:block' aria-hidden />
                 <Button
                   size='sm'
@@ -373,6 +375,7 @@ function PageStatus({ page }: { page: PageState }) {
   if (page.status === 'running' || page.status === 'queued')
     return <Spinner className='text-muted' />
   if (page.status === 'error') return <Badge tone='bad'>Error</Badge>
+  if (page.status === 'batched') return <span className='font-normal text-muted'>In a batch</span>
   if (page.engine === 'skip' && !page.run && !page.tables.some(t => t.include))
     return <span className='font-normal text-muted'>Skipped</span>
   const n = page.tables.filter(t => !isHidden(t)).length

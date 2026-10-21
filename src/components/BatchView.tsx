@@ -9,6 +9,7 @@ import { ACCEPT, openDocument } from '@/lib/open'
 import type { Preset } from '@/lib/preset'
 import { buildRecipe, recipeSummary } from '@/lib/recipe'
 import { useAccount } from '@/state/account'
+import { hasBatched } from '@/state/aiBatch'
 import {
   batchReducer,
   type BatchAction,
@@ -31,6 +32,7 @@ import { clearBatch, saveBatch } from '@/state/batchStore'
 import type { Action, PageState } from '@/state/doc'
 import { runPages, type RunHooks } from '@/state/runner'
 
+import { AiTimingPicker, sendsAsBatch, useAiBatchPolling } from './AiTimingPicker'
 import { BatchExport } from './BatchExport'
 import { ReviewView } from './ReviewView'
 import { TIER_LABEL, TierPicker } from './TierPicker'
@@ -138,6 +140,7 @@ export function BatchView({
     () => ({ onBalance: () => account.refreshMe(), onNeedCredits }),
     [account, onNeedCredits],
   )
+  useAiBatchPolling(state, dispatch, account.refreshMe)
 
   // Save progress (tables, statuses, groups, recipes; never the files).
   useEffect(() => {
@@ -202,6 +205,7 @@ export function BatchView({
       await readAll(jobs, account.tier, account.aiPossible, dispatch, {
         ...hooks,
         signal: exit.current?.signal,
+        batchAi: sendsAsBatch(pagesToRead(stateRef.current.items, choice).ai),
       })
       for (const j of jobs) inFlight.current.delete(j.item.id)
       account.refreshMe()
@@ -572,6 +576,7 @@ export function BatchView({
             </select>
           </label>
           {choice === 'ai' && <TierPicker />}
+          {choice === 'ai' && <AiTimingPicker pages={toReadNow.ai} />}
           <div className='ml-auto flex flex-wrap items-center gap-2'>
             {!account.aiReady && (
               <span className='text-sm text-muted'>
@@ -728,9 +733,14 @@ function ItemRow({
       </td>
       <td className='py-2.5 pr-3'>{a && <Checks a={a} />}</td>
       <td className='py-2.5 pr-3'>
-        {it.status === 'checking' || it.status === 'reading' ? (
+        {it.status === 'checking' || it.status === 'reading' || hasBatched(it.doc.pages) ? (
           <span className='inline-flex items-center gap-1.5 text-xs text-muted'>
-            <Spinner /> {it.status === 'checking' ? 'Checking' : 'Reading'}
+            <Spinner />{' '}
+            {it.status === 'checking'
+              ? 'Checking'
+              : hasBatched(it.doc.pages)
+                ? 'Results within hours'
+                : 'Reading'}
           </span>
         ) : it.status === 'error' ? (
           <Badge tone='bad'>Couldn’t open</Badge>

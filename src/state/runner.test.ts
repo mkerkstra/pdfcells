@@ -4,7 +4,7 @@ import type { UserRegion } from '@/lib/areas'
 import type { Word } from '@/lib/types'
 
 import type { PageState } from './doc'
-import { aiHint, distinctTitles, readBox } from './runner'
+import { aiHint, distinctTitles, NOTHING_MARKED, planAiRead, readBox } from './runner'
 
 describe('distinctTitles', () => {
   it('numbers repeats and leaves blanks alone', () => {
@@ -54,5 +54,23 @@ describe('aiHint', () => {
     expect(hint).toContain('Fee')
     expect(aiHint(page, [], [ignore], new Set())).toBe('')
     expect(aiHint(page, words, [], new Set())).toBe('SECRET Fee 9')
+  })
+})
+
+// Every AI page request, sent now or in a Message Batch, is built from
+// planAiRead: the same crop, the same filtered text, the same refusal.
+describe('planAiRead', () => {
+  const words = [w('SECRET', 10, 5), w('Fee', 10, 50), w('9', 100, 50)]
+  const digital = { kind: 'digital', textHint: 'SECRET Fee 9' } as PageState['triage']
+  it('never puts text outside the areas into a page request', () => {
+    const page = { n: 1, triage: digital, regions: [ignore] } as unknown as PageState
+    const plan = planAiRead(page, words)
+    expect(plan.hint).not.toContain('SECRET')
+    expect(plan.hint).toContain('Fee')
+    expect(plan.ignored).toEqual([ignore.box])
+  })
+  it('refuses a page whose areas match nothing, so nothing is sent', () => {
+    const page = { n: 1, triage: digital, regions: [section] } as unknown as PageState
+    expect(() => planAiRead(page, [w('Other', 10, 10)])).toThrow(NOTHING_MARKED)
   })
 })

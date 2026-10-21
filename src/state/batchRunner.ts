@@ -24,10 +24,11 @@ import { readStatement } from '@/lib/statement'
 import { triage as classify, type PageTriage } from '@/lib/triage'
 import type { Engine, Tier, Word } from '@/lib/types'
 
+import { hasBatched, readOrSend } from './aiBatch'
 import type { BatchAction, BatchGroup, BatchItem, ReadChoice } from './batch'
 import { slimTriage } from './batch'
-import type { PageState } from './doc'
-import { documentTables, fromLocal, runPages, semaphore, type RunHooks } from './runner'
+import type { Action, PageState } from './doc'
+import { documentTables, fromLocal, semaphore, type RunHooks } from './runner'
 
 type Dispatch = (a: BatchAction) => void
 
@@ -158,9 +159,12 @@ export function engineFor(p: PageState, choice: ReadChoice): Engine | 'skip' {
 
 /** Pages a file still has to read, with the engine each will use. */
 export function toRead(item: BatchItem, choice: ReadChoice): PageState[] {
-  return item.doc.pages
-    .filter(p => p.triage && p.status !== 'done' && p.engine !== 'skip')
-    .map(p => ({ ...p, engine: engineFor(p, choice) }))
+  return (
+    item.doc.pages
+      // A page waiting in a Message Batch is read already: it was paid for.
+      .filter(p => p.triage && p.status !== 'done' && p.status !== 'batched' && p.engine !== 'skip')
+      .map(p => ({ ...p, engine: engineFor(p, choice) }))
+  )
 }
 
 /**
@@ -180,7 +184,12 @@ export async function readItem(
   const id = item.id
   if (hooks.signal?.aborted) return
   if (pages.length === 0) {
-    dispatch({ type: 'item', id, patch: { status: 'read' } })
+    // Pages still in a Message Batch keep the file reading until they're back.
+    dispatch({
+      type: 'item',
+      id,
+      patch: { status: hasBatched(item.doc.pages) ? 'reading' : 'read' },
+    })
     return
   }
   dispatch({ type: 'item', id, patch: { status: 'reading' } })
@@ -206,10 +215,12 @@ export async function readItem(
         p.sectionNotes = unclosed.get(p.n) ?? []
       }
     }
-    await runPages(doc, full, action => dispatch({ type: 'doc', id, action }), { tier }, hooks)
+    const docDispatch = (action: Action) => dispatch({ type: 'doc', id, action })
+    const sent = await readOrSend(doc, full, docDispatch, tier, hooks)
     dispatch({ type: 'forget', id })
     // Stopped part-way: the pages left are not read, and a resume picks them up.
-    dispatch({ type: 'item', id, patch: { status: hooks.signal?.aborted ? 'checked' : 'read' } })
+    const status = hooks.signal?.aborted ? 'checked' : sent > 0 ? 'reading' : 'read'
+    dispatch({ type: 'item', id, patch: { status } })
   } catch (e) {
     dispatch({ type: 'item', id, patch: { status: 'error', error: message(e) } })
   } finally {

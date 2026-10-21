@@ -13,6 +13,7 @@ const KIND: Record<string, string> = {
   free: 'Free AI page',
   adjust: 'Adjustment',
   refund: 'Refund',
+  batch_hold: 'Held for a batch',
 }
 
 export function AccountPanel({ onClose }: { onClose: () => void }) {

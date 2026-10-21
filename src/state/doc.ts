@@ -4,7 +4,19 @@ import { applyPreset, type Preset } from '@/lib/preset'
 import type { PageTriage } from '@/lib/triage'
 import type { Engine, Table, Tier, Word } from '@/lib/types'
 
-export type PageStatus = 'analyzing' | 'ready' | 'queued' | 'running' | 'done' | 'error'
+/** 'batched': sent in a Message Batch, waiting for its result (hours, survives a closed tab). */
+export type PageStatus = 'analyzing' | 'ready' | 'queued' | 'running' | 'batched' | 'done' | 'error'
+
+/** Where a batched page's result will come from. */
+export interface AiBatchRef {
+  /** Anthropic's batch id. */
+  id: string
+  /** The page's id inside that batch. */
+  customId: string
+  /** Sent with the person's own API key (polled with it, never billed here). */
+  byok: boolean
+  tier: Tier
+}
 
 export interface RunInfo {
   engine: Engine
@@ -39,6 +51,8 @@ export interface PageState {
   autoSkip?: boolean
   /** Where a marked area couldn't be placed on this page, in plain words. */
   areaNotes?: string[]
+  /** Set while the page waits in a Message Batch. */
+  aiBatch?: AiBatchRef
 }
 
 export interface DocState {
@@ -73,6 +87,8 @@ export type Action =
     }
   | { type: 'engine'; index: number; engine: Engine | 'skip' }
   | { type: 'status'; index: number; status: PageStatus; progress?: number; error?: string }
+  /** The page was sent in a Message Batch; its result comes later. */
+  | { type: 'batched'; index: number; batch: AiBatchRef }
   | {
       type: 'result'
       index: number
@@ -213,7 +229,23 @@ export function reducer(s: DocState, a: Action): DocState {
     case 'status':
       return {
         ...s,
-        pages: patch(s, a.index, { status: a.status, progress: a.progress, error: a.error }),
+        // Any other read of the page supersedes a batch it was waiting in.
+        pages: patch(s, a.index, {
+          status: a.status,
+          progress: a.progress,
+          error: a.error,
+          aiBatch: undefined,
+        }),
+      }
+    case 'batched':
+      return {
+        ...s,
+        pages: patch(s, a.index, {
+          status: 'batched',
+          aiBatch: a.batch,
+          progress: undefined,
+          error: undefined,
+        }),
       }
     case 'result': {
       const pg = s.pages[a.index]
@@ -232,6 +264,7 @@ export function reducer(s: DocState, a: Action): DocState {
               ]
             : (a.notes ?? []),
           ocrWords: a.ocrWords,
+          aiBatch: undefined,
           status: 'done',
           error: undefined,
           progress: undefined,

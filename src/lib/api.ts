@@ -19,7 +19,7 @@ export interface AppConfig {
 }
 
 export interface LedgerEntry {
-  kind: 'topup' | 'usage' | 'free' | 'adjust' | 'refund'
+  kind: 'topup' | 'usage' | 'free' | 'adjust' | 'refund' | 'batch_hold'
   amount_micros: number
   anthropic_cost_micros: number
   model: string
@@ -135,7 +135,7 @@ export function setByok(key: string) {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init: RequestInit = {},
   opts: { byok?: boolean } = {},

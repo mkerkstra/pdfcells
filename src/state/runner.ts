@@ -236,7 +236,8 @@ export function distinctTitles(titles: string[]): string[] {
   })
 }
 
-function fromApi(r: ExtractResponse): Table[] {
+/** An AI response's tables, titled apart. */
+export function fromApi(r: ExtractResponse): Table[] {
   const titles = distinctTitles(r.tables.map(t => t.title))
   return r.tables.map((t, i) => ({
     id: newId(),
@@ -300,6 +301,59 @@ export async function readWithAi(req: ExtractRequest): Promise<ExtractResponse> 
   return api.extract(req)
 }
 
+/**
+ * What of a page AI may see: the box to crop to (null for the whole page),
+ * the areas to blank, and the PDF text inside the marked areas. Throws
+ * NOTHING_MARKED when the page is limited to areas that aren't on it, so
+ * nothing is sent. Pure; every AI page request, sent now or in a batch, is
+ * built from it.
+ */
+export function planAiRead(
+  page: PageState,
+  pageText: Word[],
+): { box: Box | null; ignored: Box[]; hint: string } {
+  const regions = active(page)
+  const open = new Set(page.openSections)
+  const textLayer = page.triage?.kind === 'digital' ? pageText : []
+  const box = readBox(regions, textLayer.length ? textLayer : null, page.n, open)
+  if (box === 'none') throw new Error(NOTHING_MARKED)
+  return {
+    box,
+    ignored: regions.flatMap(r => (r.kind === 'ignore' ? [r.box] : [])),
+    hint: aiHint(page, pageText, regions, open),
+  }
+}
+
+/**
+ * One page as an AI request: only the marked area (and its PDF text) is
+ * sent, ignored areas are blanked. The same request goes to /api/extract
+ * now or into a Message Batch.
+ */
+export async function aiRequest(
+  source: PageSource,
+  page: PageState,
+  ai: AiOptions,
+): Promise<ExtractRequest> {
+  // Batch pages keep slim summaries without words: get them from the open document.
+  const pageText =
+    page.triage?.kind === 'blank' || page.triage?.image ? [] : await textWords(page, source)
+  const plan = planAiRead(page, pageText)
+  const size = sizeOf(page) ?? { width: source.width, height: source.height }
+  const { canvas, scale } = await source.render(2000)
+  const rect = plan.box ? cropForAI(plan.box, size, scale) : null
+  const image = cropCanvas(canvas, rect, plan.ignored, scale)
+  return {
+    tier: ai.tier,
+    image_base64: await toJpegBase64(image),
+    media_type: 'image/jpeg',
+    text_layer: plan.hint,
+    text_layer_trusted: page.triage?.textTrusted ?? false,
+    page_number: page.n,
+    current: ai.current?.map(toApiTable),
+    instruction: ai.instruction,
+  }
+}
+
 export async function runPage(
   doc: DocSource,
   page: PageState,
@@ -314,7 +368,6 @@ export async function runPage(
   try {
     const source = await doc.page(page.n)
     const regions = active(page)
-    const ignored = regions.flatMap(r => (r.kind === 'ignore' ? [r.box] : []))
     const size = sizeOf(page) ?? { width: source.width, height: source.height }
     if (engine === 'text') {
       const { tables, warnings, notes } = textTables(page, await textWords(page, source))
@@ -358,29 +411,7 @@ export async function runPage(
       })
       return
     }
-    const open = new Set(page.openSections)
-    // Batch pages keep slim summaries without words: get them from the open document.
-    const pageText =
-      page.triage?.kind === 'blank' || page.triage?.image ? [] : await textWords(page, source)
-    const textLayer = page.triage?.kind === 'digital' ? pageText : []
-    const box = readBox(regions, textLayer.length ? textLayer : null, page.n, open)
-    // Limited to areas that aren't on this page: nothing is sent.
-    if (box === 'none') throw new Error(NOTHING_MARKED)
-    const { canvas, scale } = await source.render(2000)
-    // Only the marked area (and its PDF text) is sent; ignored areas are blanked.
-    const rect = box ? cropForAI(box, size, scale) : null
-    const image = cropCanvas(canvas, rect, ignored, scale)
-    const hint = aiHint(page, pageText, regions, open)
-    const res = await readWithAi({
-      tier: ai.tier,
-      image_base64: await toJpegBase64(image),
-      media_type: 'image/jpeg',
-      text_layer: hint,
-      text_layer_trusted: page.triage?.textTrusted ?? false,
-      page_number: page.n,
-      current: ai.current?.map(toApiTable),
-      instruction: ai.instruction,
-    })
+    const res = await readWithAi(await aiRequest(source, page, ai))
     if (res.balance_micros !== undefined) onBalance?.(res.balance_micros)
     dispatch({
       type: 'result',
@@ -448,6 +479,8 @@ export interface RunHooks {
   onNeedCredits?: () => void
   /** Stops pages that haven't started yet (a discarded batch); they go back to not read. */
   signal?: AbortSignal
+  /** Send a batch run's AI pages as a Message Batch: cheaper, results within hours. */
+  batchAi?: boolean
 }
 
 /** Read pages with their chosen engines: OCR one at a time, AI three at a time. */
