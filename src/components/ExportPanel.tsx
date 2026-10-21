@@ -6,6 +6,7 @@ import { buildWorkbook, download, type SheetLayout, type SourceInfo } from '@/li
 import { engineLabel, originalTables } from '@/lib/xlsxAudit'
 import type { DocState } from '@/state/doc'
 
+import { ReconcileExport } from './ReconcileExport'
 import { StatementExport } from './StatementExport'
 import { useTransactions } from './Transactions'
 import { Button, cn, FIELD, Spinner } from './ui'
@@ -17,7 +18,7 @@ const LAYOUTS: Record<SheetLayout, string> = {
 }
 
 export function ExportPanel({ doc }: { doc: DocState }) {
-  const [format, setFormat] = useState<'xlsx' | 'csv' | 'statement'>('xlsx')
+  const [format, setFormat] = useState<'xlsx' | 'csv' | 'statement' | 'reconcile'>('xlsx')
   const [layout, setLayout] = useState<SheetLayout>('per-table')
   const [typed, setTyped] = useState(true)
   const [joinPages, setJoinPages] = useState(true)
@@ -83,7 +84,11 @@ export function ExportPanel({ doc }: { doc: DocState }) {
       value={format}
       onChange={e =>
         setFormat(
-          e.target.value === 'csv' ? 'csv' : e.target.value === 'statement' ? 'statement' : 'xlsx',
+          e.target.value === 'csv' ||
+            e.target.value === 'statement' ||
+            e.target.value === 'reconcile'
+            ? e.target.value
+            : 'xlsx',
         )
       }
       className={cn(FIELD, 'h-9 px-2 text-sm')}
@@ -92,6 +97,7 @@ export function ExportPanel({ doc }: { doc: DocState }) {
       <option value='xlsx'>Excel (.xlsx)</option>
       <option value='csv'>CSV (one file per table)</option>
       <option value='statement'>Bank statement (OFX, QBO, Xero CSV)</option>
+      <option value='reconcile'>Reconcile with your ledger (.xlsx)</option>
     </select>
   )
 
@@ -99,6 +105,8 @@ export function ExportPanel({ doc }: { doc: DocState }) {
     <div className='sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-paper/95 px-4 py-2.5 text-xs backdrop-blur sm:py-3 sm:text-sm'>
       {format === 'statement' ? (
         <StatementExport transactions={transactions} fileName={doc.fileName} lead={fileType} />
+      ) : format === 'reconcile' ? (
+        <ReconcileExport doc={doc} lead={fileType} />
       ) : (
         tableExport()
       )}

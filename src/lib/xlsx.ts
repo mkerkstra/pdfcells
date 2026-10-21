@@ -34,6 +34,7 @@ import {
   type PartsSheet,
   type TableSpec,
 } from './xlsxParts'
+import { reconciliationSheet, type ReconcileSheetInput } from './xlsxReconcile'
 import { columnRef, summarySheets, type SummarySource } from './xlsxSummary'
 
 export type { SourceInfo }
@@ -54,6 +55,8 @@ export interface ExportOptions {
   source?: SourceInfo
   /** Payee and Category columns on the statement table, and card or bank (src/lib/transactions.ts). */
   transactions?: TransactionOptions
+  /** Add a Reconciliation sheet: statement lines matched against a ledger. */
+  reconciliation?: ReconcileSheetInput
 }
 
 export interface PageTables {
@@ -509,6 +512,9 @@ export async function buildWorkbook(input: PageTables[], o: ExportOptions): Prom
         columns: sum.widths.map(width => ({ width })),
       })
   }
+
+  if (opts.reconciliation)
+    sheets.push(reconciliationSheet(opts.reconciliation, sheetName('Reconciliation', used), names))
 
   if (audit) {
     const rows = placed.map(x =>
