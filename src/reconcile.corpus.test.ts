@@ -197,6 +197,17 @@ describe('statement.pdf reconciled against a Xero ledger', () => {
       if (dir) {
         mkdirSync(dir, { recursive: true })
         writeFileSync(join(dir, `statement-reconciled-${kind}.xlsx`), out)
+        // The same with no ledger balance: the summary leaves Difference blank.
+        const blank = await buildWorkbook(pages, {
+          layout: 'per-table',
+          typed: true,
+          joinPages: true,
+          reconciliation: { ...run.sheet, ledgerBalance: undefined },
+        })
+        writeFileSync(
+          join(dir, `statement-reconciled-${kind}-no-balance.xlsx`),
+          new Uint8Array(await blank.arrayBuffer()),
+        )
       }
       const files = unzip(out)
       const wb = files.get('xl/workbook.xml') ?? ''
