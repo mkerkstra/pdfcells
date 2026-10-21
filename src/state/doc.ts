@@ -1,4 +1,5 @@
 import type { UserRegion } from '@/lib/areas'
+import type { Recognizer } from '@/lib/ocr'
 import type { PageNoise } from '@/lib/pipeline'
 import { applyPreset, type Preset } from '@/lib/preset'
 import type { PageTriage } from '@/lib/triage'
@@ -27,6 +28,8 @@ export interface AiBatchRef {
 
 export interface RunInfo {
   engine: Engine
+  /** OCR pages: which OCR engine read it. Unset on pages read before this was recorded (tesseract.js). */
+  recognizer?: Recognizer
   tier?: Tier
   model?: string
   source?: 'byok' | 'free' | 'credits'
@@ -60,6 +63,21 @@ export interface PageState {
   areaNotes?: string[]
   /** Set while the page waits in a Message Batch. */
   aiBatch?: AiBatchRef
+  /**
+   * The page's other OCR result, after it was read again with the
+   * experimental engine: the person can switch back to it (and forth).
+   * Cleared by any other read of the page.
+   */
+  ocrOther?: OcrResult
+}
+
+/** One OCR read of a page, kept so the person can switch between engines. */
+export interface OcrResult {
+  tables: Table[]
+  warnings: string[]
+  run: RunInfo
+  areaNotes?: string[]
+  ocrWords?: Word[]
 }
 
 export interface DocState {
@@ -106,7 +124,11 @@ export type Action =
       regions?: UserRegion[]
       notes?: string[]
       ocrWords?: Word[]
+      /** Keep the page's current result as ocrOther (a read with the experimental OCR engine). */
+      keepOther?: boolean
     }
+  /** Show the page's other OCR result (ocrOther) instead, keeping this one in its place. */
+  | { type: 'swapOcr'; index: number }
   | { type: 'table'; index: number; tableId: string; table: Table | null }
   /** A name found for an untitled table; ignored if it was named meanwhile. */
   | { type: 'title'; index: number; tableId: string; title: string }
@@ -214,7 +236,8 @@ export function reducer(s: DocState, a: Action): DocState {
                   status: 'done' as const,
                 }
               : {}),
-            ...(x.tables ? { tables: applyPreset(x.tables, s.preset) } : {}),
+            // The other engine's result was read with the old areas.
+            ...(x.tables ? { tables: applyPreset(x.tables, s.preset), ocrOther: undefined } : {}),
             ...(x.warnings ? { warnings: x.warnings } : {}),
             ...(x.notes ? { areaNotes: x.notes } : {}),
           }
@@ -260,6 +283,16 @@ export function reducer(s: DocState, a: Action): DocState {
       const pg = s.pages[a.index]
       // Areas changed while the page was being read: keep the new ones and say so.
       const stale = !!pg?.regions && a.regions !== undefined && pg.regions !== a.regions
+      const other: OcrResult | undefined =
+        a.keepOther && pg?.run
+          ? {
+              tables: pg.tables,
+              warnings: pg.warnings,
+              run: pg.run,
+              areaNotes: pg.areaNotes,
+              ocrWords: pg.ocrWords,
+            }
+          : undefined
       return commit(
         s,
         patch(s, a.index, {
@@ -273,10 +306,34 @@ export function reducer(s: DocState, a: Action): DocState {
               ]
             : (a.notes ?? []),
           ocrWords: a.ocrWords,
+          ocrOther: other,
           aiBatch: undefined,
           status: 'done',
           error: undefined,
           progress: undefined,
+        }),
+      )
+    }
+    case 'swapOcr': {
+      const pg = s.pages[a.index]
+      const o = pg?.ocrOther
+      if (!pg?.run || !o) return s
+      return commit(
+        s,
+        patch(s, a.index, {
+          tables: applyPreset(o.tables, s.preset),
+          warnings: o.warnings,
+          run: o.run,
+          areaNotes: o.areaNotes,
+          ocrWords: o.ocrWords,
+          ocrOther: {
+            tables: pg.tables,
+            warnings: pg.warnings,
+            run: pg.run,
+            areaNotes: pg.areaNotes,
+            ocrWords: pg.ocrWords,
+          },
+          error: undefined,
         }),
       )
     }

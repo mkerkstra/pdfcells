@@ -105,6 +105,7 @@ export function Workspace({ onNeedCredits }: { onNeedCredits: () => void }) {
         tier: opts.tier ?? account.tier,
         current: opts.current,
         instruction: opts.instruction,
+        recognizer: opts.recognizer,
       }
       await runPages(doc, pages, dispatch, ai, {
         onBalance: () => account.refreshMe(),

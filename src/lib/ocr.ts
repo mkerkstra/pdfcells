@@ -81,15 +81,6 @@ export async function readWords(
   }
 }
 
-/** OCR a rendered page; returns words in page space (divided by render scale). */
-export async function ocrWords(
-  canvas: HTMLCanvasElement,
-  scale: number,
-  progress?: (p: number) => void,
-): Promise<Word[]> {
-  return (await readWords(canvas, scale, progress)).words
-}
-
 /**
  * How tesseract levelled the image it read. With rotateAuto, tesseract.js 7
  * rotates the image by `rotateRadians` (its own skew estimate, 0 under ~0.3°)

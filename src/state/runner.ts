@@ -6,7 +6,8 @@ import type { UserRegion } from '@/lib/areas'
 import { toJpegBase64, type DocSource, type PageSource } from '@/lib/document'
 import { buildTables, linesToText, type LocalTable } from '@/lib/layout'
 import { cleanWords, type PageSize } from '@/lib/noise'
-import { ocrWords } from '@/lib/ocr'
+import { readWords, type Recognizer } from '@/lib/ocr'
+import { fromCrop, mergeWords, retryBox, retryReason } from '@/lib/ocrRetry'
 import { extractPage, type ExtractedTable, type PageNoise } from '@/lib/pipeline'
 import {
   applyRegions,
@@ -287,6 +288,13 @@ export async function triageAll(
 
 export interface AiOptions {
   tier: Tier
+  /**
+   * 'ppocr': read OCR pages again with the experimental PP-OCR engine (the
+   * retry offered on a weak page): only the band of the page around the
+   * tables tesseract found, the rest of the page's words kept. A failure
+   * leaves the page as it was.
+   */
+  recognizer?: Recognizer
   /** Existing tables to correct, plus an optional instruction. */
   current?: Table[]
   instruction?: string
@@ -383,6 +391,7 @@ export async function runPage(
       return
     }
     if (engine === 'ocr') {
+      if (ai.recognizer === 'ppocr') return await retryOcr(source, page, dispatch, size)
       // ~300 dpi for a letter page; OCR accuracy drops sharply below ~200.
       const { canvas, scale } = await source.render(3000)
       const only = regions.some(r => r.kind === 'between')
@@ -392,23 +401,29 @@ export async function runPage(
       const rect = only ? cropForAI(only, size, scale) : null
       const progress = (p: number) =>
         dispatch({ type: 'status', index, status: 'running', progress: p })
-      const dx = rect ? rect.x / scale : 0
-      const dy = rect ? rect.y / scale : 0
-      const words = (await ocrWords(cropCanvas(canvas, rect, [], scale), scale, progress)).map(w =>
-        rect ? { ...w, x0: w.x0 + dx, x1: w.x1 + dx, y0: w.y0 + dy, y1: w.y1 + dy } : w,
+      // A page read again with PP-OCR stays with it when read again (a new area).
+      const sticky = page.run?.engine === 'ocr' && page.run.recognizer === 'ppocr'
+      const read = await readWords(
+        cropCanvas(canvas, rect, [], scale),
+        scale,
+        progress,
+        sticky ? 'ppocr' : undefined,
       )
+      const words = fromCrop(read.words, rect, scale)
       const { tables, warnings, notes } = ocrTables(page, words)
+      const run = { engine: 'ocr' as const, recognizer: read.recognizer }
       dispatch({
         type: 'result',
         index,
         tables,
         warnings,
         notes,
-        run: { engine: 'ocr' },
+        run,
         regions: page.regions,
         // Words of a crop can't serve another area later.
         ocrWords: rect ? undefined : words,
       })
+      maybePrewarm({ status: 'done', run, tables, triage: page.triage })
       return
     }
     const res = await readWithAi(await aiRequest(source, page, ai))
@@ -439,6 +454,76 @@ export async function runPage(
     throw e
   }
 }
+
+/**
+ * Starts loading PP-OCR in the background. Replaceable in tests; the module
+ * is imported only when called, so documents without a weak OCR page never
+ * load it.
+ */
+export const ppocrWarmup = {
+  run: (): void => void import('@/lib/ppocr/browser').then(m => m.prewarmPpocr()),
+}
+
+/**
+ * Prewarm PP-OCR as soon as a page tesseract read looks weak, so the retry
+ * offered on it reads at re-read speed. True when it fired.
+ */
+export function maybePrewarm(p: Parameters<typeof retryReason>[0]): boolean {
+  if (retryReason(p) === null) return false
+  ppocrWarmup.run()
+  return true
+}
+
+/**
+ * An OCR page read again with PP-OCR: the band of the page around the
+ * tables tesseract found (or the marked areas, or the whole page), the old
+ * words kept outside it. On failure the page keeps its tables and says why.
+ */
+async function retryOcr(
+  source: PageSource,
+  page: PageState,
+  dispatch: Dispatch,
+  size: PageSize,
+): Promise<void> {
+  const index = page.n - 1
+  const { canvas, scale } = await source.render(3000)
+  const crop = retryBox(page.tables, page.regions ?? [], page.n, size)
+  const rect = crop ? cropForAI(crop.box, size, scale, crop.padding) : null
+  const progress = (p: number) =>
+    dispatch({ type: 'status', index, status: 'running', progress: p })
+  let words: Word[]
+  try {
+    const read = await readWords(cropCanvas(canvas, rect, [], scale), scale, progress, 'ppocr')
+    words = fromCrop(read.words, rect, scale)
+  } catch (e) {
+    console.warn('PP-OCR retry failed', e)
+    dispatch({ type: 'status', index, status: 'done', error: RETRY_FAILED })
+    return
+  }
+  // The whole page's words, so a new area is read at once: none when marked
+  // areas were read alone (as tesseract read them), or when the old words
+  // aren't at hand (a batch reopened later).
+  const all = !rect
+    ? words
+    : crop?.kind === 'band' && page.ocrWords
+      ? mergeWords(page.ocrWords, words, rect, scale)
+      : undefined
+  const { tables, warnings, notes } = ocrTables(page, all ?? words)
+  dispatch({
+    type: 'result',
+    index,
+    tables,
+    warnings,
+    notes,
+    run: { engine: 'ocr', recognizer: 'ppocr' },
+    regions: page.regions,
+    ocrWords: all,
+    keepOther: true,
+  })
+}
+
+export const RETRY_FAILED =
+  'The experimental OCR engine couldn’t read this page, so the first result is kept.'
 
 /** Run jobs with bounded concurrency; OCR shares one worker so it runs serially anyway. */
 export async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {

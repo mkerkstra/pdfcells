@@ -7,14 +7,7 @@ import type { Box, Table, Word } from './types'
 import { review } from './validate'
 
 /** Checks whose failure on an OCR page usually means a misread, not a layout quirk. */
-const WEAK_KINDS = new Set([
-  'total',
-  'balance',
-  'arithmetic',
-  'crossfoot',
-  'tie',
-  'low-confidence',
-])
+const WEAK_KINDS = new Set(['total', 'balance', 'arithmetic', 'crossfoot', 'tie', 'low-confidence'])
 
 /** The parts of a page the offer looks at (a PageState fits). */
 export interface RetryPage {
@@ -60,6 +53,14 @@ export const RETRY_MARGIN_PT = 48
 /** Padding around a marked area, as runPage reads it with tesseract. */
 export const AREA_PADDING_PT = 12
 
+export interface RetryCrop {
+  /** 'area': the marked areas, read alone. 'band': the page's width around tesseract's tables. */
+  kind: 'area' | 'band'
+  box: Box
+  /** Points added on every side (cropForAI's padding). */
+  padding: number
+}
+
 /**
  * The part of the page PP-OCR reads, in page space, with the padding to add;
  * null for the whole page. Marked "only" areas win and are read exactly as
@@ -74,15 +75,15 @@ export function retryBox(
   n: number,
   pageSize: { width: number; height: number },
   margin = RETRY_MARGIN_PT,
-): { box: Box; padding: number } | null {
+): RetryCrop | null {
   const active = regions.filter(r => regionApplies(r, n))
   if (active.some(r => r.kind === 'between')) return null
   const only = active.flatMap(r => (r.kind === 'only' ? [r.box] : []))
-  if (only.length) return { box: union(only), padding: AREA_PADDING_PT }
+  if (only.length) return { kind: 'area', box: union(only), padding: AREA_PADDING_PT }
   const boxes = tables.flatMap(t => (t.bbox ? [t.bbox] : []))
   if (!boxes.length) return null
   const u = union(boxes)
-  return { box: { x0: 0, y0: u.y0, x1: pageSize.width, y1: u.y1 }, padding: margin }
+  return { kind: 'band', box: { x0: 0, y0: u.y0, x1: pageSize.width, y1: u.y1 }, padding: margin }
 }
 
 function union(boxes: Box[]): Box {

@@ -220,3 +220,60 @@ describe('extracted action', () => {
     expect(s1.past).toHaveLength(0)
   })
 })
+
+describe('experimental OCR retry', () => {
+  const ocrRead = { engine: 'ocr' as const, recognizer: 'tesseract' as const }
+  const words = [{ text: 'x', x0: 0, y0: 0, x1: 1, y1: 1 }]
+  const retried = (s: DocState) =>
+    reducer(s, {
+      type: 'result',
+      index: 0,
+      tables: [summary],
+      warnings: [],
+      run: { engine: 'ocr', recognizer: 'ppocr' },
+      ocrWords: words,
+      keepOther: true,
+    })
+
+  it('keeps the first OCR result, and switching goes back and forth', () => {
+    const s0 = doc([page(1, [txns], { run: ocrRead, warnings: ['w'], ocrWords: [] })])
+    const s1 = retried(s0)
+    expect(s1.pages[0]).toMatchObject({
+      tables: [summary],
+      run: { recognizer: 'ppocr' },
+      ocrOther: { tables: [txns], warnings: ['w'], run: ocrRead, ocrWords: [] },
+    })
+    const back = reducer(s1, { type: 'swapOcr', index: 0 })
+    expect(back.pages[0]).toMatchObject({
+      tables: [txns],
+      warnings: ['w'],
+      run: ocrRead,
+      ocrWords: [],
+      ocrOther: { tables: [summary], run: { recognizer: 'ppocr' }, ocrWords: words },
+    })
+    const forth = reducer(back, { type: 'swapOcr', index: 0 })
+    expect(forth.pages[0]?.tables).toEqual([summary])
+    expect(forth.pages[0]?.run?.recognizer).toBe('ppocr')
+    // Each switch is one undo step.
+    expect(reducer(forth, { type: 'undo' }).pages[0]?.tables).toEqual([txns])
+  })
+
+  it('any other read, or new areas, drops the other result', () => {
+    const s1 = retried(doc([page(1, [txns], { run: ocrRead })]))
+    const reread = reducer(s1, {
+      type: 'result',
+      index: 0,
+      tables: [txns],
+      warnings: [],
+      run: ocrRead,
+    })
+    expect(reread.pages[0]?.ocrOther).toBeUndefined()
+    const marked = reducer(s1, {
+      type: 'regions',
+      pages: [{ index: 0, regions: [area], tables: [summary] }],
+    })
+    expect(marked.pages[0]?.ocrOther).toBeUndefined()
+    // Nothing to switch to: no change.
+    expect(reducer(reread, { type: 'swapOcr', index: 0 })).toBe(reread)
+  })
+})

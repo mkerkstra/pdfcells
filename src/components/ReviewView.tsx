@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'reac
 import { formatUsd } from '@/lib/api'
 import { carryOver, covers, resizeRegions, type UserRegion } from '@/lib/areas'
 import type { DocSource } from '@/lib/document'
+import { retryReason, type RetryReason } from '@/lib/ocrRetry'
 import { applyPreset, isHidden, PRESET_REASON } from '@/lib/preset'
 import { anchorsFromSelection, type ProposedAnchors } from '@/lib/region'
 import type { Box, Table, Word } from '@/lib/types'
@@ -65,6 +66,8 @@ export function ReviewView({
   const [activeTable, setActiveTable] = useState<string | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const [marking, setMarking] = useState(false)
+  // The page being read again with the experimental OCR engine, for the running label.
+  const [retrying, setRetrying] = useState<number | null>(null)
   const areas = useAreas(doc, dispatch, source, onRun, page, account.aiPossible)
   if (!page) return null
   const busy = page.status === 'running' || page.status === 'queued' || areas.working
@@ -85,6 +88,14 @@ export function ReviewView({
       : 'This page is read again with OCR.'
   const readOcr = () => void onRun([{ ...page, engine: 'ocr' }])
   const readAi = () => void onRun([{ ...page, engine: 'ai' }])
+  const retry = busy ? null : retryReason(page)
+  const readPpocr = () => {
+    const n = page.n
+    setRetrying(n)
+    void onRun([{ ...page, engine: 'ocr' }], { recognizer: 'ppocr' }).finally(() =>
+      setRetrying(r => (r === n ? null : r)),
+    )
+  }
   const aiHint = account.aiReady
     ? ''
     : account.config.hosted
@@ -240,9 +251,13 @@ export function ReviewView({
                     <Spinner />
                     {page.status === 'queued'
                       ? 'Waiting to read…'
-                      : page.progress
-                        ? `Reading… ${Math.round(page.progress * 100)}%`
-                        : 'Reading…'}
+                      : retrying === page.n
+                        ? page.progress
+                          ? `Reading with the experimental engine… ${Math.round(page.progress * 100)}%`
+                          : 'Reading with the experimental engine…'
+                        : page.progress
+                          ? `Reading… ${Math.round(page.progress * 100)}%`
+                          : 'Reading…'}
                   </span>
                 ) : (
                   page.run && <RunNote page={page} />
@@ -252,6 +267,14 @@ export function ReviewView({
               </div>
             )}
           </div>
+
+          {retry && <RetryOffer reason={retry} onRetry={readPpocr} />}
+          {page.ocrOther && !busy && (
+            <OcrSwitch
+              page={page}
+              onSwitch={() => dispatch({ type: 'swapOcr', index: doc.selected })}
+            />
+          )}
 
           {notes.length > 0 && (
             <ul className='space-y-1 rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-xs'>
@@ -612,12 +635,56 @@ function useAreas(
   }
 }
 
+const RETRY_LEAD: Record<RetryReason, string> = {
+  'no-table': 'OCR found no table on this page.',
+  checks: 'Some numbers on this page don’t add up, so OCR may have misread them.',
+  'low-confidence': 'OCR was unsure of some cells on this page.',
+}
+
+/** Offered on a page tesseract.js read weakly: read it again with PP-OCR. */
+function RetryOffer({ reason, onRetry }: { reason: RetryReason; onRetry: () => void }) {
+  return (
+    <div className='flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-card px-3 py-2 text-xs'>
+      <p className='min-w-0 flex-1'>
+        {RETRY_LEAD[reason]} You can try the experimental OCR engine on this page. It’s slower, and
+        the first time it downloads about 10 MB.
+      </p>
+      <Button size='sm' onClick={onRetry}>
+        <ScanText className='size-3.5' /> Try the experimental engine
+      </Button>
+    </div>
+  )
+}
+
+/** After a retry: switch between the two OCR results. */
+function OcrSwitch({ page, onSwitch }: { page: PageState; onSwitch: () => void }) {
+  const experimental = page.run?.recognizer === 'ppocr'
+  return (
+    <div className='flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-card px-3 py-2 text-xs'>
+      <p className='min-w-0 flex-1 text-muted'>
+        {experimental
+          ? 'This page was read again with the experimental OCR engine.'
+          : 'You’re looking at the first OCR result. The experimental engine’s result is kept.'}
+      </p>
+      <Button size='sm' variant='outline' onClick={onSwitch}>
+        {experimental ? 'Go back to the first result' : 'Use the experimental result'}
+      </Button>
+    </div>
+  )
+}
+
 function RunNote({ page }: { page: PageState }) {
   const { config } = useAccount()
   const r = page.run
   if (!r) return null
   if (r.engine === 'text') return <span>Read from the {ENGINE_LABEL.text}</span>
-  if (r.engine === 'ocr') return <span>Read with {ENGINE_LABEL.ocr}</span>
+  if (r.engine === 'ocr')
+    return (
+      <span>
+        Read with {ENGINE_LABEL.ocr}
+        {r.recognizer === 'ppocr' ? ' (experimental engine)' : ''}
+      </span>
+    )
   const tier = r.tier ?? config.tiers.find(t => t.model === r.model)?.id
   const cost =
     r.source === 'free'

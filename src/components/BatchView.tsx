@@ -913,7 +913,12 @@ function BatchReview({
         source,
         await withFacts(source, pages, account.aiPossible),
         docDispatch,
-        { tier: opts.tier ?? account.tier, current: opts.current, instruction: opts.instruction },
+        {
+          tier: opts.tier ?? account.tier,
+          current: opts.current,
+          instruction: opts.instruction,
+          recognizer: opts.recognizer,
+        },
         hooks,
       )
       account.refreshMe()

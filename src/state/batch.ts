@@ -229,7 +229,14 @@ function settlePage(p: PageState): PageState {
 }
 
 /** OCR words stay in memory only: a marked area on a resumed OCR page reads it again. */
-const slimPage = (p: PageState): PageState => (p.ocrWords ? { ...p, ocrWords: undefined } : p)
+const slimPage = (p: PageState): PageState =>
+  p.ocrWords || p.ocrOther?.ocrWords
+    ? {
+        ...p,
+        ocrWords: undefined,
+        ...(p.ocrOther ? { ocrOther: { ...p.ocrOther, ocrWords: undefined } } : {}),
+      }
+    : p
 
 function settleItem(it: BatchItem): BatchItem {
   const status: ItemStatus =

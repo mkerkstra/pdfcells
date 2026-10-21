@@ -51,12 +51,26 @@ describe('retryReason', () => {
   it('offers on a failing check, no table, or low confidence', () => {
     expect(retryReason(ocrPage([unfooted]))).toBe('checks')
     expect(retryReason(ocrPage([]))).toBe('no-table')
-    const unsure = table(footed.rows, { cellConf: [[99, 99], [99, 40], [99, 99], [99, 99]] })
+    const unsure = table(footed.rows, {
+      cellConf: [
+        [99, 99],
+        [99, 40],
+        [99, 99],
+        [99, 99],
+      ],
+    })
     expect(retryReason(ocrPage([unsure]))).toBe('low-confidence')
   })
 
   it('a failing check outranks low confidence', () => {
-    const both = table(unfooted.rows, { cellConf: [[99, 40], [99, 99], [99, 99], [99, 99]] })
+    const both = table(unfooted.rows, {
+      cellConf: [
+        [99, 40],
+        [99, 99],
+        [99, 99],
+        [99, 99],
+      ],
+    })
     expect(retryReason(ocrPage([both]))).toBe('checks')
   })
 
@@ -93,6 +107,7 @@ describe('retryBox', () => {
 
   it('reads the full page width over the tables, plus the margin above and below', () => {
     expect(retryBox([t(300, 500), t(200, 250, 50, 150)], [], 1, size)).toEqual({
+      kind: 'band',
       box: { x0: 0, y0: 200, x1: 612, y1: 500 },
       padding: RETRY_MARGIN_PT,
     })
@@ -112,6 +127,7 @@ describe('retryBox', () => {
     }
     const other: Region = { ...only, box: { x0: 400, y0: 10, x1: 500, y1: 20 } }
     expect(retryBox([t(300, 500)], [only, other], 1, size)).toEqual({
+      kind: 'area',
       box: { x0: 50, y0: 10, x1: 500, y1: 160 },
       padding: AREA_PADDING_PT,
     })
@@ -120,7 +136,11 @@ describe('retryBox', () => {
   })
 
   it('reads a page with a marked section whole, as the first read did', () => {
-    const between: Region = { kind: 'between', start: { text: 'Start', mode: 'after' }, pages: 'all' }
+    const between: Region = {
+      kind: 'between',
+      start: { text: 'Start', mode: 'after' },
+      pages: 'all',
+    }
     expect(retryBox([t(300, 500)], [between], 1, size)).toBeNull()
   })
 
@@ -139,7 +159,13 @@ describe('retryBox', () => {
 })
 
 describe('fromCrop', () => {
-  const w = (x0: number, y0: number, text = 'w'): Word => ({ text, x0, y0, x1: x0 + 10, y1: y0 + 5 })
+  const w = (x0: number, y0: number, text = 'w'): Word => ({
+    text,
+    x0,
+    y0,
+    x1: x0 + 10,
+    y1: y0 + 5,
+  })
 
   it('maps crop words back to page space', () => {
     const scale = 4
@@ -170,7 +196,13 @@ describe('fromCrop', () => {
 })
 
 describe('mergeWords', () => {
-  const w = (x0: number, y0: number, text: string): Word => ({ text, x0, y0, x1: x0 + 10, y1: y0 + 4 })
+  const w = (x0: number, y0: number, text: string): Word => ({
+    text,
+    x0,
+    y0,
+    x1: x0 + 10,
+    y1: y0 + 4,
+  })
 
   it('keeps old words outside the crop and new ones inside it', () => {
     const scale = 2
