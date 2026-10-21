@@ -42,6 +42,15 @@ function moveEdge(b: Box, edge: Edge, dx: number, dy: number): Box {
   return out
 }
 
+/** Pointer capture, when the pointer is still down (it may have been released already). */
+function capture(el: Element, id: number) {
+  try {
+    el.setPointerCapture(id)
+  } catch {
+    // Not an active pointer: the drag still works while it stays over the page.
+  }
+}
+
 const quote = (s: string) => `“${s}”`
 
 /** The proposed markers in words: where the area starts and ends. */
@@ -100,7 +109,13 @@ export function PageImage({
   const [draft, setDraft] = useState<Box | null>(null)
   const [chosen, setChosen] = useState<Box | null>(null)
   const [resizing, setResizing] = useState<{ id: string; box: Box } | null>(null)
-  const press = useRef<{ x: number; y: number; id: number; dragging: boolean } | null>(null)
+  const press = useRef<{
+    x: number
+    y: number
+    id: number
+    dragging: boolean
+    box?: Box
+  } | null>(null)
   const edgeDrag = useRef<{ id: string; edge: Edge; start: Box; x: number; y: number } | null>(null)
   const swallowClick = useRef(false)
   const keyCommit = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -165,7 +180,7 @@ export function PageImage({
     const edge = target.dataset.edge as Edge | undefined
     if (edge && resizable && active?.bbox) {
       e.preventDefault()
-      target.setPointerCapture(e.pointerId)
+      capture(target, e.pointerId)
       edgeDrag.current = { id: active.id, edge, start: active.bbox, x: e.clientX, y: e.clientY }
       return
     }
@@ -189,12 +204,13 @@ export function PageImage({
       if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < SLOP) return
       p.dragging = true
       // Captured only once it is a drag, so a plain click still reaches a table's outline.
-      frame.current?.setPointerCapture(p.id)
+      if (frame.current) capture(frame.current, p.id)
       areas?.onMarking(false)
     }
     const a = toPage({ clientX: p.x, clientY: p.y })
     const b = toPage(e)
-    setDraft(normalBox({ x0: a.x, y0: a.y, x1: b.x, y1: b.y }))
+    p.box = normalBox({ x0: a.x, y0: a.y, x1: b.x, y1: b.y })
+    setDraft(p.box)
   }
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
@@ -212,7 +228,7 @@ export function PageImage({
     if (!p?.dragging) return
     swallowClick.current = true
     setTimeout(() => (swallowClick.current = false), 0)
-    const b = draft
+    const b = p.box
     if (!b || b.x1 - b.x0 < MIN || b.y1 - b.y0 < MIN) {
       setDraft(null)
       return
@@ -468,11 +484,14 @@ function AreaPopover({
   const [useMarkers, setUseMarkers] = useState(false)
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => panel.current?.querySelector('button')?.focus(), [])
-  const below = box.y1 / size.h < 0.62
+  // Below the box when there's room, else above it, else inside its top edge.
   const left = `clamp(0px, ${(box.x0 / size.w) * 100}%, calc(100% - 18rem))`
-  const pos = below
-    ? { left, top: `calc(${(box.y1 / size.h) * 100}% + 6px)` }
-    : { left, bottom: `calc(${(1 - box.y0 / size.h) * 100}% + 6px)` }
+  const pos =
+    box.y1 / size.h < 0.62
+      ? { left, top: `calc(${(box.y1 / size.h) * 100}% + 6px)` }
+      : box.y0 / size.h > 0.4
+        ? { left, bottom: `calc(${(1 - box.y0 / size.h) * 100}% + 6px)` }
+        : { left, top: `calc(${(box.y0 / size.h) * 100}% + 6px)` }
   const markers = proposed.start ? proposed : undefined
   const choose = (action: AreaChoice['action']) =>
     onChoose({

@@ -488,7 +488,16 @@ function useAreas(
   /** The page's tables with these areas, from words at hand (no read). */
   const local = (p: PageState, regions: UserRegion[]) => {
     if (!words?.length) return null
-    return instantEngine(p) === 'ocr' ? ocrTables(p, words, regions) : textTables(p, words, regions)
+    const r =
+      instantEngine(p) === 'ocr' ? ocrTables(p, words, regions) : textTables(p, words, regions)
+    // A table kept in its own area loses the title line above it: keep the name it had.
+    const tables = r.tables.map(t => {
+      if (t.title || !t.bbox) return t
+      const bbox = t.bbox
+      const was = p.tables.find(o => o.title && o.bbox && covers(o.bbox, bbox, 0.9))
+      return was ? { ...t, title: was.title } : t
+    })
+    return { ...r, tables }
   }
 
   /** Read pages again with new areas: at once where the words are at hand, else this page is read again. */
