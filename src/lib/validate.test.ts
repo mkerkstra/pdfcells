@@ -53,6 +53,19 @@ describe('validate', () => {
     ).toEqual([])
   })
 
+  it('does not sum a column marked % only in its header', () => {
+    expect(
+      validate(
+        table([
+          ['Region', 'Sales', 'Change %'],
+          ['North', '120', '5.0'],
+          ['South', '80', '-19.2'],
+          ['Total', '200', '-4.1'],
+        ]),
+      ).filter(i => i.kind === 'total'),
+    ).toEqual([])
+  })
+
   it('flags a misread digit in a numeric column', () => {
     const issues = validate(
       table([

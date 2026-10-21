@@ -43,8 +43,12 @@ export interface Grid {
 /** Columns whose filled body cells are mostly percentages. */
 export function percentColumns(t: Table): boolean[] {
   const width = t.rows[0]?.length ?? 0
+  const head = t.rows.slice(0, t.headerRows)
   const body = t.rows.slice(t.headerRows)
   return Array.from({ length: width }, (_, c) => {
+    // "Change %" / "Margin (percent)" in the header marks the column even when
+    // the values are printed without a % sign.
+    if (head.some(r => /%|\bpercent\b|\bpct\b/i.test(r[c] ?? ''))) return true
     const vals = body.map(r => (r[c] ?? '').trim()).filter(Boolean)
     return vals.length > 0 && vals.filter(v => v.endsWith('%')).length >= vals.length / 2
   })

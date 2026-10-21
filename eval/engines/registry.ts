@@ -33,7 +33,8 @@ export const ENGINES: EngineSpec[] = [
     id: 'text-layer+noise',
     kind: 'local',
     status: 'ready',
-    summary: 'text-layer plus src/lib/pipeline extractPage: page numbers removed, prose/contents/axis blocks and low scores hidden',
+    summary:
+      'text-layer plus src/lib/pipeline extractPage: page numbers removed, prose/contents/axis blocks and low scores hidden',
     create: () => textLayerNoiseEngine(),
   },
   {
