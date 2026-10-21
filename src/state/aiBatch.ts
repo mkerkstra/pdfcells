@@ -122,7 +122,63 @@ export interface SendOptions {
   /** Waits between retries after the server says to slow down. */
   wait?: (ms: number) => Promise<void>
   now?: () => number
+  /** The batch file the pages belong to, for the submission journal. */
+  file?: string
+  journal?: Journal
 }
+
+/**
+ * A hosted submission written down (synchronously, in localStorage) before
+ * it is sent. The batch itself is saved a moment later; if the tab closes in
+ * between, the poller finds the pages here and looks the submission up
+ * instead of letting them be read, and paid for, again.
+ */
+export interface JournalEntry {
+  submission: string
+  file: string
+  pages: number[]
+  tier: Tier
+  at: number
+}
+
+export interface Journal {
+  add(e: JournalEntry): void
+  remove(submission: string): void
+  list(): JournalEntry[]
+}
+
+const JOURNAL_KEY = 'pdfcells.batchSubmissions'
+/** Entries older than this are dropped: their batch has long ended. */
+const JOURNAL_DAYS = 3
+
+export const localJournal: Journal = {
+  list() {
+    try {
+      const raw: unknown = JSON.parse(localStorage.getItem(JOURNAL_KEY) ?? '[]')
+      const cutoff = Date.now() - JOURNAL_DAYS * 86_400_000
+      return Array.isArray(raw) ? (raw as JournalEntry[]).filter(e => e.at > cutoff) : []
+    } catch {
+      return []
+    }
+  },
+  add(e) {
+    try {
+      localStorage.setItem(JOURNAL_KEY, JSON.stringify([...localJournal.list(), e]))
+    } catch {
+      // Storage blocked: only the batch save protects these pages.
+    }
+  },
+  remove(submission) {
+    try {
+      const rest = localJournal.list().filter(e => e.submission !== submission)
+      localStorage.setItem(JOURNAL_KEY, JSON.stringify(rest))
+    } catch {
+      // Nothing saved, nothing to remove.
+    }
+  },
+}
+
+const noJournal: Journal = { add: () => undefined, remove: () => undefined, list: () => [] }
 
 /**
  * Send pages as Message Batches. Each page ends up 'batched' (sent),
@@ -134,6 +190,8 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
   const byok = o.byok ?? getByok() !== ''
   const wait = o.wait ?? pause
   const now = o.now ?? Date.now
+  const journal = o.journal ?? (o.file ? localJournal : noJournal)
+  const ready = (p: PageState) => o.dispatch({ type: 'status', index: p.n - 1, status: 'ready' })
   let chunk: { page: PageState; req: BatchPageIn }[] = []
   let bytes = 0
   let sent = 0
@@ -150,18 +208,36 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
       group.forEach(c => fail(c.page, stopped))
       return
     }
-    // Saved with the batch before sending: if the answer never arrives, the
-    // pages wait under this id and are looked up rather than sent again.
+    // Written down before sending: if the answer never arrives, the pages
+    // wait under this id and are looked up rather than sent again.
     const submission = newSubmissionId()
-    if (!byok)
+    if (!byok) {
+      if (o.file)
+        journal.add({
+          submission,
+          file: o.file,
+          pages: group.map(c => c.page.n),
+          tier: o.tier,
+          at: now(),
+        })
       for (const c of group)
         o.dispatch({
           type: 'batched',
           index: c.page.n - 1,
           batch: { id: '', customId: '', byok, tier: o.tier, submission, sentAt: now() },
         })
+    }
+    const notSent = (why: string) => {
+      journal.remove(submission)
+      group.forEach(c => (why ? fail(c.page, why) : ready(c.page)))
+    }
     let res: SubmitResponse | null = null
     for (let attempt = 0; !res; attempt++) {
+      // Discarded (now or during a wait): nothing more is sent or charged.
+      if (o.signal?.aborted) {
+        notSent('')
+        return
+      }
       try {
         res = await api.submit(
           o.tier,
@@ -190,7 +266,7 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
           stopped = msg
           o.onNeedCredits?.()
         }
-        group.forEach(c => fail(c.page, unknown ? batchError('byok_unknown') : msg))
+        notSent(unknown ? batchError('byok_unknown') : msg)
         return
       }
     }
@@ -256,6 +332,49 @@ export function batchedPages(
   )
 }
 
+/** The journal's name for a file of a batch run. */
+export const journalFile = (batchId: string, itemId: string) => `${batchId}/${itemId}`
+
+/**
+ * Pages written in the journal whose wait didn't make it into the saved
+ * batch (the tab closed in between): they're waiting again, under their
+ * submission, instead of being read twice. Entries with nothing left to
+ * recover are dropped.
+ */
+function recoverJournal(
+  state: BatchState,
+  dispatch: (a: BatchAction) => void,
+  journal: Journal,
+): { itemId: string; page: PageState; ref: AiBatchRef }[] {
+  const out: { itemId: string; page: PageState; ref: AiBatchRef }[] = []
+  for (const e of journal.list()) {
+    const it = state.items.find(x => journalFile(state.id, x.id) === e.file)
+    if (!it) continue
+    let open = false
+    for (const n of e.pages) {
+      const p = it.doc.pages[n - 1]
+      if (!p) continue
+      if (p.status === 'batched' && !p.aiBatch?.id && p.aiBatch?.submission === e.submission) {
+        open = true
+      } else if (p.status === 'ready') {
+        const ref: AiBatchRef = {
+          id: '',
+          customId: '',
+          byok: false,
+          tier: e.tier,
+          submission: e.submission,
+          sentAt: e.at,
+        }
+        dispatch({ type: 'doc', id: it.id, action: { type: 'batched', index: n - 1, batch: ref } })
+        out.push({ itemId: it.id, page: { ...p, status: 'batched', aiBatch: ref }, ref })
+        open = true
+      }
+    }
+    if (!open) journal.remove(e.submission)
+  }
+  return out
+}
+
 /**
  * Ask once about every batch with pages still waiting, and put in the
  * results of those that ended. A file whose last waiting page comes back,
@@ -264,11 +383,17 @@ export function batchedPages(
 export async function pollBatches(
   state: BatchState,
   dispatch: (a: BatchAction) => void,
-  opts: { api?: BatchApi; onBalance?: (micros: number) => void; now?: () => number } = {},
+  opts: {
+    api?: BatchApi
+    onBalance?: (micros: number) => void
+    now?: () => number
+    journal?: Journal
+  } = {},
 ): Promise<number> {
   const api = opts.api ?? batchApi
   const now = opts.now ?? Date.now
-  const waiting = batchedPages(state)
+  const journal = opts.journal ?? localJournal
+  const waiting = [...batchedPages(state), ...recoverJournal(state, dispatch, journal)]
   const byBatch = new Map<string, typeof waiting>()
   const unsure = new Map<string, typeof waiting>()
   for (const w of waiting) {
@@ -423,6 +548,7 @@ export async function readOrSend(
   dispatch: (a: Action) => void,
   tier: Tier,
   hooks: RunHooks,
+  itemId?: string,
 ): Promise<number> {
   if (!hooks.batchAi) {
     await runPages(doc, pages, dispatch, { tier }, hooks)
@@ -440,6 +566,7 @@ export async function readOrSend(
       signal: hooks.signal,
       onBalance: hooks.onBalance,
       onNeedCredits: hooks.onNeedCredits,
+      file: hooks.batchId && itemId ? journalFile(hooks.batchId, itemId) : undefined,
     }),
   ])
   return sent

@@ -206,6 +206,7 @@ export function BatchView({
         ...hooks,
         signal: exit.current?.signal,
         batchAi: sendsAsBatch(pagesToRead(stateRef.current.items, choice).ai),
+        batchId: stateRef.current.id,
       })
       for (const j of jobs) inFlight.current.delete(j.item.id)
       account.refreshMe()

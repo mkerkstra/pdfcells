@@ -263,6 +263,11 @@ func (s *Server) submissionStatus(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, r, "database unavailable", err)
 		return
 	}
+	// A submission that crashed after reserving is released here too, so a
+	// browser asking about it gets "not sent" instead of waiting on /api/me.
+	if _, err := st.ReleaseStaleReservations(r.Context(), uid); err != nil {
+		s.log.Error("release stale batch reservations", "err", err)
+	}
 	s.writeSubmission(w, r, st, uid, sid)
 }
 

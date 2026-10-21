@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { UserRegion } from '@/lib/areas'
 import type { Table, Word } from '@/lib/types'
 
-import type { DocState, PageState } from './doc'
+import { reducer, type DocState, type PageState } from './doc'
 import { allowedWords, nameRequestFor, nameTables, namingPlan, type NameTable } from './naming'
 
 const w = (text: string, x0: number, y0: number): Word => ({
@@ -158,9 +158,23 @@ describe('nameTables', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]).toHaveLength(2)
     expect(res.named).toBe(2)
-    expect(actions.map(a => (a as { table: Table }).table.title)).toEqual([
-      'Items (2)',
-      'Items (3)',
-    ])
+    expect(actions.map(a => (a as { title: string }).title)).toEqual(['Items (2)', 'Items (3)'])
+  })
+})
+
+describe('a name arriving after edits', () => {
+  it('changes only the title, and never a name given by hand meanwhile', () => {
+    const t = { ...table([['Qty'], ['10']]), id: 'a' }
+    let d = doc([{ tables: [t] }])
+    d = reducer(d, {
+      type: 'table',
+      index: 0,
+      tableId: 'a',
+      table: { ...t, rows: [['Qty'], ['99']] },
+    })
+    d = reducer(d, { type: 'title', index: 0, tableId: 'a', title: 'Quantities' })
+    expect(d.pages[0]?.tables[0]).toMatchObject({ title: 'Quantities', rows: [['Qty'], ['99']] })
+    d = reducer(d, { type: 'title', index: 0, tableId: 'a', title: 'Other' })
+    expect(d.pages[0]?.tables[0]?.title).toBe('Quantities')
   })
 })

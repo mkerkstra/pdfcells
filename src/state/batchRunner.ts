@@ -216,7 +216,7 @@ export async function readItem(
       }
     }
     const docDispatch = (action: Action) => dispatch({ type: 'doc', id, action })
-    const sent = await readOrSend(doc, full, docDispatch, tier, hooks)
+    const sent = await readOrSend(doc, full, docDispatch, tier, hooks, id)
     dispatch({ type: 'forget', id })
     // Stopped part-way: the pages left are not read, and a resume picks them up.
     const status = hooks.signal?.aborted ? 'checked' : sent > 0 ? 'reading' : 'read'

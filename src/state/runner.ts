@@ -481,6 +481,8 @@ export interface RunHooks {
   signal?: AbortSignal
   /** Send a batch run's AI pages as a Message Batch: cheaper, results within hours. */
   batchAi?: boolean
+  /** The batch run's id, so batch submissions can be journalled per file. */
+  batchId?: string
 }
 
 /** Read pages with their chosen engines: OCR one at a time, AI three at a time. */

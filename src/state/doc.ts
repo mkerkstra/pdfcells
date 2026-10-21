@@ -108,6 +108,8 @@ export type Action =
       ocrWords?: Word[]
     }
   | { type: 'table'; index: number; tableId: string; table: Table | null }
+  /** A name found for an untitled table; ignored if it was named meanwhile. */
+  | { type: 'title'; index: number; tableId: string; title: string }
   | { type: 'select'; index: number }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -292,6 +294,15 @@ export function reducer(s: DocState, a: Action): DocState {
             .map(t => (t.id === a.tableId ? next : t))
             .filter((t): t is Table => t !== null)
         : page.tables.filter(t => t.id !== a.tableId)
+      return commit(s, patch(s, a.index, { tables }))
+    }
+    case 'title': {
+      // Only the title changes, on the table as it is now: edits made while
+      // the name was being found stay, and a name given by hand wins.
+      const page = s.pages[a.index]
+      const t = page?.tables.find(x => x.id === a.tableId)
+      if (!page || !t || t.title.trim()) return s
+      const tables = page.tables.map(x => (x.id === a.tableId ? { ...x, title: a.title } : x))
       return commit(s, patch(s, a.index, { tables }))
     }
     case 'select':

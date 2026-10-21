@@ -166,7 +166,7 @@ export async function nameTables(
       const t = page.tables.find(x => x.id === n.table.id)
       const title = titles[i]
       if (!t || !title) return
-      dispatch({ type: 'table', index, tableId: t.id, table: { ...t, title } })
+      dispatch({ type: 'title', index, tableId: t.id, title })
       named++
     })
   }

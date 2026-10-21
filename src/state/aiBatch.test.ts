@@ -5,11 +5,14 @@ import type { Tier } from '@/lib/types'
 
 import {
   BATCH_ERROR,
+  journalFile,
   pollBatches,
   sendPages,
   SUBMIT_PAGES,
   type BatchApi,
   type BatchPageIn,
+  type Journal,
+  type JournalEntry,
   type StatusResponse,
   type SubmitResponse,
 } from './aiBatch'
@@ -387,6 +390,101 @@ describe('a submission whose answer never came', () => {
     expect(state.items[0]?.doc.pages[0]?.status).toBe('batched')
     await pollBatches(state, a => (state = batchReducer(state, a)), { api, now: () => 10 * 60_000 })
     expect(state.items[0]?.doc.pages[0]?.error).toBe(BATCH_ERROR.not_sent)
+  })
+})
+
+function memoryJournal(): Journal & { entries: JournalEntry[] } {
+  const j = {
+    entries: [] as JournalEntry[],
+    add: (e: JournalEntry) => void j.entries.push(e),
+    remove: (sid: string) => void (j.entries = j.entries.filter(e => e.submission !== sid)),
+    list: () => j.entries,
+  }
+  return j
+}
+
+describe('a tab closed before the batch was saved', () => {
+  it('finds the journalled pages after a reload and looks them up instead of reading them again', async () => {
+    const journal = memoryJournal()
+    const file = journalFile('b1', 'f1')
+    // The tab closed right after sending: only the journal knows.
+    await sendPages([page(1), page(2)], {
+      tier: 'fast',
+      build: p => Promise.resolve(req(p.n)),
+      dispatch: () => undefined,
+      api: fakeApi().api,
+      byok: false,
+      file,
+      journal,
+      now: () => 0,
+    })
+    expect(journal.entries).toHaveLength(1)
+    // Reloaded: the pages came back as not read.
+    let state = batchWith([page(1), page(2)], 'checked')
+    const looked: string[] = []
+    const api: BatchApi = {
+      submit: () => Promise.reject(new Error('never sent again')),
+      status: () => Promise.reject(new Error('unused')),
+      lookup: sid => {
+        looked.push(sid)
+        return Promise.resolve({
+          id: 'msgbatch_1',
+          pages: [
+            { key: 'p1', custom_id: 'p0', source: 'credits', held_micros: 1 },
+            { key: 'p2', custom_id: 'p1', source: 'credits', held_micros: 1 },
+          ],
+          rejected: [],
+        })
+      },
+    }
+    await pollBatches(state, a => (state = batchReducer(state, a)), { api, journal, now: () => 1 })
+    const item = state.items[0]
+    if (!item) throw new Error('no item')
+    expect(item.doc.pages.map(p => p.status)).toEqual(['batched', 'batched'])
+    expect(toRead(item, 'ai')).toEqual([])
+    await pollBatches(state, a => (state = batchReducer(state, a)), {
+      api,
+      journal,
+      now: () => 10 * 60_000,
+    })
+    expect(looked).toEqual([journal.entries[0]?.submission])
+    expect(state.items[0]?.doc.pages.map(p => p.aiBatch?.id)).toEqual(['msgbatch_1', 'msgbatch_1'])
+    // Once every page has its batch, the entry goes.
+    await pollBatches(state, () => undefined, {
+      api: { ...api, status: () => Promise.reject(new ApiError(0, 'network', 'x')) },
+      journal,
+    })
+    expect(journal.entries).toEqual([])
+  })
+
+  it('sends nothing once the run is discarded, even mid-wait', async () => {
+    const ctl = new AbortController()
+    let submits = 0
+    const journal = memoryJournal()
+    const actions: Action[] = []
+    await sendPages([page(1)], {
+      tier: 'fast',
+      build: p => Promise.resolve(req(p.n)),
+      dispatch: a => actions.push(a),
+      api: {
+        ...fakeApi().api,
+        submit: () => {
+          submits++
+          return Promise.reject(new ApiError(429, 'rate_limited', 'slow down'))
+        },
+      },
+      byok: false,
+      signal: ctl.signal,
+      file: 'b1/f1',
+      journal,
+      wait: () => {
+        ctl.abort()
+        return Promise.resolve()
+      },
+    })
+    expect(submits).toBe(1)
+    expect(actions.at(-1)).toEqual({ type: 'status', index: 0, status: 'ready' })
+    expect(journal.entries).toEqual([])
   })
 })
 
