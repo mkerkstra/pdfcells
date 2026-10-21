@@ -184,6 +184,7 @@ describe('Reconciliation sheet', () => {
       date,
       amount,
       description,
+      payee: description,
       fitid,
       page: 1,
       row: 0,

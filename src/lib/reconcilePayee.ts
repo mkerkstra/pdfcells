@@ -2,6 +2,8 @@
 // candidates the amounts and dates already allow. Kept behind an interface so
 // a better normaliser can replace this one without touching the matcher.
 
+import { cleanPayee } from './payee'
+
 export interface PayeeNormaliser {
   /** A comparable form of a payee or description: "POS 1234 STARBUCKS #88" → "starbucks". */
   key(text: string): string
@@ -52,8 +54,9 @@ const NOISE = new Set([
 
 const MONTH = /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)$/
 
+// cleanPayee strips processor prefixes, references, store numbers and places first.
 function tokens(text: string): string[] {
-  return text
+  return cleanPayee(text)
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
