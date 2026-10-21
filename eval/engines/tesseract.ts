@@ -31,7 +31,7 @@ export function tesseractEngine(): Engine {
   }
   return {
     id: 'tesseract',
-    version: '7.0.0+eng-best_int',
+    version: '7.0.0+eng-best_int+page-coords',
     kind: 'local',
     async run(page) {
       // Worker start-up (once per run, ~0.1 s) is not charged to the first page.
@@ -43,7 +43,12 @@ export function tesseractEngine(): Engine {
         { rotateAuto: true },
         { blocks: true, text: false },
       )
-      const tables = buildTables(wordsFromBlocks(data.blocks, img.scale)).map(t => ({
+      const words = wordsFromBlocks(data.blocks, img.scale, {
+        rotateRadians: data.rotateRadians,
+        width: img.width,
+        height: img.height,
+      })
+      const tables = buildTables(words).map(t => ({
         title: t.title,
         headerRows: t.headerRows,
         rows: t.rows,

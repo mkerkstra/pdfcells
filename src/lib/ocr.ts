@@ -53,11 +53,47 @@ export async function ocrWords(
   onProgress = progress
   const w = await getWorker()
   const { data } = await w.recognize(canvas, { rotateAuto: true }, { blocks: true, text: false })
-  return wordsFromBlocks(data.blocks, scale)
+  return wordsFromBlocks(data.blocks, scale, {
+    rotateRadians: data.rotateRadians,
+    width: canvas.width,
+    height: canvas.height,
+  })
 }
 
-/** tesseract.js blocks → words in page space (pixel boxes divided by the render scale). Pure. */
-export function wordsFromBlocks(blocks: Block[] | null, scale: number): Word[] {
+/**
+ * How tesseract levelled the image it read. With rotateAuto, tesseract.js 7
+ * rotates the image by `rotateRadians` (its own skew estimate, 0 under ~0.3°)
+ * before recognition and reports every box in that levelled frame.
+ */
+export interface OcrRotation {
+  /** `data.rotateRadians` of the recognize result. */
+  rotateRadians: number | null | undefined
+  /** Size in pixels of the image tesseract was given. */
+  width: number
+  height: number
+}
+
+/**
+ * tesseract.js blocks → words in page space: boxes mapped back from
+ * tesseract's levelled frame to the image as given (areas are drawn on the
+ * page, not on the levelled copy), then divided by the render scale. Pure.
+ *
+ * tesseract.js-core 7 (Balearica/tesseract @ 2a9c1c4, ImageThresholder::SetImage)
+ * levels with leptonica `pixRotate(pix, angle, L_ROTATE_AREA_MAP,
+ * L_BRING_IN_WHITE, 0, 0)`: same size, about the centre, positive = clockwise
+ * on screen. So a levelled point l came from c + R(−angle)(l − c). Each box
+ * keeps its size and moves with its centre, which is what areas test.
+ */
+export function wordsFromBlocks(
+  blocks: Block[] | null,
+  scale: number,
+  rotation?: OcrRotation,
+): Word[] {
+  const a = rotation?.rotateRadians ?? 0
+  const cos = Math.cos(-a)
+  const sin = Math.sin(-a)
+  const cx = (rotation?.width ?? 0) / 2
+  const cy = (rotation?.height ?? 0) / 2
   const words: Word[] = []
   for (const block of blocks ?? []) {
     for (const para of block.paragraphs) {
@@ -65,12 +101,23 @@ export function wordsFromBlocks(blocks: Block[] | null, scale: number): Word[] {
         for (const word of line.words) {
           const text = word.text.trim()
           if (!text) continue
+          let { x0, y0, x1, y1 } = word.bbox
+          if (a !== 0) {
+            const dx = (x0 + x1) / 2 - cx
+            const dy = (y0 + y1) / 2 - cy
+            const mx = cx + dx * cos - dy * sin - (x0 + x1) / 2
+            const my = cy + dx * sin + dy * cos - (y0 + y1) / 2
+            x0 += mx
+            x1 += mx
+            y0 += my
+            y1 += my
+          }
           words.push({
             text,
-            x0: word.bbox.x0 / scale,
-            y0: word.bbox.y0 / scale,
-            x1: word.bbox.x1 / scale,
-            y1: word.bbox.y1 / scale,
+            x0: x0 / scale,
+            y0: y0 / scale,
+            x1: x1 / scale,
+            y1: y1 / scale,
             conf: word.confidence,
           })
         }

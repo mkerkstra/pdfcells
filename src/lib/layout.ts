@@ -8,6 +8,12 @@
 //   4. per block, columns are the x-ranges between gutters that almost no
 //      line crosses (a vertical projection profile)
 //   5. segments → cells; wrapped continuation lines fold into the row above
+//
+// Words arrive in page coordinates, so marked areas line up with the page as
+// the user sees it. On a tilted scan or photo a row's label and amounts then
+// sit at different heights, so steps 1-5 run on a levelled copy (each word's
+// centre rotated by the page's text skew, sizes kept); table boxes go back to
+// page space.
 
 import type { Box, Word } from './types'
 
@@ -59,8 +65,25 @@ function median(xs: number[]): number {
   return s.length % 2 ? (s[m] ?? 0) : ((s[m - 1] ?? 0) + (s[m] ?? 0)) / 2
 }
 
+/** A word with text and a real, finite box: the only kind the layout uses. */
+function usable(w: Word): boolean {
+  return (
+    w.text.trim() !== '' &&
+    Number.isFinite(w.x0) &&
+    Number.isFinite(w.x1) &&
+    Number.isFinite(w.y0) &&
+    Number.isFinite(w.y1) &&
+    w.y1 > w.y0
+  )
+}
+
+/**
+ * Lines by vertical centre, in the words' own frame (no levelling): what
+ * geometry checks against page-space boxes use (src/lib/noise, anchor
+ * proposals in src/lib/region).
+ */
 export function groupLines(words: Word[]): Line[] {
-  const ws = words.filter(w => w.text.trim() !== '' && w.y1 > w.y0)
+  const ws = words.filter(usable)
   if (ws.length === 0) return []
   const h = median(ws.map(w => w.y1 - w.y0)) || 1
   const sorted = [...ws].sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2)
@@ -79,6 +102,178 @@ export function groupLines(words: Word[]): Line[] {
   }
   for (const l of lines) l.words.sort((a, b) => a.x0 - b.x0)
   return lines
+}
+
+/**
+ * Rows of text, top to bottom: on a tilted page words are grouped on the
+ * levelled copy (see levelWords), so a printed line stays one line. Each line
+ * holds the caller's own word objects; y0/y1/yc are its page-space extent and
+ * mean centre, which on a tilted page say little about any one word, so use
+ * this for matching line text (text markers), not for geometry. On a level
+ * page it is groupLines.
+ */
+export function groupRows(words: Word[]): Line[] {
+  const lv = levelWords(words)
+  if (lv.skew === 0) return groupLines(words)
+  const back = new Map(lv.words.map((w, i) => [w, lv.page[i] as Word]))
+  return groupLines(lv.words).map(l => {
+    const ws = l.words.map(w => back.get(w) ?? w).sort((a, b) => a.x0 - b.x0)
+    return {
+      words: ws,
+      y0: Math.min(...ws.map(w => w.y0)),
+      y1: Math.max(...ws.map(w => w.y1)),
+      yc: ws.reduce((sum, w) => sum + (w.y0 + w.y1) / 2, 0) / ws.length,
+    }
+  })
+}
+
+/** Below this (~0.3°, tesseract's own floor) a page counts as level. */
+const SKEW_MIN = 0.005
+/** Steepest slope measured (~5.7°); steeper text is a rotated page, not a tilted one. */
+const SKEW_MAX = 0.1
+const SKEW_STEP = 0.0025
+/** Fewer words than this give no reliable skew. */
+const SKEW_MIN_WORDS = 12
+/** Fewer close word pairs than this can't confirm a skew. */
+const SKEW_MIN_PAIRS = 3
+/**
+ * How far (in slope) the close pairs' median may be from the profile's skew.
+ * A diagonal through neighbouring rows is at least pitch / text width off
+ * level (≥ ~0.02 on a page), while on a level page close pairs read ~0.
+ */
+const SKEW_AGREE = 0.01
+
+/** Word centres rotated by −a about (cx, cy), sizes kept. */
+function rotateWords(ws: Word[], a: number, cx: number, cy: number): Word[] {
+  const sin = Math.sin(a)
+  const cos = Math.cos(a)
+  return ws.map(w => {
+    const dx = (w.x0 + w.x1) / 2 - cx
+    const dy = (w.y0 + w.y1) / 2 - cy
+    const mx = cx + dx * cos + dy * sin - (w.x0 + w.x1) / 2
+    const my = cy - dx * sin + dy * cos - (w.y0 + w.y1) / 2
+    return { ...w, x0: w.x0 + mx, x1: w.x1 + mx, y0: w.y0 + my, y1: w.y1 + my }
+  })
+}
+
+/** Centre of the words' extent. */
+function middle(ws: Word[]): [number, number] {
+  return [
+    (Math.min(...ws.map(w => w.x0)) + Math.max(...ws.map(w => w.x1))) / 2,
+    (Math.min(...ws.map(w => w.y0)) + Math.max(...ws.map(w => w.y1))) / 2,
+  ]
+}
+
+/**
+ * Slopes between close neighbours on a line: each word and the next word to
+ * its right less than ~1.5 word-heights away (the words of a label, a
+ * description, a sentence), at most SKEW_MAX off level, the nearest in height
+ * if several qualify. Pairs that close rarely straddle two rows: a slope
+ * within SKEW_MAX reaches the next row only across ~10 word-heights.
+ */
+function neighbourSlopes(ws: Word[], h: number): number[] {
+  const byX = [...ws].sort((a, b) => a.x0 - b.x0)
+  const x0s = byX.map(w => w.x0)
+  const slopes: number[] = []
+  for (const w of ws) {
+    const wy = (w.y0 + w.y1) / 2
+    const wx = (w.x0 + w.x1) / 2
+    let best: number | null = null
+    let bestDy = Infinity
+    // First word starting at or after w.x1 − 0.2h (binary search).
+    let lo = 0
+    let hi = x0s.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if ((x0s[mid] ?? 0) < w.x1 - h * 0.2) lo = mid + 1
+      else hi = mid
+    }
+    for (let k = lo; k < byX.length; k++) {
+      const v = byX[k] as Word
+      if (v.x0 > w.x1 + h * 1.5) break
+      if (v === w) continue
+      const dx = (v.x0 + v.x1) / 2 - wx
+      const dy = (v.y0 + v.y1) / 2 - wy
+      if (dx <= 0 || Math.abs(dy) > dx * SKEW_MAX + h * 0.25) continue
+      if (Math.abs(dy) < bestDy) {
+        bestDy = Math.abs(dy)
+        best = dy / dx
+      }
+    }
+    if (best !== null) slopes.push(best)
+  }
+  return slopes
+}
+
+/**
+ * The page's text skew in radians (positive: lines fall to the right in
+ * y-down page space), 0 when level or unsure.
+ *
+ * A projection profile over word centres finds the angle whose levelled
+ * y-histogram (bins a quarter of a word high, linearly interpolated) is
+ * sharpest; it must beat level clearly. On its own it can also lock onto a
+ * diagonal through neighbouring rows of a level table (one row's label, the
+ * next row's amount), so close word pairs on a line must confirm it: the
+ * median of their slopes within SKEW_AGREE of it and nearer it than level. A page with too few such pairs
+ * (one-word cells only) is left level.
+ */
+export function estimateSkew(words: Word[]): number {
+  const ws = words.filter(usable)
+  if (ws.length < SKEW_MIN_WORDS) return 0
+  const h = median(ws.map(w => w.y1 - w.y0)) || 1
+  const bin = h / 4
+  const xs = ws.map(w => (w.x0 + w.x1) / 2)
+  const ys = ws.map(w => (w.y0 + w.y1) / 2)
+  const score = (a: number) => {
+    const sin = Math.sin(a)
+    const cos = Math.cos(a)
+    const counts = new Map<number, number>()
+    for (let i = 0; i < xs.length; i++) {
+      const u = ((ys[i] ?? 0) * cos - (xs[i] ?? 0) * sin) / bin
+      const k = Math.floor(u)
+      const f = u - k
+      counts.set(k, (counts.get(k) ?? 0) + 1 - f)
+      counts.set(k + 1, (counts.get(k + 1) ?? 0) + f)
+    }
+    let sum = 0
+    for (const c of counts.values()) sum += c * c
+    return sum
+  }
+  const level = score(0)
+  let best = 0
+  let bestScore = level
+  const search = (from: number, to: number, step: number) => {
+    for (let a = from; a <= to + step / 2; a += step) {
+      const sc = score(a)
+      if (sc > bestScore) {
+        best = a
+        bestScore = sc
+      }
+    }
+  }
+  search(-SKEW_MAX, SKEW_MAX, SKEW_STEP)
+  if (best !== 0) search(best - SKEW_STEP, best + SKEW_STEP, SKEW_STEP / 10)
+  if (Math.abs(best) < SKEW_MIN || bestScore <= level * 1.05) return 0
+  const slopes = neighbourSlopes(ws, h)
+  // Closer to the profile's skew than to level, and within SKEW_AGREE of it.
+  const off = Math.abs(median(slopes) - Math.tan(best))
+  return slopes.length >= SKEW_MIN_PAIRS && off <= Math.min(SKEW_AGREE, Math.abs(best) / 2)
+    ? best
+    : 0
+}
+
+/**
+ * The page's usable words levelled: centres rotated by −skew about the
+ * words' middle, sizes kept, so a tilted page's lines come out level.
+ * `page[i]` is the caller's word that `words[i]` was made from. A level page
+ * comes back as is (skew 0, `words === page`).
+ */
+function levelWords(all: Word[]): { words: Word[]; page: Word[]; skew: number } {
+  const skew = estimateSkew(all)
+  if (skew === 0) return { words: all, page: all, skew }
+  const page = all.filter(usable)
+  const [cx, cy] = middle(page)
+  return { words: rotateWords(page, skew, cx, cy), page, skew }
 }
 
 /** Median width of one character, the unit for gap thresholds. */
@@ -245,7 +440,25 @@ function headerRowCount(rows: string[][]): number {
   return n === rows.length ? 0 : n
 }
 
-export function buildTables(words: Word[]): LocalTable[] {
+export function buildTables(pageWords: Word[]): LocalTable[] {
+  const { words, page } = levelWords(pageWords)
+  // A box in the levelled frame → the page-space hull of the words inside it.
+  const toPage = (b: Box): Box => {
+    if (page === words) return b
+    const inside = page.filter((_, i) => {
+      const w = words[i]
+      if (!w) return false
+      const x = (w.x0 + w.x1) / 2
+      const y = (w.y0 + w.y1) / 2
+      return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1
+    })
+    return {
+      x0: Math.min(...inside.map(w => w.x0)),
+      y0: Math.min(...inside.map(w => w.y0)),
+      x1: Math.max(...inside.map(w => w.x1)),
+      y1: Math.max(...inside.map(w => w.y1)),
+    }
+  }
   const lines = groupLines(words)
   if (lines.length === 0) return []
   const cw = charWidth(words)
@@ -294,12 +507,12 @@ export function buildTables(words: Word[]): LocalTable[] {
       title: caption.length <= 60 ? caption : '',
       rows: pruned,
       headerRows: headerRowCount(pruned),
-      bbox: {
+      bbox: toPage({
         x0: Math.min(...segs.map(s => s.x0)),
         y0: Math.min(...segs.map(s => s.y0)),
         x1: Math.max(...segs.map(s => s.x1)),
         y1: Math.max(...segs.map(s => s.y1)),
-      },
+      }),
       cellConf: ocrConf.length ? prunedConf : undefined,
       confidence: Math.max(0, Math.min(1, dense * ocrFactor * (pruned.length >= 3 ? 1 : 0.7))),
     })
@@ -308,7 +521,8 @@ export function buildTables(words: Word[]): LocalTable[] {
 }
 
 /** Render lines as plain text in reading order, for the AI text-layer hint. */
-export function linesToText(words: Word[]): string {
+export function linesToText(pageWords: Word[]): string {
+  const { words } = levelWords(pageWords)
   const cw = charWidth(words)
   return groupLines(words)
     .map(l =>

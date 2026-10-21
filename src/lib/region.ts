@@ -12,7 +12,7 @@
 // Word). regionFromBox/boxFromRegion convert to page-relative 0–1 coordinates
 // so a region drawn on one document applies to same-layout documents.
 
-import { groupLines, type Line } from './layout'
+import { groupRows, type Line } from './layout'
 import { normalizeText, type PageSize } from './noise'
 import type { Box, Word } from './types'
 
@@ -164,7 +164,8 @@ export function sectionsAcross(
   const out = new Map<number, Set<string>>()
   for (const pg of [...pages].sort((a, b) => a.n - b.n)) {
     out.set(pg.n, new Set(open.keys()))
-    const lines = groupLines(pg.words)
+    // Text markers match whole printed lines, levelled on a tilted page.
+    const lines = groupRows(pg.words)
     for (const r of regions) {
       if (r.kind !== 'between' || !regionApplies(r, pg.n)) continue
       const key = sectionKey(r)
@@ -228,7 +229,7 @@ export function applyRegions(
         continue
       }
       if (r.kind !== 'between') continue
-      lines ??= groupLines(words)
+      lines ??= groupRows(words)
       const pageLines = lines
       let res = resolveBetween(pageLines, r)
       if ('problem' in res && res.problem === 'start-not-found' && openAtStart.has(sectionKey(r))) {
@@ -342,10 +343,18 @@ function anchorText(text: string): { text: string; digits: DigitMatch } {
  * neither edge can be pinned unambiguously, returns {} (draw a box region instead).
  */
 export function anchorsFromSelection(words: Word[], box: Box): ProposedAnchors {
-  const lines = groupLines(words)
+  // The same lines applyRegions resolves markers on (levelled on a tilted
+  // page). A line is inside when the words of it over the box's x-range are
+  // centred inside the box: on a tilted page the whole row's centre may not be.
+  const lines = groupRows(words)
   const inside = lines
     .map((l, i) => [l, i] as const)
-    .filter(([l]) => l.yc >= box.y0 && l.yc <= box.y1 && l.words.some(w => overlapsX(w, box)))
+    .filter(([l]) => {
+      const over = l.words.filter(w => overlapsX(w, box))
+      if (over.length === 0) return false
+      const yc = over.reduce((sum, w) => sum + (w.y0 + w.y1) / 2, 0) / over.length
+      return yc >= box.y0 && yc <= box.y1
+    })
   if (inside.length === 0) return {}
   const firstIn = inside[0]?.[1] ?? 0
   const lastIn = inside.at(-1)?.[1] ?? 0
