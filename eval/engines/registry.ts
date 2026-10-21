@@ -3,7 +3,7 @@
 import type { Engine } from '../engine'
 
 import { claudeEngine, type Tier } from './claude'
-import { PPOCR_ENGINES } from './ppocrRegistry'
+import { PPOCR_ENGINES, PPOCR_RETRY_ENGINES } from './ppocrRegistry'
 import { tesseractEngine } from './tesseract'
 import { textLayerEngine } from './textLayer'
 import { textLayerNoiseEngine } from './textLayerNoise'
@@ -58,6 +58,7 @@ export const ENGINES: EngineSpec[] = [
     },
   },
   ...PPOCR_ENGINES,
+  ...PPOCR_RETRY_ENGINES,
   {
     id: 'paddleocr-vl',
     kind: 'hosted',
