@@ -7,3 +7,7 @@ dist/
 .DS_Store
 .env*.local
 .claude/worktrees/
+
+# eval runs; only the committed baselines are kept
+eval/reports/*
+!eval/reports/baseline-*
