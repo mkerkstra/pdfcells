@@ -224,7 +224,10 @@ export async function runPages(
       }
       await runPage(doc, p, dispatch, ai, hooks.onBalance)
     }).catch((e: unknown) => {
-      if (e instanceof ApiError && (e.code === 'insufficient_credits' || e.code === 'balance_negative'))
+      if (
+        e instanceof ApiError &&
+        (e.code === 'insufficient_credits' || e.code === 'balance_negative')
+      )
         needCredits = true
       throw e
     })
