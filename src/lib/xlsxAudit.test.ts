@@ -16,6 +16,8 @@ describe('engineLabel', () => {
   it('names each engine plainly, with the AI model', () => {
     expect(engineLabel('text')).toBe('PDF text')
     expect(engineLabel('ocr')).toBe('OCR')
+    expect(engineLabel('ocr', { recognizer: 'tesseract' })).toBe('OCR')
+    expect(engineLabel('ocr', { recognizer: 'ppocr' })).toBe('OCR (experimental engine)')
     expect(engineLabel('ai', { tier: 'accurate', model: 'claude-sonnet-5-5' })).toBe(
       'AI (claude-sonnet-5-5)',
     )

@@ -16,9 +16,12 @@ export interface SourceInfo {
 }
 
 /** Plain name for how a page was read. */
-export function engineLabel(engine: string, run?: { tier?: string; model?: string }): string {
+export function engineLabel(
+  engine: string,
+  run?: { tier?: string; model?: string; recognizer?: string },
+): string {
   if (engine === 'text') return 'PDF text'
-  if (engine === 'ocr') return 'OCR'
+  if (engine === 'ocr') return run?.recognizer === 'ppocr' ? 'OCR (experimental engine)' : 'OCR'
   if (engine === 'ai') {
     const which = run?.model ?? run?.tier
     return which ? `AI (${which})` : 'AI'

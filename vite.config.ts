@@ -52,6 +52,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), tesseractAssets()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: { proxy: { '/api': 'http://localhost:8080' } },
+  // Found only when PP-OCR first loads (a lazy worker): pre-bundled up front so
+  // that moment doesn't reload the dev page.
+  optimizeDeps: { include: ['onnxruntime-web/wasm'] },
   build: { target: 'es2023' },
   test: { environment: 'node', include: ['src/**/*.test.ts', 'eval/**/*.test.ts'] },
 })
