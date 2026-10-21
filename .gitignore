@@ -11,3 +11,6 @@ dist/
 # eval runs; only the committed baselines are kept
 eval/reports/*
 !eval/reports/baseline-*
+
+# PP-OCR models downloaded by eval/engines/ppocr.ts
+eval/.cache/

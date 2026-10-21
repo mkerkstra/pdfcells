@@ -5,6 +5,7 @@
 
 import type { Block, Worker } from 'tesseract.js'
 
+import { ppocrChoice } from './ppocr/flag'
 import type { Word } from './types'
 
 declare const __TESSERACT_BASE__: string
@@ -41,6 +42,15 @@ export async function ocrWords(
   scale: number,
   progress?: (p: number) => void,
 ): Promise<Word[]> {
+  // Opt-in experiment (src/lib/ppocr/flag.ts); tesseract.js stays the default.
+  const pp = ppocrChoice()
+  if (pp) {
+    try {
+      return await (await import('./ppocr/browser')).ppocrWords(canvas, scale, pp, progress)
+    } catch (e) {
+      console.warn('PP-OCR failed; reading the page with tesseract.js instead.', e)
+    }
+  }
   onProgress = progress
   const w = await getWorker()
   const { data } = await w.recognize(canvas, { rotateAuto: true }, { blocks: true, text: false })

@@ -3,6 +3,7 @@
 import type { Engine } from '../engine'
 
 import { claudeEngine, type Tier } from './claude'
+import { PPOCR_ENGINES } from './ppocrRegistry'
 import { tesseractEngine } from './tesseract'
 import { textLayerEngine } from './textLayer'
 import { textLayerNoiseEngine } from './textLayerNoise'
@@ -56,13 +57,7 @@ export const ENGINES: EngineSpec[] = [
       return claudeEngine({ apiKey: ctx.apiKey, tier: ctx.tier })
     },
   },
-  {
-    id: 'ppocr-v5+tatr',
-    kind: 'local',
-    status: 'stub',
-    summary:
-      'PP-OCRv5 mobile det+rec (ONNX) for words → layout.buildTables, with Table Transformer v1.1 structure for ruled tables. Candidate #1 in docs/research/ocr-sota-2026.md.',
-  },
+  ...PPOCR_ENGINES,
   {
     id: 'paddleocr-vl',
     kind: 'hosted',
