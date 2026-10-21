@@ -137,53 +137,55 @@ const (
 // concurrent requests from many accounts can't overshoot them.
 func (s *Store) ReserveFree(ctx context.Context, userID string, q FreeQuota) (id int64, denied FreeDenied, err error) {
 	err = s.tx(ctx, userID, func(tx pgx.Tx, balance int64) error {
-		if balance < 0 {
-			denied = FreeNegativeBalance
-			return nil
-		}
-		used, err := freeUsedToday(ctx, tx, userID)
-		if err != nil {
-			return err
-		}
-		if used >= q.PerUser {
-			denied = FreeUserQuota
-			return nil
-		}
-		if q.PerIP >= 0 {
-			if q.PerIP == 0 {
-				denied = FreeIPQuota
-				return nil
-			}
-			n, err := countFreeToday(ctx, tx, "free-ip:"+q.IPHash, `AND ip_hash = $1`, q.IPHash)
-			if err != nil {
-				return err
-			}
-			if n >= q.PerIP {
-				denied = FreeIPQuota
-				return nil
-			}
-		}
-		if q.Global >= 0 {
-			if q.Global == 0 {
-				denied = FreeGlobalLimit
-				return nil
-			}
-			n, err := countFreeToday(ctx, tx, "free-global", ``)
-			if err != nil {
-				return err
-			}
-			if n >= q.Global {
-				denied = FreeGlobalLimit
-				return nil
-			}
-		}
-		return tx.QueryRow(ctx, `INSERT INTO ledger (user_id, kind, amount_micros, ip_hash) VALUES ($1, 'free', 0, NULLIF($2, '')) RETURNING id`,
-			userID, q.IPHash).Scan(&id)
+		id, denied, err = reserveFreeTx(ctx, tx, userID, balance, q)
+		return err
 	})
 	if err != nil {
 		return 0, FreeOK, err
 	}
 	return id, denied, nil
+}
+
+// reserveFreeTx is ReserveFree inside a transaction that already holds the
+// account lock (batches reserve many pages in one transaction).
+func reserveFreeTx(ctx context.Context, tx pgx.Tx, userID string, balance int64, q FreeQuota) (id int64, denied FreeDenied, err error) {
+	if balance < 0 {
+		return 0, FreeNegativeBalance, nil
+	}
+	used, err := freeUsedToday(ctx, tx, userID)
+	if err != nil {
+		return 0, FreeOK, err
+	}
+	if used >= q.PerUser {
+		return 0, FreeUserQuota, nil
+	}
+	if q.PerIP >= 0 {
+		if q.PerIP == 0 {
+			return 0, FreeIPQuota, nil
+		}
+		n, err := countFreeToday(ctx, tx, "free-ip:"+q.IPHash, `AND ip_hash = $1`, q.IPHash)
+		if err != nil {
+			return 0, FreeOK, err
+		}
+		if n >= q.PerIP {
+			return 0, FreeIPQuota, nil
+		}
+	}
+	if q.Global >= 0 {
+		if q.Global == 0 {
+			return 0, FreeGlobalLimit, nil
+		}
+		n, err := countFreeToday(ctx, tx, "free-global", ``)
+		if err != nil {
+			return 0, FreeOK, err
+		}
+		if n >= q.Global {
+			return 0, FreeGlobalLimit, nil
+		}
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO ledger (user_id, kind, amount_micros, ip_hash) VALUES ($1, 'free', 0, NULLIF($2, '')) RETURNING id`,
+		userID, q.IPHash).Scan(&id)
+	return id, FreeOK, err
 }
 
 // countFreeToday takes a transaction advisory lock named lock, then counts

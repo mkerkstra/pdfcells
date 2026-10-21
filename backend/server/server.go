@@ -51,6 +51,9 @@ type Config struct {
 	ExtractPerMinute  int      // hosted /api/extract calls per user
 	CheckoutPerMinute int      // /api/checkout calls per user
 	IPHashSecret      string   // HMAC key for stored IP hashes
+	// Hosted pages sent to Message Batches per user per minute (batch runs are
+	// large, so they have their own budget instead of ExtractPerMinute).
+	BatchPagesPerMinute int
 }
 
 func ConfigFromEnv() Config {
@@ -87,6 +90,7 @@ func configFromEnv() Config {
 		FreePagesGlobal:     envInt("FREE_PAGES_GLOBAL_PER_DAY", 2000),
 		ExtractPerMinute:    envInt("RATE_EXTRACT_PER_MINUTE", 30),
 		CheckoutPerMinute:   envInt("RATE_CHECKOUT_PER_MINUTE", 5),
+		BatchPagesPerMinute: envInt("RATE_BATCH_PAGES_PER_MINUTE", 300),
 		// Without a dedicated secret, derive one from the Clerk secret, which
 		// every hosted deployment already has and never leaves the server.
 		IPHashSecret: envOr("IP_HASH_SECRET", "pdfcells-ip-v1:"+os.Getenv("CLERK_SECRET_KEY")),
@@ -154,6 +158,7 @@ func (s *Server) Router() http.Handler {
 		// call at 280s); everything else should finish in seconds.
 		r.With(secure(295*time.Second), requireJSON, auth).Post("/extract", s.extract)
 		r.With(secure(130*time.Second), requireJSON, auth).Post("/categorize", s.categorize)
+		s.mountAI(r, auth)
 		r.Group(func(r chi.Router) {
 			r.Use(secure(60 * time.Second))
 			r.Get("/health", s.health)

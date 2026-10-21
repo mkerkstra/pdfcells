@@ -186,10 +186,24 @@ func (r *Request) EstimateInputTokens() (int64, error) {
 
 // Run calls Claude once and returns parsed tables.
 func Run(ctx context.Context, apiKey string, req Request) (*Result, error) {
+	client := newClient(apiKey)
+	msg, err := client.Beta.Messages.New(ctx, pageParams(req))
+	if err != nil {
+		return nil, err
+	}
+	return resultOf(msg, pricing.Cost)
+}
+
+// newClient pins the endpoint: the SDK otherwise honours ANTHROPIC_BASE_URL,
+// and a caller's own key (X-Anthropic-Key) must only ever go to Anthropic.
+func newClient(apiKey string) anthropic.Client {
+	return anthropic.NewClient(option.WithBaseURL(BaseURL), option.WithAPIKey(apiKey), option.WithMaxRetries(2))
+}
+
+// pageParams is the one request a page becomes, whether it is sent now (Run)
+// or in a batch (BatchItem): same prompt, same image, same output schema.
+func pageParams(req Request) anthropic.BetaMessageNewParams {
 	spec := tiers[req.Tier]
-	// Pin the endpoint: the SDK otherwise honours ANTHROPIC_BASE_URL, and a
-	// caller's own key (X-Anthropic-Key) must only ever go to Anthropic.
-	client := anthropic.NewClient(option.WithBaseURL(BaseURL), option.WithAPIKey(apiKey), option.WithMaxRetries(2))
 	maxTokens := int64(MaxOutputTokens)
 	if req.MaxTokens > 0 {
 		maxTokens = min(req.MaxTokens, maxTokens)
@@ -217,16 +231,17 @@ func Run(ctx context.Context, apiKey string, req Request) (*Result, error) {
 		params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
 		params.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
 	}
+	return params
+}
 
-	msg, err := client.Beta.Messages.New(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
+// resultOf prices a response with cost (standard or batch rates) and parses
+// its tables. A refusal or truncation returns the priced result with an
+// error, because those tokens were billed all the same.
+func resultOf(msg *anthropic.BetaMessage, cost func(pricing.Usage) (int64, error)) (*Result, error) {
 	res := &Result{Model: string(msg.Model), Stop: msg.StopReason}
 	res.Usage = usageOf(msg)
 	for _, u := range res.Usage {
-		c, err := pricing.Cost(u)
+		c, err := cost(u)
 		if err != nil {
 			return nil, err
 		}

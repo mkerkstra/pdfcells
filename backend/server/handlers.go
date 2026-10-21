@@ -235,6 +235,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, r, "database unavailable", err)
 		return
 	}
+	s.sweepBatches(r.Context(), st, uid)
 	a, err := st.Account(r.Context(), uid)
 	if err != nil {
 		s.internal(w, r, "could not load account", err)
