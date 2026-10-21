@@ -62,13 +62,16 @@ function entries(t: Table, page: number): Entry[] {
   const g = buildGrid(t)
   const out: Entry[] = []
   const first = t.headerRows
+  // Only a one-row table is a summary printed across; a column header like
+  // "Closing balance" over transactions is not.
+  const across = t.rows.length === first + 1
   t.rows.forEach((r, row) => {
     if (row < t.headerRows) {
       // A summary printed across: labels in the header, values on the row
       // below ("Beginning balance | Deposits and other additions | … | Ending balance", PNC).
       r.forEach((text, col) => {
         const role = roleOf(text)
-        const value = role && t.rows.length > first ? cell(g, first, col) : null
+        const value = role && across ? cell(g, first, col) : null
         if (!role || value === null) return
         out.push({
           role,

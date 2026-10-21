@@ -5,6 +5,7 @@
 import {
   detectLocale,
   inferColumn,
+  isDateCell,
   isPlaceholder,
   parseDate,
   parseNumber,
@@ -160,10 +161,17 @@ export function totalRows(t: Table): boolean[] {
   const dateCols = Array.from({ length: width }, (_, c) => inferColumn(body.map(r => r[c] ?? '')))
     .map((ct, c) => ({ ct, c }))
     .filter(({ ct }) => ct.kind === 'date')
+  // Dates printed without a year ("01/05", "Aug 6") type as text, but a column
+  // of them is still a date column.
+  const yearless = Array.from({ length: width }, (_, c) => {
+    const filled = body.map(r => (r[c] ?? '').trim()).filter(Boolean)
+    return filled.length > 0 && filled.filter(isDateCell).length >= filled.length * 0.8
+  })
   return t.rows.map(
     (r, i) =>
       i >= t.headerRows &&
       isTotalRow(r) &&
-      !dateCols.some(({ ct, c }) => parseDate(r[c] ?? '', ct.dateOrder) !== null),
+      !dateCols.some(({ ct, c }) => parseDate(r[c] ?? '', ct.dateOrder) !== null) &&
+      !r.some((v, c) => yearless[c] && isDateCell(v)),
   )
 }

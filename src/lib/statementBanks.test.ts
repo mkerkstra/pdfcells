@@ -691,6 +691,63 @@ describe('review findings', () => {
     )
   })
 
+  it('a year-less dated "Total Wine" row is checked by the running balance like any other', () => {
+    const s = readStatement([
+      page(
+        1,
+        [
+          table(
+            [
+              ['Date', 'Description', 'Amount', 'Balance'],
+              ['', 'Balance forward', '', '100.00'],
+              ['01/01', 'Total Wine', '999.00', '100.00'],
+              ...[2, 3, 4, 5].map(d => [`01/0${d}`, 'Shop', '10.00', `${100 + 10 * (d - 1)}.00`]),
+            ],
+            { id: 't' },
+          ),
+        ],
+        'Statement period 01/01/2026 - 01/31/2026',
+      ),
+    ])
+    expect(s?.transactions.map(t => t.description)).toContain('Total Wine')
+    expect(s?.gate.ok).toBe(false)
+  })
+
+  it('a "Closing balance" column header over transactions is no summary line', () => {
+    const s = readStatement([
+      page(1, [
+        table([
+          ['Date', 'Description', 'Amount', 'Closing balance'],
+          ['', 'Beginning balance', '', '100.00'],
+          ...[1, 2, 3, 4].map(d => [`01/0${d}/2026`, 'In', '10.00', `${100 + 10 * d}.00`]),
+        ]),
+        summary('s', [['Ending balance', '999.00']]),
+      ]),
+    ])
+    expect(s?.summary.closing).toBe(999)
+    expect(s?.gate.ok).toBe(false)
+  })
+
+  it('a negated withdrawals section reports its amount column as money out', () => {
+    const s = readStatement([
+      page(1, [
+        sum('100.00', '30.00'),
+        table(
+          [
+            head,
+            ['01/02/2026', 'ATM', '40.00'],
+            ['01/03/2026', 'Shop', '20.00'],
+            ['01/04/2026', 'Rent', '10.00'],
+          ],
+          { title: 'Withdrawals', id: 'w' },
+        ),
+      ]),
+    ])
+    expect(s?.transactions.map(t => t.amount)).toEqual([-40, -20, -10])
+    expect(s?.columns.movers).toEqual([{ col: 2, sign: -1 }])
+    expect(s?.gate.ok).toBe(true)
+  })
+
   it('a D/M dated "Interest charged" row is a transaction, not a card summary line', () => {
     const s = readStatement(
       [

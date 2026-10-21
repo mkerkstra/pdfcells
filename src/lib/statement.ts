@@ -751,6 +751,7 @@ function readSections(
   periodFor: (order: DateOrder) => YearAnchor | null,
 ): Statement {
   const read = sections.map(sec => ({ sec, txns: signed(sec) }))
+  const flippedBest = read.some(r => r.sec.cand === best && r.txns !== best.txns)
   // Stable by date: sections keep their order within a day.
   const txns = read.flatMap(r => r.txns).toSorted((a, b) => a.date.localeCompare(b.date))
   const decimals = Math.max(
@@ -775,7 +776,13 @@ function readSections(
       sign: r.sec.sign,
       count: r.txns.length,
     })),
-    columns: best.lay.columns,
+    // The longest section's columns, with its signs as read (a negated withdrawals section moves the other way).
+    columns: flippedBest
+      ? {
+          ...best.lay.columns,
+          movers: best.lay.columns.movers.map(m => ({ ...m, sign: m.sign > 0 ? -1 : 1 })),
+        }
+      : best.lay.columns,
     dateOrder: best.order,
     transactions: assignFitids(txns),
     period: periodOf(txns, periodFor(best.order)),
