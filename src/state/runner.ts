@@ -387,6 +387,7 @@ export async function runPage(
       index,
       tables: fromApi(res),
       warnings: res.warnings ?? [],
+      notes: page.sectionNotes ?? [],
       run: {
         engine: 'ai',
         tier: ai.tier,

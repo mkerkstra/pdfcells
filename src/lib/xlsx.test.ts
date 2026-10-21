@@ -70,6 +70,47 @@ describe('tableBlock', () => {
     expect(b.rows[7]?.[0]).toMatchObject({ value: 'Total' })
   })
 
+  it('keeps a line named like a total in the Table when it doesn’t foot', () => {
+    const t = table(
+      [
+        ['Item', 'Amount'],
+        ['Shoes', '60.00'],
+        ['Total Gym', '500.00'],
+        ['Socks', '40.00'],
+        ['Total', '600.00'],
+      ],
+      { title: 'Card' },
+    )
+    const b = tableBlock(t, 0, { ...opts, names: new Set() })
+    expect(b.dataRows).toEqual([1, 2, 3])
+    expect(b.rows[2]?.[0]).toMatchObject({ value: 'Total Gym' })
+  })
+
+  it('looks up Table rows by line in a check whose row is below the Table', () => {
+    const t = table(
+      [
+        ['Date', 'Description', 'Amount', 'Balance'],
+        ['03/01/2026', 'Opening', '', '1,000.00'],
+        ['03/02/2026', 'Card', '(39.51)', '960.49'],
+        ['03/03/2026', 'Payroll', '82.51', '1,043.00'],
+        ['03/04/2026', 'Card', '12.30-', '1,030.70'],
+        ['', 'Total', '30.70', ''],
+        ['03/05/2026', 'Closing', '', '1,030.70'],
+      ],
+      { title: 'Statement' },
+    )
+    const b = tableBlock(t, 0, { ...opts, names: new Set() })
+    const checks = b.rows
+      .flatMap(r => r.slice(5, 6))
+      .flatMap(c => {
+        const o = c as { type?: unknown; value?: unknown } | null
+        return o && typeof o === 'object' && o.type === 'Formula' ? [String(o.value)] : []
+      })
+    expect(checks.length).toBeGreaterThan(0)
+    // Every row inside the Table is found by its line; only rows below the Table keep an address.
+    for (const f of checks) expect(f).not.toMatch(/ROUND\(D\d/)
+  })
+
   it('writes no formulas when numbers stay text', () => {
     const b = tableBlock(invoice, 0, { ...opts, typed: false, names: new Set() })
     expect(b.rows).toHaveLength(6)

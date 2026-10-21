@@ -3,7 +3,7 @@ import writeXlsxFile, { type Cell, type Row } from 'write-excel-file/browser'
 import { columnNumberFormat, typeCell } from './cells'
 import { appendTable, continues } from './tableOps'
 import type { Table } from './types'
-import { columnTypes, totalRows } from './validate'
+import { columnTypes, footings, totalRows } from './validate'
 import {
   AUDIT_COLUMNS,
   auditCells,
@@ -173,8 +173,7 @@ function headerTexts(t: Table, width: number): string[] {
  * stays below it so a PivotTable never counts a total as a line: it starts
  * at the first total row followed by at most two other lines.
  */
-export function lastDataRow(t: Table): number {
-  const total = totalRows(t)
+export function lastDataRow(t: Table, total: boolean[] = summaryRows(t)): number {
   let end = t.rows.length
   let others = 0
   for (let i = t.rows.length - 1; i >= t.headerRows; i--) {
@@ -186,6 +185,17 @@ export function lastDataRow(t: Table): number {
   let last = t.rows.length - 1
   while (last >= t.headerRows && total[last]) last--
   return last
+}
+
+/**
+ * Rows that are totals rather than lines: named like a total, and either
+ * footing (the sum of the lines above) or followed only by other totals.
+ * A line named "Total Gym" between purchases stays a line.
+ */
+export function summaryRows(t: Table): boolean[] {
+  const named = totalRows(t)
+  const footed = new Set(footings(t).map(f => f.row))
+  return named.map((x, i) => x && (footed.has(i) || named.slice(i + 1).every(Boolean)))
 }
 
 /** Lay out one table starting at sheet row `start`. */
@@ -205,10 +215,10 @@ export function tableBlock(t: Table, start: number, o: BlockOptions): Block {
   // A table without a header gets one: Excel Tables and PivotTables need column names.
   const shift = h === 0 ? 1 : 0
   const headerRow = start + Math.max(0, h - 1)
-  const lastData = lastDataRow(t)
   // Subtotals inside the lines move below them with the closing totals, so
   // the Excel Table holds lines only and a PivotTable never counts a total.
-  const total = totalRows(t)
+  const total = summaryRows(t)
+  const lastData = lastDataRow(t, total)
   const span = (a: number, b: number) => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k)
   const inside = span(h, lastData + 1)
   const dataRows = inside.filter(i => !total[i])

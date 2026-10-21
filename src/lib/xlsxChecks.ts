@@ -47,20 +47,9 @@ export function totalFormulas(t: Table, at: RowAt, lines?: Lines, all?: number[]
   return footings(t).map(f => {
     const plain = { row: f.row, col: f.col, formula: `SUM(${ranges(f.col, f.rows.map(at))})` }
     if (!lines || !all) return plain
-    const ns = f.rows.flatMap(r => lines.of(r) ?? [])
-    const set = new Set(ns)
+    const set = new Set(f.rows.flatMap(r => lines.of(r) ?? []))
     if (all.every(r => set.has(lines.of(r) ?? -1))) return plain
-    // Rows outside the Table (subtotals moved below it) don't move on sort.
-    const outside = f.rows.filter(r => lines.of(r) === undefined)
-    const L = lines.line
-    const col = lines.ref(f.col)
-    const parts = [
-      ...lineRuns(ns).map(([a, b]) =>
-        a === b ? `SUMIFS(${col},${L},${a})` : `SUMIFS(${col},${L},">=${a}",${L},"<=${b}")`,
-      ),
-      ...(outside.length ? [ranges(f.col, outside.map(at))] : []),
-    ]
-    return { row: f.row, col: f.col, formula: `SUM(${parts.join(',')})` }
+    return { row: f.row, col: f.col, formula: sumRows(f.rows, f.col, at, lines) }
   })
 }
 
@@ -70,6 +59,25 @@ export function partialTotals(t: Table, all: number[]): boolean {
   return footings(t).some(
     f => f.rows.some(r => lines.has(r)) && !all.every(r => f.rows.includes(r)),
   )
+}
+
+/**
+ * SUM over table rows of one column: rows in the Excel Table by line number
+ * (SUMIFS), so sorting keeps it right; rows below the Table by address.
+ */
+function sumRows(rows: number[], col: number, at: RowAt, lines?: Lines): string {
+  if (!lines) return `SUM(${ranges(col, rows.map(at))})`
+  const inside = rows.flatMap(r => lines.of(r) ?? [])
+  const outside = rows.filter(r => lines.of(r) === undefined)
+  const L = lines.line
+  const ref = lines.ref(col)
+  const parts = [
+    ...lineRuns(inside).map(([a, b]) =>
+      a === b ? `SUMIFS(${ref},${L},${a})` : `SUMIFS(${ref},${L},">=${a}",${L},"<=${b}")`,
+    ),
+    ...(outside.length ? [ranges(col, outside.map(at))] : []),
+  ]
+  return `SUM(${parts.join(',')})`
 }
 
 /** [3,4,5,8] → [[3,5],[8,8]]. */
@@ -150,13 +158,16 @@ export function balanceFormulas(t: Table, at: RowAt, lines?: Lines): BalancePlan
         formula: `ROUND(SUMIFS(${lines.ref(B)},${L},${prev})${moved}-${own},${decimals})`,
       }
     }
+    // Rows inside the Table by line number, rows below it (which sorting
+    // doesn't move) by address; the balance itself is on the formula's row.
+    const before =
+      lines && prev !== undefined
+        ? `SUMIFS(${lines.ref(B)},${lines.line},${prev})`
+        : address(at(p.prev), B)
     const moved = cfg.movers
-      .map(m => `${m.sign > 0 ? '+' : '-'}SUM(${ranges(m.col, p.span.map(at))})`)
+      .map(m => `${m.sign > 0 ? '+' : '-'}${sumRows(p.span, m.col, at, lines)}`)
       .join('')
-    return {
-      row: p.row,
-      formula: `ROUND(${address(at(p.prev), B)}${moved}-${own},${decimals})`,
-    }
+    return { row: p.row, formula: `ROUND(${before}${moved}-${own},${decimals})` }
   })
   return { balanceCol: B, movers: cfg.movers, decimals, checks }
 }
