@@ -183,5 +183,9 @@ describe('reviewed mark', () => {
       action: { type: 'result', index: 0, tables: [], warnings: [], run: { engine: 'ocr' } },
     })
     expect(s.items[0]?.reviewed).toBe(false)
+    // Switching to the page's other OCR result replaces what was reviewed too.
+    s = batchReducer(s, { type: 'item', id: 'f1', patch: { reviewed: true } })
+    s = batchReducer(s, { type: 'doc', id: 'f1', action: { type: 'swapOcr', index: 0 } })
+    expect(s.items[0]?.reviewed).toBe(false)
   })
 })

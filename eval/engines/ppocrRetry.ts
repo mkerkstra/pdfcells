@@ -8,8 +8,9 @@
 // and the PP-OCR words inside the crop replace tesseract's, the rest of the
 // page's words kept (src/lib/ocrRetry mergeWords) → layout.buildTables.
 //
-// timing.ms is the retry alone: render + crop + PP-OCR + layout, as the
-// person waits for it after clicking. tesseract's first read is not charged.
+// timing.ms is the retry alone: render again + crop + PP-OCR + layout, as
+// the person waits for it after clicking (renderMs: the render, decode and
+// crop; the harness's PNG round trip is in it). tesseract's first read is not charged.
 // Each page's notes say whether the app would offer the retry on it
 // (`trigger: …`), so weak pages can be scored apart.
 
@@ -65,7 +66,7 @@ export function ppocrRetryEngine(mode: RetryMode, margin: number): Engine {
   }
   return {
     id: mode === 'full' ? 'ppocr-retry-full' : `ppocr-retry-${mode}${margin}`,
-    version: `v6-tiny+${mode}+${margin}+1`,
+    version: `v6-tiny+${mode}+${margin}+2`,
     kind: 'local',
     async run(page) {
       const [p, w] = await Promise.all([ppocr(), tesseract()])
@@ -105,8 +106,10 @@ export function ppocrRetryEngine(mode: RetryMode, margin: number): Engine {
           rect = cropForAI(hull, size, img.scale, margin)
         }
       }
-      const decoded = await loadImage(img.png())
-      const r = rect ?? { x: 0, y: 0, width: img.width, height: img.height }
+      // The app renders the page again for the retry: so does this, inside the timer.
+      const again = await page.render(OCR_TARGET_PX)
+      const decoded = await loadImage(again.png())
+      const r = rect ?? { x: 0, y: 0, width: again.width, height: again.height }
       const c = createCanvas(r.width, r.height)
       c.getContext('2d').drawImage(decoded, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height)
       const pixels = c.getContext('2d').getImageData(0, 0, r.width, r.height)

@@ -90,7 +90,8 @@ export function ReviewView({
       : 'This page is read again with OCR.'
   const readOcr = () => void onRun([{ ...page, engine: 'ocr' }])
   const readAi = () => void onRun([{ ...page, engine: 'ai' }])
-  const retry = busy ? null : weak
+  // Not while the other OCR result is kept: switching to it is the way back.
+  const retry = busy || page.ocrOther ? null : weak
   const readPpocr = () => {
     const n = page.n
     setRetrying(n)

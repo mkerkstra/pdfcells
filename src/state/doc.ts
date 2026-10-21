@@ -236,8 +236,9 @@ export function reducer(s: DocState, a: Action): DocState {
                   status: 'done' as const,
                 }
               : {}),
-            // The other engine's result was read with the old areas.
-            ...(x.tables ? { tables: applyPreset(x.tables, s.preset), ocrOther: undefined } : {}),
+            // The other OCR result was read with the old areas.
+            ocrOther: undefined,
+            ...(x.tables ? { tables: applyPreset(x.tables, s.preset) } : {}),
             ...(x.warnings ? { warnings: x.warnings } : {}),
             ...(x.notes ? { areaNotes: x.notes } : {}),
           }

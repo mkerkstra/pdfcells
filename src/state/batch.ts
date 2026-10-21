@@ -161,7 +161,9 @@ export function batchReducer(s: BatchState, a: BatchAction): BatchState {
     case 'doc': {
       // A page read again (or failing) replaces what was reviewed: the mark goes.
       const reread =
-        a.action.type === 'result' || (a.action.type === 'status' && a.action.status === 'error')
+        a.action.type === 'result' ||
+        a.action.type === 'swapOcr' ||
+        (a.action.type === 'status' && a.action.status === 'error')
       return mapItem(s, a.id, it => ({
         ...it,
         doc: docReducer(it.doc, a.action),

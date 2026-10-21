@@ -273,6 +273,9 @@ describe('experimental OCR retry', () => {
       pages: [{ index: 0, regions: [area], tables: [summary] }],
     })
     expect(marked.pages[0]?.ocrOther).toBeUndefined()
+    // Also on a page whose tables wait for a new read (a reopened batch, no words at hand).
+    const pending = reducer(s1, { type: 'regions', pages: [{ index: 0, regions: [area] }] })
+    expect(pending.pages[0]?.ocrOther).toBeUndefined()
     // Nothing to switch to: no change.
     expect(reducer(reread, { type: 'swapOcr', index: 0 })).toBe(reread)
   })
