@@ -241,7 +241,7 @@ const wellsFargo = page({
     h2('Converting it with PDFCells'),
     steps('Wells Fargo', 'Statements & Documents'),
     ul([
-      '<strong>Balance check:</strong> because Wells Fargo prints a balance only at the end of each day, rows without one carry their amounts into the next printed balance. Once the balances tie over a run of rows, each printed daily balance is checked and a misread amount is pinned to its row.',
+      '<strong>Balance check:</strong> because Wells Fargo prints a balance only at the end of each day, rows without one carry their amounts into the next printed balance. Once the balances tie over a run of rows, each printed daily balance is checked; when one doesn’t tie, PDFCells flags that day’s balance and lists the amounts that could explain it, and names the exact cell when only one fits.',
       '<strong>Signs:</strong> Deposits/Credits and Withdrawals/Debits are separate columns, so keep them separate in Excel or compute <code>Deposits − Withdrawals</code>.',
       '<strong>Summary of checks written</strong> repeats the checks already in Transaction history. Untick that table so checks aren’t counted twice.',
       '<strong>Statement formats:</strong> the M/D dates have no year, so OFX, QBO and the Xero CSV aren’t offered for these statements yet.',
@@ -317,7 +317,7 @@ const amex = page({
     steps('American Express', 'Statements & Activity'),
     ul([
       '<strong>Dates</strong> become Excel dates, except rows marked with <code>*</code>, which stay as text. Delete the asterisk in the grid before exporting if you want every row as a date.',
-      '<strong>Wrapped lines</strong> (location, phone, category) join onto the transaction above, and the payee is taken from the first line.',
+      '<strong>Wrapped lines</strong> (location, phone, category) join onto the transaction above. The cleaned payee is built from that joined description, so check it if you use payees for bank rules.',
       '<strong>Signs:</strong> payments are already negative and charges positive, so the sum of the amounts equals New Charges minus Payments/Credits.',
       '<strong>Statement formats:</strong> the separate Payments and New Charges sections and the <code>*</code> date marker mean PDFCells can’t tie the statement as one card account yet, so OFX and QBO stay off. Excel and table CSV work.',
     ]),

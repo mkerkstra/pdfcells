@@ -10,7 +10,7 @@
 - AI: difficult scans and irregular tables can be read with Claude, only for pages the user chooses (see Privacy).
 - Correction grid: edit cells, insert or delete rows and columns, merge or split columns, set header rows, undo and redo. Totals that don't add up, values that don't match their column and cells OCR was unsure of are flagged. Tables whose totals all add up are marked "Footed". "Fix with AI" corrects a table against the page image from a plain-English instruction.
 - Export: real Excel numbers, percentages, currencies and dates, consistent column formats, frozen header rows, and tables that run across pages joined into one sheet.
-- Bank statements: CSV, OFX, QuickBooks (.qbo) and Xero CSV, offered only when the running balance or the statement summary ties. Credit card statements are detected and signed from the cardholder's side. Statements that print dates without a year (01/15) convert to Excel but not yet to OFX/QBO/Xero.
+- Bank statements: OFX, QuickBooks (.qbo) and Xero CSV, offered only when the running balance or the statement summary ties; a plain bank CSV, which can also be downloaded with a failed check after an explicit override. Credit card statements are detected and signed from the cardholder's side. Statements that print dates without a year (01/15) convert to Excel but not yet to OFX/QBO/Xero.
 - Bank reconciliation: match a statement against a QuickBooks, Xero or other ledger export (CSV or .xlsx) in the browser, with a Reconciliation sheet of live formulas.
 - Limits: up to 300 pages per file; a batch holds up to 200 files and 2,000 pages.
 
@@ -20,7 +20,7 @@
 - AI quality: Fast (Claude Haiku 5.5), Accurate (Claude Sonnet 5.5), Max (Claude Opus 5.5).
 
 ## Privacy
-- PDFs and images are processed on the user's device, with no upload and no account. Nothing leaves the browser unless the user chooses an AI feature: reading a page with AI sends that page as an image with its text layer; "Fix with AI" adds the current tables and the instruction; "Categorise with AI" sends cleaned payee names only; "Name tables" sends table headers and up to three sample rows. Our server forwards these to Anthropic's API and does not store them. Marked areas limit what is sent to their contents.
+- PDFs and images are processed on the user's device, with no upload and no account. Nothing leaves the browser unless the user chooses an AI feature: reading a page with AI sends that page as an image with its text layer; "Fix with AI" adds the current tables and the instruction; "Categorise with AI" sends cleaned payee names only; "Name tables" sends table headers and up to three sample rows. Our server forwards these to Anthropic's API and does not store them. With marked areas, the page image is cropped to the rectangle around them (plus a small margin, so content between two distant areas is included), ignored areas are painted white, and the text sent is limited to words inside the areas.
 
 ## Guides
 - [Bank statement to Excel](https://pdfcells.com/bank-statement-to-excel)

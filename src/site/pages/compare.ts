@@ -109,7 +109,7 @@ const powerQuery: Page = {
     },
     {
       q: 'Is Power Query better than a converter for bank statements?',
-      a: 'For clean digital statements it can be enough, but it doesn’t check running balances or produce OFX/QBO files. PDFCells checks every balance and makes those files.',
+      a: 'For clean digital statements it can be enough, but it doesn’t check running balances or produce OFX/QBO files. PDFCells checks running balances and statement summaries where it recognises them, and makes those files.',
     },
   ],
   related: [
@@ -485,7 +485,7 @@ const moneythumb: Page = {
           [
             'Accuracy claim',
             '“99% Accuracy”',
-            'Checks every balance before export; test numbers on the accuracy page',
+            'OFX/QBO only after the balance or summary check passes; test numbers on the accuracy page',
           ],
         ],
       ),

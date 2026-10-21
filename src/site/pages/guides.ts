@@ -198,7 +198,7 @@ const pdfToQbo: Page = {
       'An OFX 1.02 bank statement with one transaction per row: type (credit, debit or check), date, signed amount, payee (first 32 characters), the description as the memo (up to 255 characters),and the check number when the statement has one.',
       'The <code>&lt;INTU.BID&gt;3000</code> block QuickBooks looks for. Intuit publishes no generic bank id; 3000 is the value converters commonly use.',
       'A FITID per transaction, built from the date, amount, description and position among identical rows. Exporting the same statement twice gives the same ids, so QuickBooks skips transactions it already has.',
-      'The closing balance as of the end of the statement period. Credit card statements use OFX’s credit card message set.',
+      'The closing balance, dated at the end of the statement period when one is printed in a table title, otherwise at the last transaction date. Credit card statements use OFX’s credit card message set.',
     ]),
     h2('QuickBooks Online vs Desktop'),
     table(
@@ -400,7 +400,7 @@ const invoice: Page = {
   parent: 'convert',
   title: 'Convert an invoice PDF to Excel with line totals checked',
   description:
-    'Extract invoice line items from a PDF into Excel with quantity × unit price checked on every line and subtotal plus tax checked against the total.',
+    'Extract invoice line items from a PDF into Excel, with quantity × unit price and subtotal plus tax checked wherever the pattern is recognised.',
   h1: 'Convert an invoice PDF to Excel',
   label: 'Invoice PDF to Excel',
   answer:
@@ -421,7 +421,10 @@ const invoice: Page = {
           'Line totals',
           'Quantity × unit price = line total, once most rows of the table fit that pattern. A quantity of 1 proves nothing, so it is skipped.',
         ],
-        ['Subtotal and tax tie to total', 'Subtotal + tax (+ other charges) = total.'],
+        [
+          'Subtotal and tax tie to total',
+          'Subtotal + recognised tax lines = total. Shipping and other charges aren’t counted, so an invoice with them can show a false warning on its total.',
+        ],
         ['Footed', 'A row labelled Total equals the rows above it.'],
         [
           'Number columns',
@@ -435,7 +438,7 @@ const invoice: Page = {
     ),
     h2('Many invoices at once'),
     p(
-      `Drop up to ${FACTS.maxFiles} PDFs to open a batch. Files that share a layout are read the same way, and the batch exports one workbook with a Source file column so every line traces back to its invoice. ${LIMITS}`,
+      `Drop up to ${FACTS.maxFiles} PDFs to open a batch. Structural fixes you make while reviewing the first file of a layout (areas, merged or split columns) are replayed on the other files of that layout, and the batch exports one workbook with a Source file column so every line traces back to its invoice. ${LIMITS}`,
     ),
     note(
       'PDFCells extracts tables. It doesn’t pull header fields such as vendor name, invoice number or due date into named fields; if you need those as structured data across thousands of invoices, a template-based tool such as Docparser or an AI extraction platform fits better.',
@@ -700,7 +703,7 @@ const accuracy: Page = {
         [
           'Opening and closing balances tie',
           'Opening + credits − debits = closing, from the statement summary',
-          'A missing or extra transaction',
+          'A misread summary figure (the statement export separately requires the transactions to add up to the summary)',
         ],
         [
           'Footed',
