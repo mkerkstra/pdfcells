@@ -494,6 +494,13 @@ function read(joined: Joined, card: boolean, yearFor: YearFor): Candidate | null
       if (v !== undefined) total = Math.abs(v)
       continue
     }
+    // With dates printed without a year the checks can't tell a dated "Total…"
+    // row from a total, so they leave it out of the running balance: don't
+    // export a transaction nothing checked.
+    if (g.totalRow[r] && lay.yearless && c.balance !== undefined)
+      problems.push(
+        `The row on ${where(o)} starts with “Total” and has a date: PDFCells can’t check it against the balance`,
+      )
     const moversBlank = c.movers.every(m => isBlank(g, r, m.col))
     const mv = movement(g, r, c.movers)
     const printed = raw(t, r, c.description)

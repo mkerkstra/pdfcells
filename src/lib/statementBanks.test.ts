@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 
+import { totalRows } from './checks/grid'
 import type { PageTables } from './checks/model'
 import { table } from './checks/testing'
 import { readStatement } from './statement'
@@ -709,8 +710,19 @@ describe('review findings', () => {
         'Statement period 01/01/2026 - 01/31/2026',
       ),
     ])
-    expect(s?.transactions.map(t => t.description)).toContain('Total Wine')
-    expect(s?.gate.ok).toBe(false)
+    expect(s?.gate.ok === false && s.gate.reasons).toContain(
+      'The row on page 1, row 3 starts with “Total” and has a date: PDFCells can’t check it against the balance',
+    )
+  })
+
+  it('a dated real total in a year-less table stays a total for the review checks and Excel', () => {
+    const t = table([
+      ['Date', 'Description', 'Amount'],
+      ['01/01', 'Sales', '10.00'],
+      ['01/02', 'Sales', '20.00'],
+      ['01/31', 'Total', '30.00'],
+    ])
+    expect(totalRows(t)).toEqual([false, false, false, true])
   })
 
   it('a "Closing balance" column header over transactions is no summary line', () => {
