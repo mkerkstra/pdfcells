@@ -265,7 +265,8 @@ function anchorText(text: string): { text: string; digits: DigitMatch } {
  * wildcarded when present, and a candidate is taken only if it resolves back
  * to that very line on this page (no earlier look-alike). Fallbacks: the first line inside the box ('including') for
  * the start; for the end, nothing when the box runs to the bottom of the text
- * (the section runs to the end of the page), else the last line inside.
+ * (the section runs to the end of the page), else the last line inside. When
+ * neither edge can be pinned unambiguously, returns {} (draw a box region instead).
  */
 export function anchorsFromSelection(words: Word[], box: Box): ProposedAnchors {
   const lines = groupLines(words)
@@ -311,6 +312,9 @@ export function anchorsFromSelection(words: Word[], box: Box): ProposedAnchors {
     const a: EndAnchor = { ...anchorText(l ? textOver(l, box) : ''), mode: 'including' }
     if (a.text && findLine(lines, a, startAt + 1) === lastIn) end = a
   }
+  // Text continues below the box but no line pins its bottom edge: an open
+  // end would silently take in everything below, so propose nothing.
+  if (!end && below) return {}
   return end ? { start, end } : { start }
 }
 
@@ -334,8 +338,9 @@ export function cropForAI(
   renderScale: number,
   padding = 12,
 ): PixelRect {
-  const W = Math.round(pageSize.width * renderScale)
-  const H = Math.round(pageSize.height * renderScale)
+  // Same canvas size as pdf.ts renderPage: Math.ceil of the viewport.
+  const W = Math.ceil(pageSize.width * renderScale)
+  const H = Math.ceil(pageSize.height * renderScale)
   const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
   const x0 = clamp(Math.floor((Math.min(box.x0, box.x1) - padding) * renderScale), W)
   const y0 = clamp(Math.floor((Math.min(box.y0, box.y1) - padding) * renderScale), H)

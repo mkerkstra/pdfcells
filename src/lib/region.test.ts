@@ -193,6 +193,12 @@ describe('anchorsFromSelection', () => {
     expect(a.end).toBeUndefined()
   })
 
+  it('proposes nothing when the bottom edge cannot be pinned (look-alike lines)', () => {
+    const words = ['Title', 'A', 'A', 'A', 'Tail'].flatMap((t, i) => line(t, 50, 100 + i * 14))
+    // Box around the first two "A" lines (centres 119 and 133).
+    expect(anchorsFromSelection(words, { x0: 0, y0: 112, x1: 300, y1: 140 })).toEqual({})
+  })
+
   it('returns nothing for an empty box', () => {
     expect(anchorsFromSelection(page(), { x0: 0, y0: 500, x1: 10, y1: 510 })).toEqual({})
   })
@@ -206,6 +212,16 @@ describe('cropForAI', () => {
       y: 376,
       width: 448,
       height: 449,
+    })
+  })
+
+  it('matches the renderer’s canvas size on fractional pages', () => {
+    const odd = { width: 100.1, height: 100.1 }
+    expect(cropForAI({ x0: 0, y0: 0, x1: 100.1, y1: 100.1 }, odd, 2, 0)).toEqual({
+      x: 0,
+      y: 0,
+      width: 201,
+      height: 201,
     })
   })
 
