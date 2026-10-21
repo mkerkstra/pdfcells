@@ -2,7 +2,8 @@ import { Download } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { buildCsvExport } from '@/lib/plaintext'
-import { buildWorkbook, download, type SheetLayout } from '@/lib/xlsx'
+import { buildWorkbook, download, type SheetLayout, type SourceInfo } from '@/lib/xlsx'
+import { engineLabel, originalTables } from '@/lib/xlsxAudit'
 import type { DocState } from '@/state/doc'
 
 import { StatementExport } from './StatementExport'
@@ -19,6 +20,8 @@ export function ExportPanel({ doc }: { doc: DocState }) {
   const [layout, setLayout] = useState<SheetLayout>('per-table')
   const [typed, setTyped] = useState(true)
   const [joinPages, setJoinPages] = useState(true)
+  const [summary, setSummary] = useState(false)
+  const [audit, setAudit] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const count = doc.pages
@@ -44,7 +47,25 @@ export function ExportPanel({ doc }: { doc: DocState }) {
         const { blob, ext } = buildCsvExport(pages, { typed, joinPages })
         download(blob, `${base}.${ext}`)
       } else {
-        download(await buildWorkbook(pages, { layout, typed, joinPages }), `${base}.xlsx`)
+        const source: SourceInfo = {
+          fileName: doc.fileName,
+          engines: Object.fromEntries(
+            doc.pages.map(p => [p.n, engineLabel(p.run?.engine ?? p.engine, p.run)]),
+          ),
+          // The undo history holds each table as first read.
+          originals: originalTables([...doc.past, doc.pages]),
+        }
+        download(
+          await buildWorkbook(pages, {
+            layout,
+            typed,
+            joinPages,
+            summarySheets: summary,
+            auditSheet: audit,
+            source,
+          }),
+          `${base}.xlsx`,
+        )
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The Excel file couldn’t be built. Try again.')
@@ -118,6 +139,25 @@ export function ExportPanel({ doc }: { doc: DocState }) {
         >
           <input type='checkbox' checked={typed} onChange={e => setTyped(e.target.checked)} />
           Real numbers
+        </label>
+        <label
+          className={cn('items-center gap-1.5', format === 'xlsx' ? 'flex' : 'hidden')}
+          title='Statements get By month and By description sheets, invoices a By item sheet. Their totals are formulas over the table, so they update when you edit it. Needs Real numbers.'
+        >
+          <input
+            type='checkbox'
+            checked={summary}
+            disabled={!typed}
+            onChange={e => setSummary(e.target.checked)}
+          />
+          Add summary sheets
+        </label>
+        <label
+          className={cn('items-center gap-1.5', format === 'xlsx' ? 'flex' : 'hidden')}
+          title='A sheet listing each table’s source page, how it was read, the checks it passed, open issues and your edits. Edited cells get a note with the value first read.'
+        >
+          <input type='checkbox' checked={audit} onChange={e => setAudit(e.target.checked)} />
+          Include audit sheet
         </label>
         <div className='ml-auto flex items-center gap-3'>
           {error ? (

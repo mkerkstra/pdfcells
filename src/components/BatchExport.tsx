@@ -14,6 +14,7 @@ import {
   type Currency,
 } from '@/lib/statementExport'
 import { buildSheetsWorkbook, buildWorkbook, download } from '@/lib/xlsx'
+import { engineLabel, originalTables } from '@/lib/xlsxAudit'
 import type { BatchGroup, BatchItem } from '@/state/batch'
 
 import type { Verdict } from './BatchView'
@@ -116,14 +117,30 @@ export function BatchExport({
     setBusy(true)
     setError('')
     try {
-      const docs = ready.map(it => ({ name: it.fileName, pages: readTables(it.doc.pages) }))
+      const docs = ready.map(it => ({
+        name: it.fileName,
+        pages: readTables(it.doc.pages),
+        source: {
+          fileName: it.fileName,
+          engines: Object.fromEntries(
+            it.doc.pages.map(p => [p.n, engineLabel(p.run?.engine ?? p.engine, p.run)]),
+          ),
+          originals: originalTables([...it.doc.past, it.doc.pages]),
+        },
+      }))
       if (output === 'workbook') {
         const blob = await buildSheetsWorkbook(combineTables(docs, joinPages), typed)
         download(blob, `batch of ${ready.length} ${ready.length === 1 ? 'file' : 'files'}.xlsx`)
       } else if (output === 'zip') {
         const enc = await Promise.all(
           docs.map(async d => {
-            const blob = await buildWorkbook(d.pages, { layout: 'per-table', typed, joinPages })
+            const blob = await buildWorkbook(d.pages, {
+              layout: 'per-table',
+              typed,
+              joinPages,
+              auditSheet: true,
+              source: d.source,
+            })
             return new Uint8Array(await blob.arrayBuffer())
           }),
         )
