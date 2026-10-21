@@ -49,7 +49,9 @@ describe('tableBlock', () => {
   it('writes no formulas when numbers stay text', () => {
     const b = tableBlock(invoice, 0, { ...opts, typed: false, names: new Set() })
     expect(b.rows).toHaveLength(6)
-    expect(b.rows.flat().some(c => c && typeof c === 'object' && c.type === 'Formula')).toBe(false)
+    expect(
+      b.rows.flat().some(c => c && typeof c === 'object' && 'type' in c && c.type === 'Formula'),
+    ).toBe(false)
   })
 
   it('gives a headerless table a header row of column names', () => {
