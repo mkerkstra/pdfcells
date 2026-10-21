@@ -7,6 +7,7 @@ import {
   cropForAI,
   fromPortable,
   regionFromBox,
+  sectionsOpenAtStart,
   toPortable,
   type Region,
 } from './region'
@@ -103,7 +104,7 @@ describe('applyRegions', () => {
     expect(texts(applyRegions(page(), [r], 1).words)).toBe('Thank you for banking with us')
   })
 
-  it('an anchor missing on a page yields nothing for that page, plus a diagnostic', () => {
+  it('a section whose end marker is on a later page takes the rest of this page; a missing start yields nothing', () => {
     const r: Region = {
       kind: 'between',
       start: { text: 'Transaction history', mode: 'after' },
@@ -111,10 +112,11 @@ describe('applyRegions', () => {
       pages: 'all',
     }
     const res = applyRegions(page(), [r], 4)
-    expect(res.words).toEqual([])
-    expect(res.diagnostics).toEqual([
-      expect.objectContaining({ page: 4, region: 0, problem: 'end-not-found' }),
-    ])
+    // No "Ending balance" here: the section runs on past this page.
+    expect(texts(res.words)).toBe(
+      '03/02 Coffee 4.50 03/03 Rent 1,200.00 03/04 Salary 3,000.00 Closing balance 5,000.00 Thank you for banking with us',
+    )
+    expect(res.diagnostics).toEqual([])
     const noStart = applyRegions(page(), [{ ...r, start: { text: 'Fees', mode: 'after' } }], 2)
     expect(noStart.diagnostics[0]?.problem).toBe('start-not-found')
     expect(noStart.diagnostics[0]?.message).toContain('“Fees”')
@@ -232,5 +234,79 @@ describe('cropForAI', () => {
       width: 918,
       height: 1188,
     })
+  })
+})
+
+describe('sections across pages', () => {
+  const lines = (ts: string[]) => ts.flatMap((t, i) => line(t, 50, 100 + i * 14))
+  const p1 = lines([
+    'Bank header',
+    'Transaction history',
+    '03/02 Coffee 4.50',
+    '03/03 Rent 1,200.00',
+  ])
+  const p2 = lines([
+    'Bank header',
+    '03/04 Salary 3,000.00',
+    '03/05 Fees 2.00',
+    'Closing balance 5,000.00',
+    'Summary',
+  ])
+  const p3 = lines(['Bank header', 'Disclosures apply'])
+  const section: Region = {
+    kind: 'between',
+    start: { text: 'Transaction history', mode: 'after' },
+    end: { text: 'Closing balance', mode: 'before' },
+    pages: 'all',
+  }
+  const docPages = [
+    { n: 1, words: p1 },
+    { n: 2, words: p2 },
+    { n: 3, words: p3 },
+  ]
+
+  it('knows which sections are open when each page starts', () => {
+    const open = sectionsOpenAtStart(docPages, [section])
+    expect([...(open.get(1) ?? [])]).toEqual([])
+    expect(open.get(2)?.size).toBe(1)
+    expect(open.get(3)?.size).toBe(0) // closed by "Closing balance" on page 2
+  })
+
+  it('continues a section from the top of the next page to its end marker', () => {
+    const open = sectionsOpenAtStart(docPages, [section])
+    expect(texts(applyRegions(p1, [section], 1, open.get(1)).words)).toBe(
+      '03/02 Coffee 4.50 03/03 Rent 1,200.00',
+    )
+    const r2 = applyRegions(p2, [section], 2, open.get(2))
+    expect(texts(r2.words)).toBe('Bank header 03/04 Salary 3,000.00 03/05 Fees 2.00')
+    expect(r2.diagnostics).toEqual([])
+    const r3 = applyRegions(p3, [section], 3, open.get(3))
+    expect(r3.words).toEqual([])
+  })
+
+  it('without the carry, a continuation page is reported as missing its start marker', () => {
+    expect(applyRegions(p2, [section], 2).diagnostics[0]?.problem).toBe('start-not-found')
+  })
+
+  it('a section with no end marker runs to the end of the document', () => {
+    const open = sectionsOpenAtStart(docPages, [{ ...section, end: undefined }])
+    expect(open.get(3)?.size).toBe(1)
+  })
+
+  it('restarts at a repeated start marker instead of taking what is above it', () => {
+    const p2b = lines([
+      'Bank header',
+      'Transaction history (continued)',
+      '03/04 Salary 3,000.00',
+      'Closing balance 5,000.00',
+    ])
+    const open = sectionsOpenAtStart(
+      [
+        { n: 1, words: p1 },
+        { n: 2, words: p2b },
+      ],
+      [section],
+    )
+    expect(texts(applyRegions(p2b, [section], 2, open.get(2)).words)).toBe('03/04 Salary 3,000.00')
   })
 })

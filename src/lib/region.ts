@@ -134,6 +134,38 @@ export function resolveBetween(
   return { first, last: r.end.mode === 'before' ? e - 1 : e }
 }
 
+/** A stable key for a between-region (survives copies and saved batches). */
+export function sectionKey(r: Region): string {
+  return r.kind === 'between' ? JSON.stringify([r.start, r.end ?? null, r.pages]) : ''
+}
+
+/**
+ * For each page, the between-regions already open when it starts: their start
+ * marker was on an earlier page and their end marker hasn't appeared yet.
+ * A section with no end marker runs to the end of the document.
+ */
+export function sectionsOpenAtStart(
+  pages: { n: number; words: Word[] }[],
+  regions: Region[],
+): Map<number, Set<string>> {
+  const open = new Set<string>()
+  const out = new Map<number, Set<string>>()
+  for (const pg of [...pages].sort((a, b) => a.n - b.n)) {
+    out.set(pg.n, new Set(open))
+    const lines = groupLines(pg.words)
+    for (const r of regions) {
+      if (r.kind !== 'between' || !regionApplies(r, pg.n)) continue
+      const key = sectionKey(r)
+      const s = findLine(lines, r.start)
+      const from = s >= 0 ? s + 1 : 0
+      if (s < 0 && !open.has(key)) continue
+      if (r.end && findLine(lines, r.end, from) >= 0) open.delete(key)
+      else open.add(key)
+    }
+  }
+  return out
+}
+
 /**
  * Apply regions to one page's words.
  *
@@ -144,7 +176,12 @@ export function resolveBetween(
  * than the whole page. 'ignore' boxes are removed last. Words keep their
  * input order.
  */
-export function applyRegions(words: Word[], regions: Region[], pageNumber: number): RegionResult {
+export function applyRegions(
+  words: Word[],
+  regions: Region[],
+  pageNumber: number,
+  openAtStart: ReadonlySet<string> = new Set(),
+): RegionResult {
   const diagnostics: RegionDiagnostic[] = []
   const active: [Region, number][] = []
   regions.forEach((r, i) => {
@@ -170,7 +207,21 @@ export function applyRegions(words: Word[], regions: Region[], pageNumber: numbe
       }
       if (r.kind !== 'between') continue
       lines ??= groupLines(words)
-      const res = resolveBetween(lines, r)
+      const pageLines = lines
+      let res = resolveBetween(pageLines, r)
+      if ('problem' in res && res.problem === 'start-not-found' && openAtStart.has(sectionKey(r))) {
+        // The section began on an earlier page: it continues from the top of
+        // this one (running headers come off later) to its end marker, if here.
+        const e = r.end ? findLine(pageLines, r.end) : -1
+        res = {
+          first: 0,
+          last: e < 0 || !r.end ? pageLines.length - 1 : r.end.mode === 'before' ? e - 1 : e,
+        }
+      } else if ('problem' in res && res.problem === 'end-not-found') {
+        // Started here, ends on a later page: take the rest of this page.
+        const st = findLine(pageLines, r.start)
+        res = { first: r.start.mode === 'after' ? st + 1 : st, last: pageLines.length - 1 }
+      }
       if ('problem' in res) {
         const anchor = res.problem === 'start-not-found' ? r.start.text : (r.end?.text ?? '')
         diagnostics.push({

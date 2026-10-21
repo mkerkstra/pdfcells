@@ -21,7 +21,14 @@ import { anchorsFromSelection, type ProposedAnchors } from '@/lib/region'
 import type { Box, Table, Word } from '@/lib/types'
 import { useAccount } from '@/state/account'
 import type { Action, DocState, PageState } from '@/state/doc'
-import { instantEngine, ocrTables, pageWords, readArea, textTables } from '@/state/runner'
+import {
+  instantEngine,
+  ocrTables,
+  pageWords,
+  readArea,
+  textTables,
+  withOpenSections,
+} from '@/state/runner'
 
 import { ExportPanel } from './ExportPanel'
 import { PageImage, type AreaChoice } from './PageImage'
@@ -510,11 +517,19 @@ function useAreas(
     try {
       const done: Extract<Action, { type: 'regions' }>['pages'] = []
       let again: PageState | null = null
-      for (const { p, regions } of changes) {
+      for (const { p: before, regions, openSections } of withOpenSections(doc.pages, changes)) {
+        const p = { ...before, openSections }
         const r = await readArea(source, p, regions)
-        if (r) done.push({ index: p.n - 1, regions, ...r, tables: carryOver(p.tables, r.tables) })
+        if (r)
+          done.push({
+            index: p.n - 1,
+            regions,
+            openSections,
+            ...r,
+            tables: carryOver(p.tables, r.tables),
+          })
         else {
-          done.push({ index: p.n - 1, regions })
+          done.push({ index: p.n - 1, regions, openSections })
           // Only the page on screen is read again; the others use the area when they're next read.
           if (p.n === page.n && p.triage && p.triage.kind !== 'blank') again = { ...p, regions }
         }

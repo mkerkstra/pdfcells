@@ -35,6 +35,7 @@
     "src/corpus.test.ts",
     "src/images.test.ts",
     "src/batch.corpus.test.ts",
-    "src/types"
+    "src/types",
+    "src/regions.corpus.test.ts"
   ]
 }

@@ -36,6 +36,7 @@
   "exclude": [
     "src/corpus.test.ts",
     "src/images.test.ts",
-    "src/batch.corpus.test.ts"
+    "src/batch.corpus.test.ts",
+    "src/regions.corpus.test.ts"
   ]
 }

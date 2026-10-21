@@ -8,7 +8,14 @@ import { buildTables, linesToText, type LocalTable } from '@/lib/layout'
 import { cleanWords, type PageSize } from '@/lib/noise'
 import { ocrWords } from '@/lib/ocr'
 import { extractPage, type ExtractedTable, type PageNoise } from '@/lib/pipeline'
-import { applyRegions, cropForAI, regionApplies, type PixelRect } from '@/lib/region'
+import {
+  applyRegions,
+  cropForAI,
+  regionApplies,
+  sectionKey,
+  sectionsOpenAtStart,
+  type PixelRect,
+} from '@/lib/region'
 import { triage as classify } from '@/lib/triage'
 import type { Box, Table, Tier, Word } from '@/lib/types'
 
@@ -84,6 +91,7 @@ export function textTables(p: PageState, words: Word[], regions = p.regions ?? [
     pageNumber: p.n,
     pageSize: sizeOf(p),
     regions: active(p, regions),
+    openSections: new Set(p.openSections),
     noise: p.noise ?? true,
   })
   return {
@@ -95,7 +103,7 @@ export function textTables(p: PageState, words: Word[], regions = p.regions ?? [
 
 /** OCR words to tables, inside these areas. */
 export function ocrTables(p: PageState, words: Word[], regions = p.regions ?? []): AreaRead {
-  const r = applyRegions(words, active(p, regions), p.n)
+  const r = applyRegions(words, active(p, regions), p.n, new Set(p.openSections))
   const tables = buildTables(r.words).map(t => fromLocal(t))
   const warnings = tables.length
     ? []
@@ -150,12 +158,17 @@ function unionBox(boxes: Box[]): Box | null {
 }
 
 /** The part of a rendered page to read: every area the page is limited to, or null for all of it. */
-function readBox(regions: UserRegion[], words: Word[] | null, n: number): Box | null {
+function readBox(
+  regions: UserRegion[],
+  words: Word[] | null,
+  n: number,
+  open: ReadonlySet<string> = new Set(),
+): Box | null {
   if (!regions.some(r => r.kind !== 'ignore')) return null
   const boxes = regions.flatMap(r => (r.kind === 'only' ? [r.box] : []))
   // With a text layer, text markers resolve to the lines they cover; an area
   // with no text in it (a picture of a table) still counts.
-  const kept = words ? applyRegions(words, regions, n).words : []
+  const kept = words ? applyRegions(words, regions, n, open).words : []
   return unionBox([...kept, ...boxes])
 }
 
@@ -321,13 +334,18 @@ export async function runPage(
     }
     const { canvas, scale } = await source.render(2000)
     const textLayer = page.triage?.kind === 'digital' ? page.triage.words : []
-    const box = readBox(regions, textLayer.length ? textLayer : null, page.n)
+    const box = readBox(
+      regions,
+      textLayer.length ? textLayer : null,
+      page.n,
+      new Set(page.openSections),
+    )
     // Only the marked area (and its PDF text) is sent; ignored areas are blanked.
     const rect = box ? cropForAI(box, size, scale) : null
     const image = cropCanvas(canvas, rect, ignored, scale)
     const hint =
       regions.length && textLayer.length
-        ? linesToText(applyRegions(textLayer, regions, page.n).words)
+        ? linesToText(applyRegions(textLayer, regions, page.n, new Set(page.openSections)).words)
         : (page.triage?.textHint ?? '')
     const res = await readWithAi({
       tier: ai.tier,
@@ -435,4 +453,32 @@ export async function runPages(
     })
   await pool(pages, pages.length, job)
   if (needCredits) hooks.onNeedCredits?.()
+}
+
+/**
+ * Which marked sections are already open at the start of each changed page,
+ * worked out across the whole document (a section that starts on page 1 runs
+ * on through later pages until its end marker).
+ */
+export function withOpenSections<T extends { p: PageState; regions: UserRegion[] }>(
+  pages: PageState[],
+  changes: T[],
+): (T & { openSections: string[] })[] {
+  const regionsFor = new Map(changes.map(c => [c.p.n, c.regions]))
+  const all = pages.map(p => ({ n: p.n, regions: regionsFor.get(p.n) ?? p.regions ?? [] }))
+  const sections = [
+    ...new Map(
+      all
+        .flatMap(a => a.regions)
+        .filter(r => r.kind === 'between')
+        .map(r => [sectionKey(r), r]),
+    ).values(),
+  ]
+  if (!sections.length) return changes.map(c => ({ ...c, openSections: [] }))
+  const words = pages.map(p => ({
+    n: p.n,
+    words: (p.run?.engine === 'ocr' ? p.ocrWords : p.triage?.words) ?? [],
+  }))
+  const open = sectionsOpenAtStart(words, sections)
+  return changes.map(c => ({ ...c, openSections: [...(open.get(c.p.n) ?? [])] }))
 }

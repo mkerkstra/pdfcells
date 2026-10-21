@@ -27,6 +27,8 @@ export interface PageState {
   run?: RunInfo
   /** Areas marked in review (page space). Part of the page, so undo covers them. */
   regions?: UserRegion[]
+  /** sectionKey()s of marked sections that began on an earlier page and continue onto this one. */
+  openSections?: string[]
   /** Running headers, footers and page numbers found across the document (PDF text pages). */
   noise?: PageNoise
   /** Words OCR read on the whole page, so a marked area is re-read without OCR again. Not saved. */
@@ -60,6 +62,7 @@ export type Action =
       pages: {
         index: number
         regions: UserRegion[]
+        openSections?: string[]
         tables?: Table[]
         warnings?: string[]
         notes?: string[]
@@ -173,6 +176,7 @@ export function reducer(s: DocState, a: Action): DocState {
           return {
             ...pg,
             regions: x.regions,
+            openSections: x.openSections ?? [],
             // A skipped PDF text page read through an area is read now.
             ...(x.tables && !pg.run
               ? {

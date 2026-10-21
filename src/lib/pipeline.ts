@@ -10,7 +10,7 @@
 
 import { buildTables, type LocalTable } from './layout'
 import { cleanWords, type BlockKind, type PageSize, type RemovedLine } from './noise'
-import { applyRegions, type Region, type RegionDiagnostic } from './region'
+import { applyRegions, type Region, type RegionDiagnostic, sectionsOpenAtStart } from './region'
 import {
   defaultInclude,
   hiddenReason,
@@ -46,6 +46,8 @@ export interface ExtractOptions {
   /** Page size in points; improves noise bands. */
   pageSize?: PageSize
   regions?: Region[]
+  /** sectionKey()s of between-regions continuing from earlier pages. */
+  openSections?: ReadonlySet<string>
   /**
    * true (default): single-page rules only (page-number lines). false: off.
    * A PageNoise: the drops a document-level cleanWords run found, so running
@@ -85,7 +87,7 @@ export function extractPage(words: Word[], opts: ExtractOptions = {}): PageExtra
   let kept = clean
   let diagnostics: RegionDiagnostic[] = []
   if (opts.regions?.length) {
-    const r = applyRegions(words, opts.regions, pageNumber)
+    const r = applyRegions(words, opts.regions, pageNumber, opts.openSections)
     const inRegion = new Set(r.words)
     kept = clean.filter(w => inRegion.has(w))
     diagnostics = r.diagnostics
@@ -118,11 +120,18 @@ export interface DocumentOptions {
 /** extractPage for every page, with running headers/footers found across the document. */
 export function extractDocument(pages: Word[][], opts: DocumentOptions = {}): PageExtraction[] {
   const clean = opts.noise === false ? null : cleanWords(pages, { sizes: opts.sizes })
+  const open = opts.regions?.length
+    ? sectionsOpenAtStart(
+        pages.map((words, i) => ({ n: i + 1, words })),
+        opts.regions,
+      )
+    : null
   return pages.map((words, i) =>
     extractPage(words, {
       pageNumber: i + 1,
       pageSize: opts.sizes?.[i],
       regions: opts.regions,
+      openSections: open?.get(i + 1),
       minScore: opts.minScore,
       noise: clean
         ? { dropped: clean.dropped[i] ?? [], removed: clean.removed.filter(r => r.page === i + 1) }

@@ -19,7 +19,7 @@ import type { PageSize } from '@/lib/noise'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import type { Recipe, ReadKind } from '@/lib/recipe'
-import { regionApplies } from '@/lib/region'
+import { regionApplies, sectionsOpenAtStart } from '@/lib/region'
 import { readStatement } from '@/lib/statement'
 import { triage as classify, type PageTriage } from '@/lib/triage'
 import type { Engine, Tier, Word } from '@/lib/types'
@@ -192,6 +192,16 @@ export async function readItem(
       const t = classify(await (await doc.page(p.n)).facts(), aiAvailable)
       full.push({ ...p, triage: t })
       dispatch({ type: 'doc', id, action: { type: 'engine', index: p.n - 1, engine: p.engine } })
+    }
+    // A marked section that starts on one page runs on through later ones:
+    // work out which sections are open at each page across the whole file.
+    const sections = full.flatMap(p => (p.regions ?? []).filter(r => r.kind === 'between'))
+    if (sections.length) {
+      const all: { n: number; words: Word[] }[] = []
+      for (let n = 1; n <= doc.pages; n++)
+        all.push({ n, words: (await (await doc.page(n)).facts()).words })
+      const open = sectionsOpenAtStart(all, sections)
+      for (const p of full) p.openSections = [...(open.get(p.n) ?? [])]
     }
     await runPages(doc, full, action => dispatch({ type: 'doc', id, action }), { tier }, hooks)
     dispatch({ type: 'forget', id })
