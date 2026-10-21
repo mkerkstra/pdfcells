@@ -44,8 +44,11 @@ requests are billed to the caller's Anthropic account and only forwarded to
 | Key for the IP HMAC | derived from `CLERK_SECRET_KEY` | `IP_HASH_SECRET` |
 | Hosted `/api/extract` calls per user per minute | 30 | `RATE_EXTRACT_PER_MINUTE` (0 = off) |
 | `/api/checkout` calls per user per minute | 5 | `RATE_CHECKOUT_PER_MINUTE` (0 = off) |
+| Hosted `/api/batches` submissions (up to 25 pages each) per user per minute, and `/api/name-tables` calls (counted with `/api/extract`) | 30 | `RATE_EXTRACT_PER_MINUTE` (0 = off) |
+| Hosted pages sent to Message Batches per user per minute | 300 | `RATE_BATCH_PAGES_PER_MINUTE` (0 = off) |
 | Clerk token origins accepted (`azp`) | pdfcells.com, www, localhost:5173 | `CLERK_AUTHORIZED_PARTIES` |
 | Paid pages | worst-case hold before the call, settled to the exact cost | none |
+| Batch pages | every page of a submission held at its worst case (batch rates) in one transaction, or none; settled to the exact batch cost when the batch ends; pages Anthropic didn't bill are released | none |
 
 When a free page is refused by the IP or global cap, the request falls back
 to the user's credits, the same as an exhausted personal quota.
