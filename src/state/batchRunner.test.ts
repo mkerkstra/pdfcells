@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { PageKind, PageTriage } from '@/lib/triage'
 import type { Engine } from '@/lib/types'
 
-import { newBatch, type BatchItem } from './batch'
+import { areaProblems, newBatch, type BatchItem } from './batch'
 import { engineFor, enginesOf, regroup, rereads, toRead } from './batchRunner'
 import type { PageState } from './doc'
 
@@ -139,5 +139,47 @@ describe('regroup', () => {
     expect(regroup([a, b], lone.groups, lone.considered).groups.map(g => g.members)).toEqual([
       ['a', 'b'],
     ])
+  })
+})
+
+describe('rereads with marked areas', () => {
+  const area = {
+    kind: 'only' as const,
+    box: { x0: 0, y0: 0, x1: 0.5, y1: 0.5 },
+    pages: 'all' as const,
+    units: 'relative' as const,
+  }
+  const recipe = { source: 'jan.pdf', tables: [], engines: {}, regions: [area] }
+
+  it('reads PDF text and OCR pages again with the areas, not AI pages', () => {
+    const pages = [
+      page(1, 'digital', 'text', 'text'),
+      page(2, 'scanned', 'ocr', 'ocr'),
+      page(3, 'scanned', 'ai', 'ai'),
+      page(4, 'digital', 'skip'),
+      page(5, 'scanned', 'ai'),
+    ]
+    const out = rereads(recipe, pages)
+    expect(out.map(p => [p.n, p.engine])).toEqual([
+      [1, 'text'],
+      [2, 'ocr'],
+      [4, 'text'],
+    ])
+    // Page size 1×1 in these fixtures: the relative box comes back as is.
+    expect(out[0]?.regions).toEqual([
+      { kind: 'only', box: { x0: 0, y0: 0, x1: 0.5, y1: 0.5 }, pages: 'all' },
+    ])
+  })
+
+  it('says which pages the areas didn’t reach, in plain words', () => {
+    const pages = [
+      { ...page(1, 'digital', 'text', 'text'), areaNotes: ['No line containing “x” on page 1'] },
+      page(2, 'scanned', 'ai', 'ai'),
+    ]
+    expect(areaProblems(recipe, pages)).toEqual([
+      'No line containing “x” on page 1',
+      'Page 2 was read with AI, so the areas marked on jan.pdf weren’t used there. Read it again to use them.',
+    ])
+    expect(areaProblems({ ...recipe, regions: [] }, pages)).toEqual([])
   })
 })
