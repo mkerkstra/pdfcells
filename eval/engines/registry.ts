@@ -5,6 +5,7 @@ import type { Engine } from '../engine'
 import { claudeEngine, type Tier } from './claude'
 import { tesseractEngine } from './tesseract'
 import { textLayerEngine } from './textLayer'
+import { textLayerNoiseEngine } from './textLayerNoise'
 
 export interface EngineContext {
   apiKey?: string
@@ -27,6 +28,13 @@ export const ENGINES: EngineSpec[] = [
     status: 'ready',
     summary: 'pdf.js text layer → pagefacts → triage → layout.buildTables (the app’s digital path)',
     create: () => textLayerEngine(),
+  },
+  {
+    id: 'text-layer+noise',
+    kind: 'local',
+    status: 'ready',
+    summary: 'text-layer plus src/lib/pipeline extractPage: page numbers removed, prose/contents/axis blocks and low scores hidden',
+    create: () => textLayerNoiseEngine(),
   },
   {
     id: 'tesseract',
