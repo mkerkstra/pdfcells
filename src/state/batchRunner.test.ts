@@ -44,6 +44,9 @@ describe('reading choice', () => {
     expect(engineFor(page(1, 'scanned', 'ai'), 'ocr')).toBe('ocr')
     expect(engineFor(page(1, 'scanned', 'ai'), 'ai')).toBe('ai')
     expect(engineFor(page(1, 'blank', 'skip'), 'ocr')).toBe('skip')
+    // Checked before AI was available, then AI chosen: AI it is.
+    expect(engineFor(page(1, 'scanned', 'ocr'), 'ai')).toBe('ai')
+    expect(engineFor(page(1, 'digital', 'text'), 'ai')).toBe('text')
   })
 
   it('only unread, unskipped pages are read', () => {

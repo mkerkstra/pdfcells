@@ -165,3 +165,23 @@ describe('applying a group recipe', () => {
     expect(again.items[1]?.doc.pages[0]?.tables[0]?.rows[0]).toEqual(['Date', 'Amount'])
   })
 })
+
+describe('reviewed mark', () => {
+  it('goes when a page is read again', () => {
+    let s = newBatch([file('a.pdf')])
+    s = batchReducer(s, {
+      type: 'doc',
+      id: 'f1',
+      action: { type: 'open', fileName: 'a', pageCount: 1 },
+    })
+    s = batchReducer(s, { type: 'item', id: 'f1', patch: { reviewed: true } })
+    s = batchReducer(s, { type: 'doc', id: 'f1', action: { type: 'select', index: 0 } })
+    expect(s.items[0]?.reviewed).toBe(true)
+    s = batchReducer(s, {
+      type: 'doc',
+      id: 'f1',
+      action: { type: 'result', index: 0, tables: [], warnings: [], run: { engine: 'ocr' } },
+    })
+    expect(s.items[0]?.reviewed).toBe(false)
+  })
+})

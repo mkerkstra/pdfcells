@@ -136,6 +136,8 @@ async function checkOne(
 
 /** The engine a page is read with under the batch's choice. OCR never replaces PDF text. */
 export function engineFor(p: PageState, choice: ReadChoice): Engine | 'skip' {
+  // A scan checked before AI was available was given OCR; AI chosen now wins.
+  if (choice === 'ai' && p.engine === 'ocr' && p.triage?.kind !== 'digital') return 'ai'
   if (p.engine !== 'ai' || choice === 'ai') return p.engine
   return p.triage?.kind === 'digital' ? 'text' : 'ocr'
 }

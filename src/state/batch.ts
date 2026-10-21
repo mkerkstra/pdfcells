@@ -143,8 +143,16 @@ export function batchReducer(s: BatchState, a: BatchAction): BatchState {
       return a.state
     case 'item':
       return mapItem(s, a.id, it => ({ ...it, ...a.patch }))
-    case 'doc':
-      return mapItem(s, a.id, it => ({ ...it, doc: docReducer(it.doc, a.action) }))
+    case 'doc': {
+      // A page read again (or failing) replaces what was reviewed: the mark goes.
+      const reread =
+        a.action.type === 'result' || (a.action.type === 'status' && a.action.status === 'error')
+      return mapItem(s, a.id, it => ({
+        ...it,
+        doc: docReducer(it.doc, a.action),
+        reviewed: reread ? false : it.reviewed,
+      }))
+    }
     case 'forget':
       return mapItem(s, a.id, it => ({ ...it, doc: { ...it.doc, past: [], future: [] } }))
     case 'choice':

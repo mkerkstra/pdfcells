@@ -243,10 +243,16 @@ export function BatchView({
   const attach = (picked: File[]) => {
     const next = new Map(attached)
     let n = 0
+    // Each picked file goes to one item: same name, size and modified time.
+    const free = [...picked]
     for (const it of items) {
       if (next.has(it.id)) continue
-      const f = picked.find(x => x.name === it.fileName && x.size === it.size)
+      const k = free.findIndex(
+        x => x.name === it.fileName && x.size === it.size && x.lastModified === it.lastModified,
+      )
+      const f = free[k]
       if (f) {
+        free.splice(k, 1)
         next.set(it.id, f)
         n++
       }
@@ -847,6 +853,8 @@ function BatchReview({
   )
   const run: RunFn = useCallback(
     async (pages, opts = {}) => {
+      // Queued right away, so leaving review or reading again waits for this run.
+      pages.forEach(p => docDispatch({ type: 'status', index: p.n - 1, status: 'queued' }))
       await runPages(
         source,
         await withFacts(source, pages, account.aiPossible),
