@@ -103,7 +103,7 @@ const chase = page({
       '<strong>Signs on checking:</strong> because deposits and withdrawals are printed unsigned in separate sections, both come out positive in Excel. Negate the withdrawal and check sections (multiply by −1) before adding them up.',
       '<strong>Signs on card statements:</strong> payments keep their minus sign, so a sum of the amount column equals purchases minus payments.',
       '<strong>Amounts under $1:</strong> Chase card statements print them without a leading zero (<code>.99</code>). PDFCells doesn’t read that form as a number yet, so those cells are flagged as text in a number column; type <code>0.99</code> in the grid.',
-      '<strong>Daily ending balance:</strong> printed as several Date/Balance pairs side by side. It isn’t a list of transactions; untick it or keep it on its own sheet.',
+      '<strong>Daily ending balance:</strong> printed as several Date/Balance pairs side by side. It isn’t a list of transactions; if it comes out as its own table, untick it, or check that its rows didn’t join the last section.',
       '<strong>Statement formats:</strong> OFX, QBO and the Xero CSV need a year on every date, so they aren’t offered for Chase statements yet. Use Chase’s own QBO/QFX download for the last two years.',
     ]),
     yearFix('“Opening/Closing Date 12/29/16 - 01/28/17”'),
@@ -196,8 +196,8 @@ const bofa = page({
       a: 'No. Bank of America prints MM/DD/YY, so dates convert straight to Excel dates.',
     },
     {
-      q: 'Why do deposits and withdrawals come out as separate tables?',
-      a: 'The statement prints them as separate sections, each with its own header and total. Choose the one-sheet layout to put every table on one sheet.',
+      q: 'What if deposits and withdrawals come out as separate tables?',
+      a: 'Bank of America prints them as separate sections, each with its own header and total, so they may come out as separate tables. Choose the one-sheet layout to put every table on one sheet.',
     },
   ],
   related: [
@@ -451,7 +451,7 @@ const capitalOne = page({
   own: [
     h2('Capital One’s own history'),
     p(
-      `For checking and savings, Capital One says the website shows the past two years of activity and statements cover the past seven years (${ext('https://www.capitalone.com/help-center/checking-savings/transaction-history/', 'capitalone.com')}, checked October 2026). Discover cards are now part of Capital One, so Discover statement layouts may change.`,
+      `For checking and savings, Capital One says the website shows the past two years of activity and statements cover the past seven years (${ext('https://www.capitalone.com/help-center/checking-savings/transaction-history/', 'capitalone.com')}, checked October 2026).`,
     ),
   ].join(''),
   faq: [
@@ -508,7 +508,7 @@ const pnc = page({
     ul([
       '<strong>Signs:</strong> withdrawals and deductions come out positive, as printed. Multiply those sections by −1 before summing.',
       '<strong>Trailing minus</strong> balances such as <code>33.06-</code> are read as −33.06.',
-      '<strong>Daily Balance Detail</strong> is a side-by-side table of balances, not transactions; untick it or keep it separate.',
+      '<strong>Daily Balance Detail</strong> is a side-by-side table of balances, not transactions; if it comes out as its own table, untick it, or check that its rows didn’t join the last section.',
       '<strong>Statement formats:</strong> MM/DD dates without a year mean OFX, QBO and the Xero CSV aren’t offered yet.',
     ]),
     yearFix('“For the period 09/25/2025 to 10/24/2025”'),
