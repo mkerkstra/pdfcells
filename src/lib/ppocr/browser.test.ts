@@ -56,4 +56,40 @@ describe('createPpocrClient', () => {
     await expect(client.recognize(image())).rejects.toThrow('boom')
     expect(made[0]?.terminated).toBe(true)
   })
+
+  it('prewarms once, and the first page then gets the per-page deadline', async () => {
+    const sent: WorkerRequest[] = []
+    let answerPages = true
+    const client = createPpocrClient(
+      () =>
+        fakeWorker(req => {
+          sent.push(req)
+          if (!('image' in req)) return { id: req.id, type: 'ready' }
+          return answerPages ? { id: req.id, type: 'done', words: [] } : undefined
+        }),
+      { first: 10_000, page: 30 },
+    )
+    await Promise.all([client.prewarm(), client.prewarm()])
+    await client.prewarm()
+    expect(sent.filter(r => !('image' in r))).toHaveLength(1)
+    await expect(client.recognize(image())).resolves.toEqual([])
+    // Warm: a silent page is cut off at the short per-page deadline, not the first-page one.
+    answerPages = false
+    await expect(client.recognize(image())).rejects.toThrow('took more than 0 s')
+  })
+
+  it('a failed prewarm is retried by the next one', async () => {
+    let fail = true
+    let workers = 0
+    const client = createPpocrClient(() => {
+      workers++
+      return fakeWorker(req =>
+        fail ? { id: req.id, type: 'error', message: 'offline' } : { id: req.id, type: 'ready' },
+      )
+    })
+    await expect(client.prewarm()).rejects.toThrow('offline')
+    fail = false
+    await expect(client.prewarm()).resolves.toBeUndefined()
+    expect(workers).toBe(2)
+  })
 })

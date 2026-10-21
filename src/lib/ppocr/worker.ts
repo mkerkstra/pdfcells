@@ -14,8 +14,10 @@ import type { OcrWord, Rgba } from './core'
 import { createPpocr, type Ppocr } from './engine'
 import { PPOCR_BROWSER_MODEL, type ModelFile } from './models'
 
-export type WorkerRequest = { id: number; image: Rgba }
+/** A page to read, or (warm) only load the models and build the sessions. */
+export type WorkerRequest = { id: number; image: Rgba } | { id: number; warm: true }
 export type WorkerResponse =
+  | { id: number; type: 'ready' }
   | { id: number; type: 'progress'; p: number }
   | { id: number; type: 'done'; words: OcrWord[] }
   | { id: number; type: 'error'; message: string }
@@ -53,11 +55,13 @@ function getService(): Promise<Ppocr> {
 }
 
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
-  const { id, image } = e.data
+  const req = e.data
+  const id = req.id
   const post = (m: WorkerResponse) => self.postMessage(m)
   try {
     const svc = await getService()
-    const { words } = await svc.recognize(image, p => post({ id, type: 'progress', p }))
+    if (!('image' in req)) return post({ id, type: 'ready' })
+    const { words } = await svc.recognize(req.image, p => post({ id, type: 'progress', p }))
     post({ id, type: 'done', words })
   } catch (err) {
     post({ id, type: 'error', message: err instanceof Error ? err.message : String(err) })
