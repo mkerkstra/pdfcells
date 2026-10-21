@@ -41,6 +41,7 @@ These exercise the deterministic checks in `src/lib/checks/` (`review()` / `revi
 |---|---|---|
 | `statement-dc.pdf` | Debit/credit/balance columns, account summary with opening, credits, debits, closing | "Balance ties"; "Footed" + "Opening and closing balances tie" on the summary |
 | `statement-dc-misread.pdf` | Same statement, one credit printed `402.86` instead of `397.86` (balances unchanged) | One `balance` issue on that credit cell, expected 397.86 |
+| `credit-card.pdf` | Card statement: summary with previous/new balance, payments, purchases, interest, minimum payment and credit limit; Date/Description/Amount with purchases positive, a payment and a refund negative, raw merchant descriptors (`SQ *`, `TST*`, `AMZN Mktp US*…`) | Read as a credit card: purchases money out, card summary ties, cleaned payees and categories |
 | `invoice-lines.pdf` | Qty × unit = amount, except "Desk lamp" printed `171.75` (3 × 27.25 = 81.75); subtotal adds the printed lines | One `arithmetic` issue on that amount, expected 81.75; subtotal + tax ties |
 | `invoice-tie.pdf` | Correct lines and subtotal, total printed 100.00 too high | One `tie` issue on the total, expected 1,502.20; "Line totals check" |
 | `report-fy.pdf` | Q1–Q4 + FY + Growth %, one FY printed `233,600` (sum 232,700) | One `crossfoot` issue on that FY, expected 232,700 |

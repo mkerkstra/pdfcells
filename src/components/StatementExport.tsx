@@ -1,9 +1,8 @@
 import { Download } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { formatNumber } from '@/lib/checks/grid'
-import type { PageTables } from '@/lib/checks/model'
-import { readStatement, type Statement } from '@/lib/statement'
+import type { Statement } from '@/lib/statement'
 import {
   CURRENCIES,
   toBankCsv,
@@ -15,6 +14,7 @@ import {
 } from '@/lib/statementExport'
 import { download } from '@/lib/xlsx'
 
+import type { TransactionsState } from './Transactions'
 import { Button, cn, FIELD, Tick } from './ui'
 
 export type StatementFormat = 'ofx' | 'qbo' | 'xero' | 'csv'
@@ -45,7 +45,10 @@ export function statementSummaryLine(s: Statement): string {
     `${n} ${n === 1 ? 'transaction' : 'transactions'}`,
     `${showDate(s.period.start, s.dateOrder)}–${showDate(s.period.end, s.dateOrder)}`,
   ]
-  if (s.closing !== undefined) parts.push(`closing balance ${formatNumber(s.closing, s.decimals)}`)
+  if (s.closing !== undefined)
+    parts.push(
+      `${s.creditCard ? 'new balance owed' : 'closing balance'} ${formatNumber(s.closing, s.decimals)}`,
+    )
   return parts.join(', ')
 }
 
@@ -62,6 +65,7 @@ function build(
     transactions: s.transactions,
     period: s.period,
     closing: s.closing,
+    creditCard: s.creditCard,
     account: opts.account,
     currency: opts.currency,
     now: new Date(),
@@ -72,15 +76,15 @@ function build(
 }
 
 export function StatementExport({
-  pages,
+  transactions,
   fileName,
   lead,
 }: {
-  pages: PageTables[]
+  transactions: TransactionsState
   fileName: string
   lead: ReactNode
 }) {
-  const statement = useMemo(() => readStatement(pages), [pages])
+  const { statement } = transactions
   const [format, setFormat] = useState<StatementFormat>('ofx')
   const [account, setAccount] = useState('000000')
   const [currency, setCurrency] = useState<Currency>('USD')
@@ -108,6 +112,7 @@ export function StatementExport({
     <div className='flex w-full flex-col gap-2'>
       <div className='flex flex-wrap items-center gap-x-4 gap-y-2'>
         {lead}
+        {transactions.controls}
         <select
           value={format}
           onChange={e => setFormat(e.target.value as StatementFormat)}

@@ -98,6 +98,7 @@ const ERROR_COPY: Record<string, string> = {
   checkout: 'Checkout couldn’t start. Try again in a moment.',
   too_large: 'This page image is too large to send. Read it with OCR instead.',
   internal: 'Something went wrong on our server. Try again in a moment.',
+  rate_limited: 'Too many AI requests in a minute. Wait a moment and try again.',
 }
 
 function errorCopy(status: number, code: string | undefined): string {
@@ -168,12 +169,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ amount_cents: amountCents }),
     }),
+  categorize: (req: CategorizeRequest, signal?: AbortSignal) =>
+    request<CategorizeResponse>(
+      '/api/categorize',
+      { method: 'POST', body: JSON.stringify(req), signal },
+      { byok: true },
+    ),
   extract: (req: ExtractRequest, signal?: AbortSignal) =>
     request<ExtractResponse>(
       '/api/extract',
       { method: 'POST', body: JSON.stringify(req), signal },
       { byok: true },
     ),
+}
+
+/** Payees only: never descriptions, amounts, dates or anything else from the page. */
+export interface CategorizeRequest {
+  tier: Tier
+  payees: string[]
+}
+
+export interface CategorizeResponse {
+  /** One per payee, in request order. */
+  categories: string[]
+  source: 'byok' | 'free' | 'credits'
+  charged_micros: number
+  balance_micros?: number
 }
 
 export function toApiTable(t: Table): ApiTable {

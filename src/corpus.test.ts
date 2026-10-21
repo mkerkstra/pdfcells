@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { getDocument, OPS, PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { describe, expect, it } from 'vitest'
 
+import { categorise } from './lib/categories'
 import { inferColumn } from './lib/cells'
 import { provenance } from './lib/checks/provenance'
 import { pageFacts } from './lib/pagefacts'
@@ -388,6 +389,56 @@ describe('bank statement export', () => {
         'Balance doesn’t tie on page 1, row 11: Credit should be 397.86 (balance goes from 2,948.91 to 3,346.77)',
       ],
     })
+  })
+})
+
+describe('credit card statement', () => {
+  it('credit-card.pdf: detected, purchases money out, summary ties, payees and categories', async () => {
+    const s = await statementOf('credit-card.pdf')
+    expect(s?.creditCard).toBe(true)
+    expect(s?.transactions).toHaveLength(12)
+    expect(s?.transactions.slice(0, 3).map(t => [t.amount, t.payee])).toEqual([
+      [-6.5, 'Blue Bottle Coffee'],
+      [-98.45, 'Amazon'],
+      [500, 'Payment Thank You'],
+    ])
+    expect([s?.opening, s?.closing]).toEqual([1200, 1407.7])
+    expect(s?.gate).toEqual({ ok: true, basis: 'summary', label: 'summary ties' })
+    expect(
+      categorise(s?.transactions ?? [], { rules: [] }).map(t => [t.payee, t.category]),
+    ).toEqual([
+      ['Blue Bottle Coffee', 'Meals and entertainment'],
+      ['Amazon', 'Shopping'],
+      ['Payment Thank You', 'Card payments'],
+      ['Shell Oil', 'Fuel and vehicle'],
+      ['Sweetgreen', 'Meals and entertainment'],
+      ['Netflix', 'Software and subscriptions'],
+      ['Uber', 'Travel'],
+      ['Whole Foods Mkt', 'Groceries'],
+      ['Amazon Refund', 'Refunds'],
+      ['Delta Air', 'Travel'],
+      ['Github', 'Software and subscriptions'],
+      ['Interest Charge On Purchases', 'Bank fees and interest'],
+    ])
+    if (!s || s.closing === undefined) throw new Error('no statement')
+    const ofx = toOfx({
+      ...s,
+      closing: s.closing,
+      account: '4821',
+      currency: 'USD',
+      now: new Date(Date.UTC(2026, 3, 1)),
+    })
+    expect(ofx).toContain('<CREDITCARDMSGSRSV1>')
+    expect(ofx).toContain('<CCACCTFROM>\r\n<ACCTID>4821\r\n</CCACCTFROM>')
+    expect(ofx).toContain('<BALAMT>-1407.70')
+    expect(ofx).toContain('<NAME>Blue Bottle Coffee\r\n<MEMO>SQ *BLUE BOTTLE COFFEE OAKLAND CA')
+  })
+
+  it('bank statements are not read as cards', async () => {
+    const files = ['statement.pdf', 'statement-dc.pdf', 'noisy-statement.pdf']
+    const cards = []
+    for (const f of files) cards.push([f, (await statementOf(f))?.creditCard])
+    expect(cards).toEqual(files.map(f => [f, false]))
   })
 })
 

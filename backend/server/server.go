@@ -153,6 +153,7 @@ func (s *Server) Router() http.Handler {
 		// Model calls get the function's full budget (extract bounds its own
 		// call at 280s); everything else should finish in seconds.
 		r.With(secure(295*time.Second), requireJSON, auth).Post("/extract", s.extract)
+		r.With(secure(130*time.Second), requireJSON, auth).Post("/categorize", s.categorize)
 		r.Group(func(r chi.Router) {
 			r.Use(secure(60 * time.Second))
 			r.Get("/health", s.health)

@@ -192,12 +192,98 @@ describe('CSV', () => {
     expect(toBankCsv(TXNS)).toBe(
       '﻿' +
         [
-          'Date,Description,Amount,Balance',
-          '2026-03-02,"Payment to Smith & Sons <Hardware> Ltd, Main St branch",-39.51,960.49',
-          '2026-03-03,Café payroll,82.50,1042.99',
-          `2026-03-14,"'=HYPERLINK(""x"")",-100.00,`,
+          'Date,Description,Amount,Balance,Payee,Category',
+          '2026-03-02,"Payment to Smith & Sons <Hardware> Ltd, Main St branch",-39.51,960.49,,',
+          '2026-03-03,Café payroll,82.50,1042.99,,',
+          `2026-03-14,"'=HYPERLINK(""x"")",-100.00,,,`,
           '',
         ].join('\r\n'),
     )
+  })
+})
+
+describe('payee and category', () => {
+  const [first] = TXNS
+  if (!first) throw new Error('no fixture')
+  const withPayee = [
+    {
+      ...first,
+      description: 'SQ *BLUE BOTTLE COFFEE OAKLAND CA',
+      payee: 'Blue Bottle Coffee',
+      category: 'Meals and entertainment',
+    },
+  ]
+
+  it('OFX NAME is the payee; MEMO keeps the description', () => {
+    const ofx = toOfx({ ...INPUT, transactions: withPayee })
+    expect(ofx).toContain('<NAME>Blue Bottle Coffee\r\n')
+    expect(ofx).toContain('<MEMO>SQ *BLUE BOTTLE COFFEE OAKLAND CA\r\n')
+  })
+
+  it('Xero Payee is the payee; Description keeps the text as printed', () => {
+    expect(toXeroCsv(withPayee).split('\r\n')[1]).toBe(
+      '02/03/2026,-39.51,Blue Bottle Coffee,SQ *BLUE BOTTLE COFFEE OAKLAND CA,,',
+    )
+  })
+
+  it('bank CSV carries Payee and Category, formula-guarded', () => {
+    const rows = toBankCsv(withPayee.map(t => ({ ...t, payee: '=cmd', category: '@x' }))).split(
+      '\r\n',
+    )
+    expect(rows[1]).toBe(`2026-03-02,SQ *BLUE BOTTLE COFFEE OAKLAND CA,-39.51,960.49,'=cmd,'@x`)
+  })
+})
+
+describe('credit-card OFX', () => {
+  const card: OfxInput = {
+    ...INPUT,
+    creditCard: true,
+    closing: 562,
+    transactions: [
+      { date: '2026-03-02', amount: -23, description: 'Interest charge', fitid: 'a' },
+      { date: '2026-03-05', amount: 350, description: 'Payment - thank you', fitid: 'b' },
+    ],
+  }
+
+  it('uses the credit-card message set and account aggregate (OFX 1.0 §11.4.2)', () => {
+    // Element paths and each element's direct children, from the closed-up XML.
+    const parents = new Map<string, string[]>()
+    const children = new Map<string, string[]>()
+    const stack: string[] = []
+    for (const m of ofxToXml(toOfx(card)).matchAll(/<(\/?)([A-Z0-9.]+)>/g)) {
+      const tag = m[2] ?? ''
+      if (m[1]) {
+        expect(stack.pop()).toBe(tag)
+        continue
+      }
+      const parent = stack.at(-1) ?? ''
+      parents.set(tag, [...stack])
+      children.set(parent, [...(children.get(parent) ?? []), tag])
+      stack.push(tag)
+    }
+    expect(stack).toEqual([])
+    expect(parents.get('CCSTMTRS')).toEqual(['OFX', 'CREDITCARDMSGSRSV1', 'CCSTMTTRNRS'])
+    expect(children.get('CCSTMTRS')).toEqual(['CURDEF', 'CCACCTFROM', 'BANKTRANLIST', 'LEDGERBAL'])
+    expect(children.get('CCACCTFROM')).toEqual(['ACCTID'])
+    for (const bank of ['BANKMSGSRSV1', 'STMTTRNRS', 'STMTRS', 'BANKACCTFROM', 'BANKID'])
+      expect(parents.has(bank)).toBe(false)
+  })
+
+  it('signs from the cardholder: purchase negative, payment positive, owed balance negative', () => {
+    const ofx = toOfx(card)
+    expect(ofx).toMatch(/<TRNTYPE>DEBIT\r\n<DTPOSTED>20260302\r\n<TRNAMT>-23.00/)
+    expect(ofx).toMatch(/<TRNTYPE>CREDIT\r\n<DTPOSTED>20260305\r\n<TRNAMT>350.00/)
+    expect(ofx).toContain('<LEDGERBAL>\r\n<BALAMT>-562.00\r\n')
+  })
+
+  it('QBO keeps the Intuit block with the card message set', () => {
+    const qbo = toQbo(card)
+    expect(qbo).toContain('<INTU.BID>3000')
+    expect(qbo).toContain('<CREDITCARDMSGSRSV1>')
+  })
+
+  it('a bank statement is unchanged', () => {
+    expect(toOfx({ ...card, creditCard: false })).toContain('<BANKMSGSRSV1>')
+    expect(toOfx({ ...card, creditCard: false })).toContain('<BALAMT>562.00')
   })
 })

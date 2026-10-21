@@ -7,6 +7,7 @@ import { engineLabel, originalTables } from '@/lib/xlsxAudit'
 import type { DocState } from '@/state/doc'
 
 import { StatementExport } from './StatementExport'
+import { useTransactions } from './Transactions'
 import { Button, cn, FIELD, Spinner } from './ui'
 
 const LAYOUTS: Record<SheetLayout, string> = {
@@ -22,6 +23,7 @@ export function ExportPanel({ doc }: { doc: DocState }) {
   const [joinPages, setJoinPages] = useState(true)
   const [summary, setSummary] = useState(false)
   const [audit, setAudit] = useState(true)
+  const [payeeColumns, setPayeeColumns] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const count = doc.pages
@@ -34,6 +36,7 @@ export function ExportPanel({ doc }: { doc: DocState }) {
         .map(p => ({ page: p.n, tables: p.tables })),
     [doc.pages],
   )
+  const transactions = useTransactions(statementPages)
 
   const run = async () => {
     setBusy(true)
@@ -63,6 +66,7 @@ export function ExportPanel({ doc }: { doc: DocState }) {
             summarySheets: summary,
             auditSheet: audit,
             source,
+            transactions: transactions.workbook(payeeColumns),
           }),
           `${base}.xlsx`,
         )
@@ -94,7 +98,7 @@ export function ExportPanel({ doc }: { doc: DocState }) {
   return (
     <div className='sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-paper/95 px-4 py-2.5 text-xs backdrop-blur sm:py-3 sm:text-sm'>
       {format === 'statement' ? (
-        <StatementExport pages={statementPages} fileName={doc.fileName} lead={fileType} />
+        <StatementExport transactions={transactions} fileName={doc.fileName} lead={fileType} />
       ) : (
         tableExport()
       )}
@@ -159,6 +163,22 @@ export function ExportPanel({ doc }: { doc: DocState }) {
           <input type='checkbox' checked={audit} onChange={e => setAudit(e.target.checked)} />
           Include audit sheet
         </label>
+        {format === 'xlsx' && transactions.statement && (
+          <>
+            {transactions.controls}
+            <label
+              className='flex items-center gap-1.5'
+              title='Adds a cleaned-up Payee and a Category to each transaction, and a By category sheet with the summary sheets'
+            >
+              <input
+                type='checkbox'
+                checked={payeeColumns}
+                onChange={e => setPayeeColumns(e.target.checked)}
+              />
+              Payee and category columns
+            </label>
+          </>
+        )}
         <div className='ml-auto flex items-center gap-3'>
           {error ? (
             <span className='text-bad'>{error}</span>

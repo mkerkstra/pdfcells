@@ -1,0 +1,45 @@
+{
+ "file": "credit-card.pdf",
+ "source": "digital",
+ "pages": [
+  {
+   "type": "statement",
+   "tables": [
+    {
+     "title": "Account summary",
+     "headerRows": 0,
+     "rows": [
+      ["Previous balance", "1,200.00"],
+      ["Payments and credits", "-519.99"],
+      ["Purchases", "+715.29"],
+      ["Fees charged", "0.00"],
+      ["Interest charged", "+12.40"],
+      ["New balance", "1,407.70"],
+      ["Minimum payment due", "35.00"],
+      ["Credit limit", "8,000.00"],
+      ["Available credit", "6,592.30"]
+     ]
+    },
+    {
+     "title": "Transactions",
+     "headerRows": 1,
+     "rows": [
+      ["Date", "Description", "Amount"],
+      ["03/02/2026", "SQ *BLUE BOTTLE COFFEE OAKLAND CA", "6.50"],
+      ["03/03/2026", "AMZN Mktp US*2K4L9X8Z1", "98.45"],
+      ["03/04/2026", "PAYMENT - THANK YOU", "-500.00"],
+      ["03/06/2026", "SHELL OIL 57444 HOUSTON TX", "41.20"],
+      ["03/09/2026", "TST* SWEETGREEN 0123 NEW YORK NY", "14.85"],
+      ["03/12/2026", "NETFLIX.COM 866-579-7172 CA", "15.49"],
+      ["03/15/2026", "UBER *TRIP HELP.UBER.COM CA", "23.10"],
+      ["03/18/2026", "WHOLE FOODS MKT #10234 AUSTIN TX", "82.40"],
+      ["03/21/2026", "AMAZON REFUND", "-19.99"],
+      ["03/24/2026", "DELTA AIR 0062345678901 ATLANTA GA", "412.30"],
+      ["03/27/2026", "GITHUB INC. SAN FRANCISCO CA", "21.00"],
+      ["03/31/2026", "INTEREST CHARGE ON PURCHASES", "12.40"]
+     ]
+    }
+   ]
+  }
+ ]
+}

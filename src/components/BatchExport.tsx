@@ -2,6 +2,7 @@ import { Download } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { combineStatements, combineTables, readTables, uniqueNames } from '@/lib/batch'
+import { categorise } from '@/lib/categories'
 import { baseName } from '@/lib/filetype'
 import { zip } from '@/lib/plaintext'
 import { readStatement, type Statement } from '@/lib/statement'
@@ -13,9 +14,11 @@ import {
   toXeroCsv,
   type Currency,
 } from '@/lib/statementExport'
+import { groupIsCard } from '@/lib/transactions'
 import { buildSheetsWorkbook, buildWorkbook, download } from '@/lib/xlsx'
 import { engineLabel, originalTables } from '@/lib/xlsxAudit'
 import type { BatchGroup, BatchItem } from '@/state/batch'
+import { useCategories } from '@/state/categoryStore'
 
 import type { Verdict } from './BatchView'
 import type { StatementFormat } from './StatementExport'
@@ -65,6 +68,7 @@ export function BatchExport({
   const [currency, setCurrency] = useState<Currency>('USD')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const categories = useCategories()
 
   const ready = useMemo(
     () => items.filter(it => verdicts.get(it.id) === 'ready'),
@@ -140,6 +144,7 @@ export function BatchExport({
               joinPages,
               auditSheet: true,
               source: d.source,
+              transactions: { columns: true, ...categories },
             })
             return new Uint8Array(await blob.arrayBuffer())
           }),
@@ -152,7 +157,9 @@ export function BatchExport({
         )
       } else {
         const built = sets.map(set => {
-          const c = combineStatements(set.statements)
+          const combined = combineStatements(set.statements)
+          const creditCard = groupIsCard(set.statements.map(x => x.statement))
+          const c = { ...combined, transactions: categorise(combined.transactions, categories) }
           const text =
             format === 'csv'
               ? toBankCsv(c.transactions)
@@ -165,6 +172,7 @@ export function BatchExport({
                     transactions: c.transactions,
                     period: c.period,
                     closing: c.closing ?? 0,
+                    creditCard,
                     account,
                     currency,
                     now: new Date(),

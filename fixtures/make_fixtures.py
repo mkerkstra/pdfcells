@@ -746,6 +746,80 @@ def _statement_dc(name: str, seed: int, month: int, last_day: int, opening: floa
     truth.write(name)
 
 
+def credit_card():
+    """Credit card statement: owed balance, summary with minimum payment and credit limit, merchant descriptors."""
+    name = "credit-card.pdf"
+    truth = Truth().page("statement")
+    c = canvas.Canvas(str(out / name), pagesize=letter, invariant=1)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(50, 740, "Northwind Rewards Visa Signature")
+    c.setFont("Helvetica", 9.5)
+    c.drawString(50, 724, "Statement period 03/01/2026 to 03/31/2026")
+    # Purchases are printed positive and raise what's owed; the payment is negative.
+    txns = [
+        ("03/02/2026", "SQ *BLUE BOTTLE COFFEE OAKLAND CA", 6.50),
+        ("03/03/2026", "AMZN Mktp US*2K4L9X8Z1", 98.45),
+        ("03/04/2026", "PAYMENT - THANK YOU", -500.00),
+        ("03/06/2026", "SHELL OIL 57444 HOUSTON TX", 41.20),
+        ("03/09/2026", "TST* SWEETGREEN 0123 NEW YORK NY", 14.85),
+        ("03/12/2026", "NETFLIX.COM 866-579-7172 CA", 15.49),
+        ("03/15/2026", "UBER *TRIP HELP.UBER.COM CA", 23.10),
+        ("03/18/2026", "WHOLE FOODS MKT #10234 AUSTIN TX", 82.40),
+        ("03/21/2026", "AMAZON REFUND", -19.99),
+        ("03/24/2026", "DELTA AIR 0062345678901 ATLANTA GA", 412.30),
+        ("03/27/2026", "GITHUB INC. SAN FRANCISCO CA", 21.00),
+        ("03/31/2026", "INTEREST CHARGE ON PURCHASES", 12.40),
+    ]
+    opening = 1200.00
+    payments = round(-sum(a for _, _, a in txns if a < 0), 2)
+    purchases = round(sum(a for _, d, a in txns if a > 0 and "INTEREST" not in d), 2)
+    interest = 12.40
+    closing = round(opening - payments + purchases + interest, 2)
+
+    y = 694
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, y, "Account summary")
+    t = truth.table("Account summary", header_rows=0)
+    c.setFont("Helvetica", 9.5)
+    for label, v in [
+        ("Previous balance", f"{opening:,.2f}"),
+        ("Payments and credits", f"-{payments:,.2f}"),
+        ("Purchases", f"+{purchases:,.2f}"),
+        ("Fees charged", "0.00"),
+        ("Interest charged", f"+{interest:,.2f}"),
+        ("New balance", f"{closing:,.2f}"),
+        ("Minimum payment due", "35.00"),
+        ("Credit limit", "8,000.00"),
+        ("Available credit", f"{8000 - closing:,.2f}"),
+    ]:
+        y -= 15
+        c.drawString(50, y, label)
+        c.drawRightString(300, y, v)
+        t.row([label, v])
+
+    y -= 40
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, y, "Transactions")
+    t = truth.table("Transactions")
+    y -= 20
+    xs = [50, 130, 500]
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(xs[0], y, "Date")
+    c.drawString(xs[1], y, "Description")
+    c.drawRightString(xs[2] + 60, y, "Amount")
+    t.row(["Date", "Description", "Amount"])
+    c.setFont("Helvetica", 9.5)
+    for date, desc, amt in txns:
+        y -= 15
+        shown = f"{amt:,.2f}"
+        c.drawString(xs[0], y, date)
+        c.drawString(xs[1], y, desc)
+        c.drawRightString(xs[2] + 60, y, shown)
+        t.row([date, desc, shown])
+    c.save()
+    truth.write(name)
+
+
 def batch_statements():
     """fixtures/batch/: five statements in one layout (one with a misread credit) and one invoice."""
     (out / "batch").mkdir(parents=True, exist_ok=True)
@@ -1388,6 +1462,7 @@ if __name__ == "__main__":
         "invoice_tie": invoice_tie, "report_fy": report_fy, "batch_statements": batch_statements,
         "multi_level_header": multi_level_header, "side_by_side_ruled": side_by_side_ruled, "borderless_wrapped": borderless_wrapped,
         "noisy_statement": noisy_statement, "annual_report_excerpt": annual_report_excerpt,
+        "credit_card": credit_card,
     }
     # Optional names after the output dir regenerate only those fixtures.
     for name in sys.argv[2:] or fixtures:

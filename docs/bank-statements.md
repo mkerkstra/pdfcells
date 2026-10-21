@@ -2,7 +2,7 @@
 
 PDFCells can turn a PDF bank statement into a file your accounting software imports: OFX, QuickBooks Web Connect (.qbo), a Xero statement CSV, or a plain bank CSV. In the export bar, pick **Bank statement (OFX, QBO, Xero CSV)** as the file type.
 
-The code is in `src/lib/statement.ts` (detection and the accuracy gate) and `src/lib/statementExport.ts` (the writers).
+The code is in `src/lib/statement.ts` (detection and the accuracy gate), `src/lib/statementExport.ts` (the writers), `src/lib/creditCard.ts` (card detection and the card summary), `src/lib/payee.ts` (payee cleanup) and `src/lib/categories.ts` (categories).
 
 ## What gets exported
 
@@ -12,9 +12,22 @@ Each row becomes one transaction:
 
 - **Date** as printed, read M/D or D/M the same way the rest of the app reads it (a day above 12 anywhere in the column decides).
 - **Amount**, signed so money in is positive and money out is negative. When there is a balance column, the sign comes from the running-balance check: an amount that raises the balance is money in. So `(39.51)`, `39.51-`, a value in a Debit or Withdrawals column, and `-39.51` all export as `-39.51`.
-- **Description**. Wrapped description lines are joined onto their transaction. A row with an amount but no date takes the date above it.
+- **Description**, as printed. Wrapped description lines are joined onto their transaction. A row with an amount but no date takes the date above it.
+- **Payee**, the description cleaned up (see [Payee cleanup](#payee-cleanup)).
+- **Category** (see [Categories](#categories)).
 - **Check number**, when the table has a Check or Cheque column.
 - **FITID**, an id importers use to skip transactions they already have. It is built from the date, the amount, the description and the transaction's place among identical transactions, so exporting the same statement twice gives the same ids, and two identical coffees on one day still get two.
+
+## Credit card statements
+
+On a credit card statement the balance is what you owe, so a purchase raises it. In credit card mode PDFCells flips the signs so every export reads from your side, like a card issuer's own OFX: a purchase, fee or interest charge is money out (negative), and a payment or refund is money in (positive).
+
+- **Detection.** A statement is read as a credit card when its tables or titles print at least two card-only terms: minimum payment, credit limit or credit line, available credit, payment due date, APR, cash advances, or a Purchases or New charges line. "New balance" alone isn't enough, because some bank statements print it. The export panel shows Bank account or Credit card, marked "(detected)", and you can switch it. The switch applies to the Excel export and to every statement format.
+- **Signs.** With a running balance, the balance check works the same as on a bank statement (the balance owed is the previous balance owed plus purchases minus payments), and each amount is signed the other way round. Without one, a single Amount column is read as purchases positive, as cards print them; Payments and Charges (or Purchases) columns read as money in and money out.
+- **Balances** stay as printed everywhere except OFX/QBO: the bank CSV's Balance and the panel's "new balance owed" show the amount owed.
+- **The gate without a balance column.** The card summary has to give a previous balance and a new balance, and the transactions have to move one to the other: previous balance − payments + charges = new balance. When the summary prints payments and credits, and charges (purchases, fees charged, interest charged, cash advances, balance transfers; several lines are added up), those must match the transactions too, and the summary itself has to tie. A dated row such as "Payment" or "Interest charged" in the transaction table is a transaction, never a summary line.
+- **Excel.** The Balance check formula doesn't change. It's built from the arithmetic that made the balance tie, so on a card it already reads "previous owed + purchases − payments − owed" and evaluates to 0 (`src/lib/creditCard.xlsx.test.ts`), in the same sort-safe SUMIFS-by-Line form. The amounts in the Excel Table stay as printed. What flips is the summary sheets: By month, By description and By category count payments as money in and purchases as money out.
+- **Batches.** Each statement is detected on its own. A group that mixes card and bank statements can't be exported as one file; split the group.
 
 The statement period is the one printed in a table title ("statement period 03/01/2026 to 03/31/2026") when there is one, otherwise the first and last transaction dates. The closing balance is the last printed balance, or the summary's closing balance.
 
@@ -37,6 +50,8 @@ The first transaction's amount is only checked when the statement prints an open
 
 OFX 1.02 SGML bank statement: `BANKMSGSRSV1` / `STMTTRNRS` / `STMTRS`, one `STMTTRN` per transaction (`TRNTYPE` CREDIT, DEBIT or CHECK, `DTPOSTED`, `TRNAMT`, `FITID`, `CHECKNUM`, `NAME`, `MEMO`), and `LEDGERBAL` with the closing balance as of the period end.
 
+A credit card statement uses OFX's credit card message set instead: `CREDITCARDMSGSRSV1` / `CCSTMTTRNRS` / `CCSTMTRS`, with `CCACCTFROM` holding only `ACCTID` (no `BANKID` or `ACCTTYPE`). Checked against the OFX specification. OFX 1.0 §11.4.2 (Credit Card Statement Download) and §11.3.2 define `CCSTMTRS` as `CURDEF`, `CCACCTFROM`, `BANKTRANLIST`, `LEDGERBAL`, with the same transactions as a bank statement, and say "transaction amounts are signed from the perspective of the customer. For example, a credit card payment is positive while a credit card purchase is negative." OFX 2.2 §11.4.3.2 keeps the same aggregate, and §3.2.9.1 signs balances by their effect on net worth ("a credit card balance is typically negative"). So `LEDGERBAL` `BALAMT` is the amount owed as a negative number (a printed new balance of 562.00 becomes `-562.00`), as in the spec's own example (§16.5).
+
 ```
 <STMTTRN>
 <TRNTYPE>DEBIT
@@ -48,7 +63,7 @@ OFX 1.02 SGML bank statement: `BANKMSGSRSV1` / `STMTTRNRS` / `STMTRS`, one `STMT
 </STMTTRN>
 ```
 
-- `NAME` is the first 32 characters of the description; `MEMO` has all of it. `&`, `<` and `>` are escaped.
+- `NAME` is the first 32 characters of the payee; `MEMO` has the whole description as printed. `&`, `<` and `>` are escaped.
 - The file is declared US-ASCII. Accented letters lose their accents (Café becomes Cafe), `€` becomes `EUR`, and other non-ASCII characters become `?`.
 - `BANKID` is the placeholder `000000000`. `ACCTID` is the account number you type (digits only, default `000000`). The account type is CHECKING.
 - Currency: USD, EUR, GBP, CAD or AUD.
@@ -75,7 +90,7 @@ The same OFX with the block QuickBooks looks for in the sign-on response:
 
 ### Xero CSV
 
-Xero's statement CSV columns: `Date, Amount, Payee, Description, Reference, Cheque Number`. Amounts are plain signed numbers (`-39.51`, no currency symbol or thousands separator). Payee and Description both get the description, because Xero's bank rules match on Payee.
+Xero's statement CSV columns: `Date, Amount, Payee, Description, Reference, Cheque Number`. Amounts are plain signed numbers (`-39.51`, no currency symbol or thousands separator). Payee gets the cleaned payee, because Xero's bank rules match on it, and "Blue Bottle Coffee" matches every visit where "SQ *BLUE BOTTLE COFFEE OAKLAND CA 03/02" doesn't. Description keeps the text as printed. Xero's CSV has no category column (its Account code needs your chart of accounts), so categories stay out of it.
 
 Dates are DD/MM/YYYY by default, as in Xero's template. Xero reads dates in your organisation's region format, so a US organisation should switch the panel to MM/DD/YYYY. Xero maps the columns when you import, so check the mapping screen once and save it.
 
@@ -83,13 +98,41 @@ In Xero: Accounting > Bank accounts, pick the account, then Manage account > Imp
 
 ### Bank CSV
 
-`Date, Description, Amount, Balance`, ISO dates (2026-03-02), plain signed numbers, balance blank on rows without one. Good for spreadsheets and for software that maps CSV columns itself.
+`Date, Description, Amount, Balance, Payee, Category`, ISO dates (2026-03-02), plain signed numbers, balance blank on rows without one (on a card, the balance is the amount owed, as printed). Payee and Category come after the original four columns, so a mapping saved for the old file still lines up. Good for spreadsheets and for software that maps CSV columns itself.
 
 Both CSVs start with a UTF-8 byte order mark and guard every text cell against spreadsheet formula injection (a description starting with `=`, `+`, `-` or `@` gets a leading `'`).
 
+## Payee cleanup
+
+`src/lib/payee.ts` turns a description into the payee an accountant would type. It runs in the browser and gives the same answer every time:
+
+- Bank wording in front goes: POS PURCHASE, DEBIT CARD PURCHASE, PURCHASE AUTHORIZED ON, CHECKCARD, CARD PAYMENT TO, ACH DEBIT, DIRECT DEBIT, CONTACTLESS and similar.
+- Payment processor prefixes go, leaving the merchant: `SQ *`, `TST*`, `PAYPAL *`, `PP*`, `SP *`, `GOOGLE *`, `DD *` and others. A merchant's own suffix after `*` goes too (`AMZN Mktp US*2K4L9X8Z1` is Amazon, `UBER *TRIP` is Uber), unless it names a product (`UBER *EATS` is Uber Eats).
+- Card digits (`XXXX1234`, `CARD 4821`, `ENDING IN 1234`), labelled references (REF, AUTH, CONF#, TRACE, ID), dates, times, phone numbers, store numbers (`#10234`, `STORE 112`, `T-1234`), long digit runs and reference-like codes go.
+- On upper-case card descriptors, a trailing city and US state, Canadian province, Australian state or country code goes (`OAKLAND CA`, `SAN FRANCISCO CA`, `LONDON GB`), along with web addresses (`NETFLIX.COM`) and company suffixes (INC, LLC, LTD).
+- Upper-case text is title-cased, keeping known initialisms (ATM, IKEA, CVS, AT&T). Text written in mixed case keeps its casing. A short list of brand spellings is normalised (AMZN → Amazon, WM SUPERCENTER → Walmart).
+- The payee comes from the transaction's first line, because wrapped lines carry references and places.
+- When cleanup would leave nothing, the payee is the description.
+
+The Description is always kept as printed next to it.
+
+## Categories
+
+Every transaction gets a category, worked out in the browser in this order:
+
+1. **Your rules.** "Payee contains X → category Y", added in the Categories panel. Matching ignores case and checks the payee and the description. The newest rule wins. Rules are saved in this browser (IndexedDB, next to batch recipes) and apply to every statement and every batch export. Any category name works.
+2. **AI answers**, only if you asked for them (below).
+3. **Built-in keywords**, a fixed list matched on the payee and description. It's sign-aware, so a refund or a payment received isn't an expense. The categories: Income, Refunds, Transfers, Card payments, Groceries, Meals and entertainment, Travel, Fuel and vehicle, Utilities, Phone and internet, Rent and property, Software and subscriptions, Office supplies, Shopping, Insurance, Professional fees, Wages and payroll, Bank fees and interest, Taxes, Health, Cash.
+4. Otherwise **Uncategorised**.
+
+**AI categorising** is only offered when AI is set up (signed in, or your own Anthropic key), and only runs when you click it. It sends the cleaned payee names your rules and the keywords couldn't place, and nothing else: no descriptions (so no card digits or references), amounts, dates, balances, titles or other tables. Payees come from the statement table, which only holds words from inside your marked areas. The request goes through the same server path as AI page reads (`/api/categorize`, `backend/server/categorize.go`): the per-minute rate limit, one free AI page on Fast or a credit hold settled to the exact cost on Accurate and Max, and hosted caps of 200 payees of up to 80 characters. Payee names are treated as untrusted text: they're escaped into their own block, the model is told they are data, and the answer can only be a category from the list above. Answers are remembered in this browser by payee, so the same payee isn't asked about twice.
+
+**In Excel**, with "Payee and category columns" on, the statement table gets Payee and Category columns at its right-hand end, before Line and Balance check, so no existing column moves. With summary sheets on, a **By category** sheet adds up each category with live COUNTIFS/SUMIFS formulas over the Table, so re-categorising a line updates it. The bank CSV has Payee and Category columns; Xero and OFX get the payee only.
+
 ## Known limitations
 
-- **Credit card statements** where the balance is the amount owed come out with inverted signs (a purchase raises the balance, so it reads as money in). Export as bank CSV and flip the sign, or wait for a credit-card mode.
+- Card statements that print dates without a year (03/02) aren't read as statements yet.
+- Detection reads table cells and titles, not page prose. A card statement whose card terms are only in running text needs the switch.
 - One account per export. A statement with several accounts exports the longest transaction table.
-- OFX/QBO always declare a checking account.
+- OFX/QBO declare a checking account for bank statements and a credit card account for card statements. Savings and money market accounts aren't distinguished.
 - A row labelled "Total…" or "Sum…" is treated as a total line and skipped only when it has no date; a dated row such as a "Total Wine" purchase is a normal transaction.

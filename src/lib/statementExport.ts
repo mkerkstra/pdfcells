@@ -1,5 +1,9 @@
 // Statement writers: OFX 1.02 (SGML), QBO (OFX with Intuit's bank id), Xero's
-// precoded CSV and a plain bank CSV. All pure: same input, same bytes.
+// precoded CSV and a plain bank CSV. All pure: same input, same bytes. A card
+// statement goes in OFX's credit-card message set (CREDITCARDMSGSRSV1 /
+// CCSTMTTRNRS / CCSTMTRS / CCACCTFROM, OFX 1.0 §11.4.2 and 2.2 §11.4.3), with
+// the amount owed as a negative ledger balance (OFX 2.2 §3.2.9.1: balances
+// are signed by their effect on net worth).
 
 import { safeCell, toCsv } from './plaintext'
 import type { Transaction } from './statement'
@@ -8,9 +12,13 @@ export const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'] as const
 export type Currency = (typeof CURRENCIES)[number]
 
 export interface OfxInput {
-  transactions: Pick<Transaction, 'date' | 'amount' | 'description' | 'fitid' | 'checkNumber'>[]
+  transactions: (Pick<Transaction, 'date' | 'amount' | 'description' | 'fitid' | 'checkNumber'> &
+    Partial<Pick<Transaction, 'payee'>>)[]
   period: { start: string; end: string }
+  /** As printed: the bank balance, or on a card the amount owed. */
   closing: number
+  /** Write a credit-card statement (CCSTMTRS) instead of a bank one. */
+  creditCard?: boolean
   /** ACCTID: digits only. */
   account: string
   currency: Currency
@@ -99,6 +107,7 @@ const HEADER = [
 ]
 
 function build(x: OfxInput, qbo: boolean): string {
+  const card = x.creditCard === true
   const name = (d: string) => sgml(ascii(d).slice(0, 32).trimEnd() || 'Transaction')
   const txns = x.transactions.flatMap(t => {
     const check = t.checkNumber ? ascii(t.checkNumber).slice(0, 12) : ''
@@ -111,7 +120,7 @@ function build(x: OfxInput, qbo: boolean): string {
       `<TRNAMT>${money(t.amount)}`,
       `<FITID>${sgml(t.fitid)}`,
       ...(check ? [`<CHECKNUM>${sgml(check)}`] : []),
-      `<NAME>${name(t.description)}`,
+      `<NAME>${name(t.payee || t.description)}`,
       ...(memo ? [`<MEMO>${memo}`] : []),
       '</STMTTRN>',
     ]
@@ -130,32 +139,36 @@ function build(x: OfxInput, qbo: boolean): string {
     ...(qbo ? ['<FI>', '<ORG>PDFCells', `<FID>${INTU_BID}`, '</FI>', `<INTU.BID>${INTU_BID}`] : []),
     '</SONRS>',
     '</SIGNONMSGSRSV1>',
-    '<BANKMSGSRSV1>',
-    '<STMTTRNRS>',
+    card ? '<CREDITCARDMSGSRSV1>' : '<BANKMSGSRSV1>',
+    card ? '<CCSTMTTRNRS>' : '<STMTTRNRS>',
     '<TRNUID>1',
     '<STATUS>',
     '<CODE>0',
     '<SEVERITY>INFO',
     '</STATUS>',
-    '<STMTRS>',
+    card ? '<CCSTMTRS>' : '<STMTRS>',
     `<CURDEF>${x.currency}`,
-    '<BANKACCTFROM>',
-    `<BANKID>${BANK_ID}`,
-    `<ACCTID>${accountId(x.account)}`,
-    '<ACCTTYPE>CHECKING',
-    '</BANKACCTFROM>',
+    ...(card
+      ? ['<CCACCTFROM>', `<ACCTID>${accountId(x.account)}`, '</CCACCTFROM>']
+      : [
+          '<BANKACCTFROM>',
+          `<BANKID>${BANK_ID}`,
+          `<ACCTID>${accountId(x.account)}`,
+          '<ACCTTYPE>CHECKING',
+          '</BANKACCTFROM>',
+        ]),
     '<BANKTRANLIST>',
     `<DTSTART>${ofxDate(x.period.start)}`,
     `<DTEND>${ofxDate(x.period.end)}`,
     ...txns,
     '</BANKTRANLIST>',
     '<LEDGERBAL>',
-    `<BALAMT>${money(x.closing)}`,
+    `<BALAMT>${money(card ? -x.closing : x.closing)}`,
     `<DTASOF>${ofxDate(x.period.end)}`,
     '</LEDGERBAL>',
-    '</STMTRS>',
-    '</STMTTRNRS>',
-    '</BANKMSGSRSV1>',
+    card ? '</CCSTMTRS>' : '</STMTRS>',
+    card ? '</CCSTMTTRNRS>' : '</STMTTRNRS>',
+    card ? '</CREDITCARDMSGSRSV1>' : '</BANKMSGSRSV1>',
     '</OFX>',
   ]
   return lines.join('\r\n') + '\r\n'
@@ -173,7 +186,8 @@ export function toQbo(x: OfxInput): string {
 
 export type XeroDateOrder = 'dmy' | 'mdy'
 
-type CsvTxn = Pick<Transaction, 'date' | 'amount' | 'description' | 'checkNumber' | 'balance'>
+type CsvTxn = Pick<Transaction, 'date' | 'amount' | 'description' | 'checkNumber' | 'balance'> &
+  Partial<Pick<Transaction, 'payee' | 'category'>>
 
 function xeroDate(iso: string, order: XeroDateOrder): string {
   const [y, m, d] = iso.split('-')
@@ -182,7 +196,8 @@ function xeroDate(iso: string, order: XeroDateOrder): string {
 
 /**
  * Xero's precoded statement CSV (the columns of Xero's CSV template). Payee
- * is what Xero's bank rules match on, so it gets the description too.
+ * is what Xero's bank rules match on, so it gets the cleaned payee; the
+ * Description keeps the text as printed.
  */
 export function toXeroCsv(txns: CsvTxn[], order: XeroDateOrder = 'dmy'): string {
   const rows = [
@@ -190,7 +205,7 @@ export function toXeroCsv(txns: CsvTxn[], order: XeroDateOrder = 'dmy'): string 
     ...txns.map(t => [
       xeroDate(t.date, order),
       money(t.amount),
-      safeCell(t.description),
+      safeCell(t.payee || t.description),
       safeCell(t.description),
       '',
       safeCell(t.checkNumber ?? ''),
@@ -199,15 +214,20 @@ export function toXeroCsv(txns: CsvTxn[], order: XeroDateOrder = 'dmy'): string 
   return toCsv(rows)
 }
 
-/** Date, Description, Amount, Balance with ISO dates and plain numbers. */
+/**
+ * Date, Description, Amount, Balance, Payee, Category with ISO dates and
+ * plain numbers. Balance is as printed (on a card, the amount owed).
+ */
 export function toBankCsv(txns: CsvTxn[]): string {
   const rows = [
-    ['Date', 'Description', 'Amount', 'Balance'],
+    ['Date', 'Description', 'Amount', 'Balance', 'Payee', 'Category'],
     ...txns.map(t => [
       t.date,
       safeCell(t.description),
       money(t.amount),
       t.balance === undefined ? '' : money(t.balance),
+      safeCell(t.payee ?? ''),
+      safeCell(t.category ?? ''),
     ]),
   ]
   return toCsv(rows)

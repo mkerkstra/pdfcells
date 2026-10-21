@@ -21,7 +21,8 @@ function openDb(): Promise<IDBDatabase> {
   })
 }
 
-async function run<T>(
+/** One request against the shared object store (also used by src/state/categoryStore.ts). */
+export async function run<T>(
   mode: IDBTransactionMode,
   fn: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {

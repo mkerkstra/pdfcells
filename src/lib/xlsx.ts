@@ -2,6 +2,7 @@ import writeXlsxFile, { type Cell, type Row } from 'write-excel-file/browser'
 
 import { columnNumberFormat, typeCell } from './cells'
 import { appendTable, continues } from './tableOps'
+import { prepareTransactions, type TransactionOptions } from './transactions'
 import type { Table } from './types'
 import { columnTypes, footings, totalRows } from './validate'
 import {
@@ -14,6 +15,7 @@ import {
   type EditSummary,
   type SourceInfo,
 } from './xlsxAudit'
+import { categorySheets } from './xlsxCategory'
 import {
   balanceFormulas,
   differenceFormat,
@@ -50,6 +52,8 @@ export interface ExportOptions {
   auditSheet?: boolean
   /** Source file, engines and first reads, for the audit. */
   source?: SourceInfo
+  /** Payee and Category columns on the statement table, and card or bank (src/lib/transactions.ts). */
+  transactions?: TransactionOptions
 }
 
 export interface PageTables {
@@ -427,7 +431,10 @@ function addBlock(s: PartsSheet, b: Block) {
     s.parts.activeCell = { row: b.table.headerRow + 1, col: 0 }
 }
 
-export async function buildWorkbook(pages: PageTables[], opts: ExportOptions): Promise<Blob> {
+export async function buildWorkbook(input: PageTables[], o: ExportOptions): Promise<Blob> {
+  const tx = prepareTransactions(input, o.transactions, o.source?.originals)
+  const pages = tx.pages
+  const opts = o.source ? { ...o, source: { ...o.source, originals: tx.originals } } : o
   const used = new Set<string>()
   const names = new Set<string>()
   const sheets: PartsSheet[] = []
@@ -492,7 +499,10 @@ export async function buildWorkbook(pages: PageTables[], opts: ExportOptions): P
     const sources: SummarySource[] = placed.flatMap(x =>
       x.block.table ? [{ table: x.table, spec: x.block.table, rows: x.block.dataRows }] : [],
     )
-    for (const sum of summarySheets(sources))
+    for (const sum of [
+      ...summarySheets(sources, tx.creditCard),
+      ...categorySheets(sources, tx.creditCard),
+    ])
       sheets.push({
         data: sum.data,
         sheet: sheetName(sum.name, used),

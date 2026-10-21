@@ -14,10 +14,10 @@ import type { Table } from './types'
 import { columnTypes } from './validate'
 import type { TableSpec } from './xlsxParts'
 
-const MONEY = '#,##0.00'
+export const MONEY = '#,##0.00'
 const TOP = 25
 /** Excel rejects SUMIFS criteria longer than 255 characters. */
-const MAX_CRITERION = 250
+export const MAX_CRITERION = 250
 
 export interface SummarySource {
   table: Table
@@ -81,9 +81,13 @@ interface StatementCols {
   movers: Mover[]
 }
 
-/** Date, description and amount columns when the table reads as a statement. */
-export function statementColumns(t: Table): StatementCols | null {
-  const s = readStatement([{ page: 1, tables: [{ ...t, include: true }] }])
+/**
+ * Date, description and amount columns when the table reads as a statement.
+ * On a card the movers are flipped, so money in is payments and money out
+ * is purchases.
+ */
+export function statementColumns(t: Table, creditCard = false): StatementCols | null {
+  const s = readStatement([{ page: 1, tables: [{ ...t, include: true }] }], { creditCard })
   if (!s || s.transactions.length < 3) return null
   const types = columnTypes(t)
   const { date, description, movers } = s.columns
@@ -94,14 +98,23 @@ export function statementColumns(t: Table): StatementCols | null {
 
 const bold = (value: string): Cell => ({ value, fontWeight: 'bold' })
 const note = (value: string): Cell => ({ value, textColor: '#666666' })
-const f = (formula: string, format = MONEY): Cell => ({ value: formula, type: 'Formula', format })
+export const f = (formula: string, format = MONEY): Cell => ({
+  value: formula,
+  type: 'Formula',
+  format,
+})
 
-function header(title: string, explain: string, cols: string[]): Row[] {
+export function header(title: string, explain: string, cols: string[]): Row[] {
   return [[{ value: title, fontWeight: 'bold', fontSize: 13 }], [note(explain)], [], cols.map(bold)]
 }
 
 /** A Total row summing each given column (index → number format) of the rows above. */
-function totals(first: number, last: number, cols: Record<number, string>, width: number): Row {
+export function totals(
+  first: number,
+  last: number,
+  cols: Record<number, string>,
+  width: number,
+): Row {
   const row: Row = Array.from({ length: width }, () => null)
   row[0] = bold('Total')
   for (const [k, format] of Object.entries(cols)) {
@@ -262,11 +275,11 @@ function byItem(src: SummarySource): SummarySheet | null {
 }
 
 /** Summary sheets for every table that reads confidently as a statement or invoice. */
-export function summarySheets(sources: SummarySource[]): SummarySheet[] {
+export function summarySheets(sources: SummarySource[], creditCard = false): SummarySheet[] {
   const out: SummarySheet[] = []
   for (const src of sources) {
     if (src.rows.length < 3) continue
-    const cols = statementColumns(src.table)
+    const cols = statementColumns(src.table, creditCard)
     if (cols) {
       const month = byMonth(src, cols)
       const desc = byDescription(src, cols)

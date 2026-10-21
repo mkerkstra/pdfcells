@@ -135,3 +135,35 @@ describe('financial-report.pdf workbook', () => {
     }
   })
 })
+
+describe('transactions in the workbook', () => {
+  const tx = { transactions: { columns: true, rules: [] } }
+
+  it('credit-card.pdf: Payee and Category columns, By category sheet, card money in/out', async () => {
+    const files = await workbook('credit-card.pdf', tx)
+    const tables = [...files.entries()].filter(([k]) => k.startsWith('xl/tables/'))
+    const txTable = tables.find(([, xml]) => xml.includes('name="Payee"'))?.[1] ?? ''
+    expect(txTable).toMatch(
+      /name="Amount"\/>\s*<tableColumn id="\d+" name="Payee"\/>\s*<tableColumn id="\d+" name="Category"\/>/,
+    )
+    const book = files.get('xl/workbook.xml') ?? ''
+    expect(book).toContain('name="By category"')
+    expect(book).toContain('name="By month"')
+    const all = [...files.values()].join('\n')
+    // On a card, money in is the negative amounts (payments and refunds).
+    expect(all).toMatch(/<f>-SUMIFS\([^<]*\[Amount\],[^<]*\[Amount\],"&lt;0"/)
+    expect(all).toContain('COUNTIFS(')
+    expect(all).not.toContain('Columns or rows were changed')
+  })
+
+  it('statement.pdf: the balance check and Line column are unchanged by the added columns', async () => {
+    const plain = await workbook('statement.pdf')
+    const widened = await workbook('statement.pdf', tx)
+    const f = (m: Map<string, string>) => formulas(m.get('xl/worksheets/sheet1.xml') ?? '')
+    expect(f(widened)).toEqual(f(plain))
+    const t1 = widened.get('xl/tables/table1.xml') ?? ''
+    expect(t1).toMatch(
+      /name="Payee"\/>\s*<tableColumn id="\d+" name="Category"\/>\s*<tableColumn id="\d+" name="Line"\/>/,
+    )
+  })
+})

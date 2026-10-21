@@ -10,10 +10,10 @@ import { textLayerEngine } from './engines/textLayer'
 import { breakdown, runEngine, selectPages } from './runner'
 import { loadCorpus } from './truth'
 
-/** Measured 2026-10-20 on 32 digital pages (31 truth tables), minus 0.005 for ratios. */
+/** Measured 2026-10-20 on 32 digital pages (31 truth tables), minus 0.005 for ratios. credit-card.pdf added 1 page and 2 tables, both matched exactly. */
 const FLOOR = {
-  matched: 29,
-  maxExtracted: 42,
+  matched: 31,
+  maxExtracted: 44,
   maxJunkCells: 225,
   cellExact: 0.9749 - 0.005,
   numericAcc: 0.9756 - 0.005,
@@ -24,8 +24,8 @@ describe('text-layer engine on the digital corpus', () => {
   it('does not regress below the baseline', async () => {
     const run = await runEngine(textLayerEngine(), selectPages(loadCorpus(), { only: 'digital' }))
     const o = breakdown(run.pages).overall
-    expect(o.pages).toBe(32)
-    expect(o.truthTables).toBe(31)
+    expect(o.pages).toBe(33)
+    expect(o.truthTables).toBe(33)
     expect(o.matched).toBeGreaterThanOrEqual(FLOOR.matched)
     expect(o.predTables).toBeLessThanOrEqual(FLOOR.maxExtracted)
     expect(o.junkCells).toBeLessThanOrEqual(FLOOR.maxJunkCells)
