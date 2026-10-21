@@ -183,3 +183,28 @@ describe('rereads with marked areas', () => {
     expect(areaProblems({ ...recipe, regions: [] }, pages)).toEqual([])
   })
 })
+
+describe('rereads with an area for one page', () => {
+  it('reads only the pages the area covers', () => {
+    const recipe = {
+      source: 'jan.pdf',
+      tables: [],
+      engines: {},
+      regions: [
+        {
+          kind: 'only' as const,
+          box: { x0: 0, y0: 0, x1: 1, y1: 1 },
+          pages: 'this' as const,
+          page: 1,
+          units: 'relative' as const,
+        },
+      ],
+    }
+    const pages = [
+      page(1, 'digital', 'text', 'text'),
+      page(2, 'digital', 'skip'),
+      page(3, 'digital', 'text', 'text'),
+    ]
+    expect(rereads(recipe, pages).map(p => p.n)).toEqual([1])
+  })
+})

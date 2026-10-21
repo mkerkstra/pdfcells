@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { recordRegions, regionsForPage, resizeRegions, type UserRegion } from './areas'
+import { carryOver, recordRegions, regionsForPage, resizeRegions, type UserRegion } from './areas'
 import { applyRecipe, buildRecipe, recipeSummary } from './recipe'
 import type { Table } from './types'
 
@@ -168,5 +168,55 @@ describe('recipes with a preset and areas', () => {
     const prose = { ...summary('p'), include: false, hiddenReason: 'Looks like text.' }
     const res = applyRecipe(r, [{ page: 1, tables: [txns('c'), prose] }])
     expect(res.problems).toEqual([])
+  })
+})
+
+describe('carryOver', () => {
+  it('keeps the person’s cells, name and Include on the same table read again', () => {
+    const bbox = { x0: 50, y0: 50, x1: 500, y1: 300 }
+    const edited = {
+      ...t('old', bbox, [['a', '9']]),
+      title: 'Renamed',
+      include: false,
+      includeSet: true,
+    }
+    const [same] = carryOver([edited], [t('new', bbox, [['a', '1']])])
+    expect(same).toMatchObject({ id: 'new', rows: [['a', '9']], title: 'Renamed', include: false })
+    // A different size keeps the name and Include, not the cells.
+    const [grown] = carryOver(
+      [edited],
+      [
+        t('new', bbox, [
+          ['a', '1'],
+          ['b', '2'],
+        ]),
+      ],
+    )
+    expect(grown).toMatchObject({
+      rows: [
+        ['a', '1'],
+        ['b', '2'],
+      ],
+      title: 'Renamed',
+      include: false,
+    })
+  })
+
+  it('also keeps all of a resized sibling’s area', () => {
+    const tables = [
+      t('a', { x0: 50, y0: 50, x1: 500, y1: 300 }),
+      t('b', { x0: 50, y0: 400, x1: 300, y1: 450 }),
+    ]
+    const shared: UserRegion = {
+      kind: 'only',
+      box: { x0: 0, y0: 0, x1: 600, y1: 500 },
+      pages: 'this',
+      page: 1,
+    }
+    const out = resizeRegions([shared], tables, 'a', { x0: 50, y0: 50, x1: 500, y1: 200 }, 1)
+    expect(out.map(r => r.kind === 'only' && r.box)).toEqual([
+      { x0: 48, y0: 398, x1: 302, y1: 452 },
+      { x0: 50, y0: 50, x1: 500, y1: 200 },
+    ])
   })
 })

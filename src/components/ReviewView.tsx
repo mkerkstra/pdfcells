@@ -14,7 +14,7 @@ import {
 import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react'
 
 import { formatUsd } from '@/lib/api'
-import { covers, resizeRegions, type UserRegion } from '@/lib/areas'
+import { carryOver, covers, resizeRegions, type UserRegion } from '@/lib/areas'
 import type { DocSource } from '@/lib/document'
 import { applyPreset, isHidden, PRESET_REASON } from '@/lib/preset'
 import { anchorsFromSelection, type ProposedAnchors } from '@/lib/region'
@@ -73,7 +73,7 @@ export function ReviewView({
   const reread = instantEngine(page)
     ? ''
     : account.aiPossible && (page.run?.engine === 'ai' || (!page.run && page.engine === 'ai'))
-      ? `This page is read again with AI (${TIER_LABEL[account.tier]}), sending only this area.`
+      ? 'To use it, read this page again with AI. Only the area is sent.'
       : 'This page is read again with OCR.'
   const readOcr = () => void onRun([{ ...page, engine: 'ocr' }])
   const readAi = () => void onRun([{ ...page, engine: 'ai' }])
@@ -265,18 +265,22 @@ export function ReviewView({
                 activeId={activeTable}
                 onPick={setActiveTable}
                 regions={page.regions}
-                areas={{
-                  marking,
-                  onMarking: setMarking,
-                  propose: areas.propose,
-                  note: reread,
-                  onChoose: c => void areas.choose(c),
-                  resizable: areas.words !== null && areas.words.length > 0 && !busy,
-                  onResize: (id, box, final) => {
-                    const next = areas.resize(id, box, final)
-                    if (next) setActiveTable(next)
-                  },
-                }}
+                areas={
+                  busy
+                    ? undefined
+                    : {
+                        marking,
+                        onMarking: setMarking,
+                        propose: areas.propose,
+                        note: reread,
+                        onChoose: c => void areas.choose(c),
+                        resizable: areas.words !== null && areas.words.length > 0 && !busy,
+                        onResize: (id, box, final) => {
+                          const next = areas.resize(id, box, final)
+                          if (next) setActiveTable(next)
+                        },
+                      }
+                }
               />
               {marking && (
                 <p className='mt-2 text-xs text-muted' aria-live='polite'>
@@ -374,6 +378,8 @@ function PageStatus({ page }: { page: PageState }) {
   return <span className='font-normal text-warn'>Not read yet</span>
 }
 
+const AI_AGAIN = 'Read this page again with AI to use the marked areas. Only the areas are sent.'
+
 /** What the hidden tables on a page have in common, in a few words. */
 function hiddenWhy(tables: Table[]): string {
   const one = tables.length === 1
@@ -461,6 +467,7 @@ function useAreas(
   const [loaded, setLoaded] = useState<{ page: PageState; words: Word[] } | null>(null)
   const [preview, setPreview] = useState<{ n: number; tables: Table[] } | null>(null)
   const [working, setWorking] = useState(false)
+  const busy = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const n = page?.n ?? 0
   const engine = page?.run?.engine
@@ -492,38 +499,36 @@ function useAreas(
     const r =
       instantEngine(p) === 'ocr' ? ocrTables(p, words, regions) : textTables(p, words, regions)
     // A table kept in its own area loses the title line above it: keep the name it had.
-    const tables = r.tables.map(t => {
-      if (t.title || !t.bbox) return t
-      const bbox = t.bbox
-      const was = p.tables.find(o => o.title && o.bbox && covers(o.bbox, bbox, 0.9))
-      return was ? { ...t, title: was.title } : t
-    })
-    return { ...r, tables }
+    return { ...r, tables: carryOver(p.tables, r.tables) }
   }
 
   /** Read pages again with new areas: at once where the words are at hand, else this page is read again. */
   const apply = async (changes: { p: PageState; regions: UserRegion[] }[]) => {
-    if (!page) return
+    if (!page || busy.current) return
+    busy.current = true
     setWorking(true)
     try {
       const done: Extract<Action, { type: 'regions' }>['pages'] = []
       let again: PageState | null = null
       for (const { p, regions } of changes) {
         const r = await readArea(source, p, regions)
-        if (r) done.push({ index: p.n - 1, regions, ...r })
+        if (r) done.push({ index: p.n - 1, regions, ...r, tables: carryOver(p.tables, r.tables) })
         else {
           done.push({ index: p.n - 1, regions })
           // Only the page on screen is read again; the others use the area when they're next read.
           if (p.n === page.n && p.triage && p.triage.kind !== 'blank') again = { ...p, regions }
         }
       }
-      dispatch({ type: 'regions', pages: done })
-      if (again) {
-        const e = again.run?.engine ?? again.engine
-        // AI only when it can be used; otherwise OCR, which is free and local.
-        await onRun([{ ...again, engine: e === 'ai' && aiPossible ? 'ai' : 'ocr' }])
-      }
+      // OCR is free and local, so it reads the area at once. AI sends the
+      // page, so it waits for the person to press Read again with AI.
+      const viaAi = !!again && (again.run?.engine ?? again.engine) === 'ai' && aiPossible
+      dispatch({
+        type: 'regions',
+        pages: done.map(d => (viaAi && d.index === page.n - 1 ? { ...d, notes: [AI_AGAIN] } : d)),
+      })
+      if (again && !viaAi) await onRun([{ ...again, engine: 'ocr' }])
     } finally {
+      busy.current = false
       setWorking(false)
     }
   }

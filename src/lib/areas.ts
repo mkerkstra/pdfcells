@@ -72,17 +72,48 @@ export function resizeRegions(
 ): UserRegion[] {
   const target = tables.find(t => t.id === tableId)
   const old = target?.bbox
-  const onlies = regions.filter((r): r is BoxRegion & UserRegion => r.kind === 'only')
   const kept = regions.filter(r => !(r.kind === 'only' && old && covers(r.box, old)))
-  const siblings: UserRegion[] =
-    onlies.length > 0 || regions.some(r => r.kind === 'between')
-      ? []
-      : tables.flatMap(t =>
-          t.id !== tableId && t.bbox
-            ? [{ kind: 'only', box: pad(t.bbox), pages: 'this', page }]
-            : [],
-        )
+  const keptOnly = kept.filter((r): r is BoxRegion & UserRegion => r.kind === 'only')
+  // Every other table keeps its words, unless an area that stays already holds it.
+  const siblings: UserRegion[] = tables.flatMap(t =>
+    t.id !== tableId && t.bbox && !keptOnly.some(r => t.bbox && covers(r.box, t.bbox))
+      ? [{ kind: 'only' as const, box: pad(t.bbox), pages: 'this' as const, page }]
+      : [],
+  )
   return [...kept, ...siblings, { kind: 'only', box: normalBox(box), pages: 'this', page }]
+}
+
+/**
+ * Tables read again after an area changed, with what the person did to the
+ * same table before: its name, their Include choice, and (when it came out
+ * the same size) its cells and edit history.
+ */
+export function carryOver(before: Table[], after: Table[]): Table[] {
+  return after.map(t => {
+    const box = t.bbox
+    if (!box) return t
+    const was = before.find(o => o.bbox && covers(o.bbox, box, 0.9) && covers(box, o.bbox, 0.9))
+    if (!was) {
+      const named = before.find(o => o.title && o.bbox && covers(o.bbox, box, 0.9))
+      return named && !t.title ? { ...t, title: named.title } : t
+    }
+    const width = (x: Table) => x.rows[0]?.length ?? 0
+    const same = was.rows.length === t.rows.length && width(was) === width(t)
+    return {
+      ...t,
+      ...(same
+        ? {
+            rows: was.rows,
+            headerRows: was.headerRows,
+            ...(was.origin ? { origin: was.origin } : {}),
+            ...(was.edits ? { edits: was.edits } : {}),
+          }
+        : {}),
+      title: was.title || t.title,
+      notes: was.notes,
+      ...(was.includeSet ? { include: was.include, includeSet: true, hiddenReason: '' } : {}),
+    }
+  })
 }
 
 const round = (b: { x0: number; y0: number; x1: number; y1: number }) =>

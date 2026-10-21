@@ -152,12 +152,11 @@ function unionBox(boxes: Box[]): Box | null {
 /** The part of a rendered page to read: every area the page is limited to, or null for all of it. */
 function readBox(regions: UserRegion[], words: Word[] | null, n: number): Box | null {
   if (!regions.some(r => r.kind !== 'ignore')) return null
-  if (words) {
-    // With a text layer, text markers resolve to the lines they cover.
-    const kept = applyRegions(words, regions, n).words
-    if (kept.length) return unionBox(kept)
-  }
-  return unionBox(regions.flatMap(r => (r.kind === 'only' ? [r.box] : [])))
+  const boxes = regions.flatMap(r => (r.kind === 'only' ? [r.box] : []))
+  // With a text layer, text markers resolve to the lines they cover; an area
+  // with no text in it (a picture of a table) still counts.
+  const kept = words ? applyRegions(words, regions, n).words : []
+  return unionBox([...kept, ...boxes])
 }
 
 /** A copy of part of a canvas, with ignored areas painted white. */

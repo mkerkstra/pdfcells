@@ -222,6 +222,11 @@ export function PageImage({
       edgeDrag.current = null
       const k = perPixel()
       const box = moveEdge(ed.start, ed.edge, (e.clientX - ed.x) * k, (e.clientY - ed.y) * k)
+      // A click on a handle that didn't move it changes nothing.
+      if (Math.hypot(e.clientX - ed.x, e.clientY - ed.y) < 1) {
+        setResizing(null)
+        return
+      }
       setResizing({ id: ed.id, box })
       areas.onResize(ed.id, box, true)
       return
@@ -324,8 +329,14 @@ export function PageImage({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
+        const ed = edgeDrag.current
         press.current = null
         edgeDrag.current = null
+        if (ed) {
+          // Back to the outline as it was, and no preview left behind.
+          setResizing(null)
+          areas?.onResize(ed.id, ed.start, false)
+        }
       }}
       onClickCapture={e => {
         // The click that ends a drag isn't a click on whatever is under it.

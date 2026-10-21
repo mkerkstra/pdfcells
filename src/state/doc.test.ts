@@ -102,6 +102,20 @@ describe('regions action', () => {
     expect(s1.pages[0]).toMatchObject({ engine: 'text', status: 'done', run: { engine: 'text' } })
   })
 
+  it('a read that started before the areas changed keeps the new areas and says so', () => {
+    const s0 = doc([page(1, [], { regions: [area] })])
+    const s1 = reducer(s0, {
+      type: 'result',
+      index: 0,
+      tables: [txns],
+      warnings: [],
+      run: { engine: 'ocr' },
+      regions: [],
+    })
+    expect(s1.pages[0]?.regions).toEqual([area])
+    expect(s1.pages[0]?.areaNotes?.[0]).toMatch(/changed while this page was being read/)
+  })
+
   it('result keeps the areas the page was read with', () => {
     const s0 = doc([page(1, [])])
     const s1 = reducer(s0, {

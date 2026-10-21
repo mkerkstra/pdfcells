@@ -6,6 +6,7 @@
 import { readTables } from '@/lib/batch'
 import type { Evidence } from '@/lib/fingerprint'
 import { applyRecipe, type Recipe } from '@/lib/recipe'
+import { regionApplies } from '@/lib/region'
 import type { PageTriage } from '@/lib/triage'
 
 import {
@@ -123,10 +124,11 @@ function mapItem(s: BatchState, id: string, fn: (it: BatchItem) => BatchItem): B
 
 /** Why a recipe's marked areas didn't reach part of a document, in plain words. */
 export function areaProblems(recipe: Recipe, pages: PageState[]): string[] {
-  if (!recipe.regions?.length) return []
+  const areas = recipe.regions ?? []
+  if (!areas.length) return []
   return pages.flatMap(p => [
     ...(p.areaNotes ?? []),
-    ...(p.run?.engine === 'ai'
+    ...(p.run?.engine === 'ai' && areas.some(r => regionApplies(r, p.n))
       ? [
           `Page ${p.n} was read with AI, so the areas marked on ${recipe.source} weren’t used there. Read it again to use them.`,
         ]

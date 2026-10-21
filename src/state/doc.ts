@@ -207,21 +207,29 @@ export function reducer(s: DocState, a: Action): DocState {
         ...s,
         pages: patch(s, a.index, { status: a.status, progress: a.progress, error: a.error }),
       }
-    case 'result':
+    case 'result': {
+      const pg = s.pages[a.index]
+      // Areas changed while the page was being read: keep the new ones and say so.
+      const stale = !!pg?.regions && a.regions !== undefined && pg.regions !== a.regions
       return commit(
         s,
         patch(s, a.index, {
           tables: applyPreset(a.tables, s.preset),
           warnings: a.warnings,
           run: a.run,
-          ...(a.regions ? { regions: a.regions } : {}),
-          areaNotes: a.notes ?? [],
+          ...(a.regions && !stale ? { regions: a.regions } : {}),
+          areaNotes: stale
+            ? [
+                'The marked areas changed while this page was being read. Read it again to use them.',
+              ]
+            : (a.notes ?? []),
           ocrWords: a.ocrWords,
           status: 'done',
           error: undefined,
           progress: undefined,
         }),
       )
+    }
     case 'table': {
       const page = s.pages[a.index]
       if (!page) return s

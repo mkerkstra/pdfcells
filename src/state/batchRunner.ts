@@ -19,6 +19,7 @@ import type { PageSize } from '@/lib/noise'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import type { Recipe, ReadKind } from '@/lib/recipe'
+import { regionApplies } from '@/lib/region'
 import { readStatement } from '@/lib/statement'
 import { triage as classify, type PageTriage } from '@/lib/triage'
 import type { Engine, Tier, Word } from '@/lib/types'
@@ -344,11 +345,13 @@ export function rereads(recipe: Recipe, pages: PageState[]): PageState[] {
     let engine: Engine | 'skip' | undefined = p.run?.engine
     if (p.run && want && want !== 'skip' && want !== p.run.engine && (want !== 'text' || digital))
       engine = want
-    // A PDF text page with no table found may have one inside an area.
-    if (!p.run && areas.length && digital) engine = 'text'
-    const withAreas = areas.length > 0 && engine !== undefined && engine !== 'ai'
-    if (engine === undefined || (engine === p.run?.engine && !withAreas)) return []
     const size = { width: p.triage.width, height: p.triage.height }
-    return [{ ...p, engine, ...(withAreas ? { regions: regionsForPage(areas, size) } : {}) }]
+    const here = regionsForPage(areas, size)
+    const applies = here.some(r => regionApplies(r, p.n))
+    // A PDF text page with no table found may have one inside an area that covers it.
+    if (!p.run && applies && digital && want !== 'skip') engine = 'text'
+    const withAreas = applies && engine !== undefined && engine !== 'ai'
+    if (engine === undefined || (engine === p.run?.engine && !withAreas)) return []
+    return [{ ...p, engine, ...(withAreas ? { regions: here } : {}) }]
   })
 }
