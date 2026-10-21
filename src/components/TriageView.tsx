@@ -3,6 +3,7 @@ import type { Dispatch } from 'react'
 
 import { formatUsd, freePagesLeft } from '@/lib/api'
 import type { DocSource } from '@/lib/document'
+import { isHidden, PRESETS, type Preset } from '@/lib/preset'
 import type { PageKind, PageTriage } from '@/lib/triage'
 import type { Engine } from '@/lib/types'
 import { useAccount } from '@/state/account'
@@ -83,7 +84,8 @@ export function TriageView({
   const aiPages = pending.filter(p => p.engine === 'ai')
   const ocrPages = pending.filter(p => p.engine === 'ocr')
   const est = useAiEstimate(aiPages.length)
-  const tables = doc.pages.reduce((n, p) => n + p.tables.length, 0)
+  const counts = tableCounts(doc.pages)
+  const tables = counts.included
   const needsAuth = aiPages.length > 0 && !account.aiReady
 
   const start = () => {
@@ -119,8 +121,8 @@ export function TriageView({
                     ? 'It’s an image, so it’s read with OCR or AI.'
                     : 'They’re images, so they’re read with OCR or AI.'
                   : tables === 0
-                    ? 'No tables found in the PDF text.'
-                    : `Found ${tables} ${tables === 1 ? 'table' : 'tables'} in the PDF text.`}
+                    ? `No tables found in the PDF text${counts.hidden ? ` (${hiddenNote(counts.hidden)})` : ''}.`
+                    : `Tables found on ${counts.pages} of ${plural(doc.pages.length, 'page')}: ${plural(tables, 'table')}${counts.hidden ? ` (${hiddenNote(counts.hidden)})` : ''}.`}
               </>
             ) : (
               <span className='inline-flex items-center gap-2'>
@@ -134,6 +136,12 @@ export function TriageView({
           <RotateCcw className='size-3.5' /> Open a different file
         </Button>
       </div>
+
+      <PresetPicker
+        value={doc.preset}
+        onChange={preset => dispatch({ type: 'preset', preset })}
+        className='mt-5'
+      />
 
       <div className='mt-6 overflow-hidden rounded-[10px] border border-rule bg-card'>
         <table className='w-full border-collapse text-sm'>
@@ -178,6 +186,9 @@ export function TriageView({
               </td>
               <td className='hidden py-3 pr-3 text-right align-top font-semibold sm:table-cell'>
                 <span className='double-rule px-1'>{tables}</span>
+                {counts.hidden > 0 && (
+                  <div className='text-xs font-normal text-muted'>+{counts.hidden} hidden</div>
+                )}
               </td>
               <td className='hidden py-3 pr-3 align-top sm:table-cell'>
                 <div className='font-semibold'>{costLine}</div>
@@ -215,8 +226,8 @@ export function TriageView({
             <Button
               variant='outline'
               onClick={onContinue}
-              disabled={!done || tables === 0}
-              title={tables === 0 ? 'No tables to review until a page is read' : undefined}
+              disabled={!done || counts.all === 0}
+              title={counts.all === 0 ? 'No tables to review until a page is read' : undefined}
             >
               Review without reading
             </Button>
@@ -224,7 +235,7 @@ export function TriageView({
           <Button
             variant='primary'
             onClick={pending.length ? start : onContinue}
-            disabled={!done || (pending.length === 0 && tables === 0)}
+            disabled={!done || (pending.length === 0 && counts.all === 0)}
           >
             {pending.length
               ? `Read ${pending.length} ${pending.length === 1 ? 'page' : 'pages'} and review`
@@ -233,6 +244,72 @@ export function TriageView({
         </div>
       </div>
     </main>
+  )
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+const hiddenNote = (n: number) => `+${n} hidden`
+
+/** Included and hidden tables across a document, and how many pages have an included one. */
+export function tableCounts(pages: PageState[]) {
+  let included = 0
+  let hidden = 0
+  let withTables = 0
+  for (const p of pages) {
+    const inc = p.tables.filter(t => t.include).length
+    included += inc
+    hidden += p.tables.filter(isHidden).length
+    if (inc) withTables++
+  }
+  return {
+    included,
+    hidden,
+    pages: withTables,
+    all: pages.reduce((n, p) => n + p.tables.length, 0),
+  }
+}
+
+/** "What do you want from this file?": Everything, Transactions or Line items. */
+export function PresetPicker({
+  value,
+  onChange,
+  className,
+}: {
+  value: Preset
+  onChange: (p: Preset) => void
+  className?: string
+}) {
+  return (
+    <fieldset className={cn('flex flex-wrap items-center gap-x-3 gap-y-2', className)}>
+      <legend className='float-left mr-1 text-sm font-semibold'>
+        What do you want from this file?
+      </legend>
+      <div className='flex flex-wrap gap-1 rounded-md border border-rule bg-card p-0.5'>
+        {PRESETS.map(p => (
+          <label
+            key={p.id}
+            title={p.hint}
+            className={cn(
+              'cursor-pointer rounded-[5px] px-2.5 py-1 text-sm focus-within:ring-2 focus-within:ring-accent/50',
+              value === p.id
+                ? 'bg-accent-soft font-semibold text-accent'
+                : 'text-ink hover:bg-paper',
+            )}
+          >
+            <input
+              type='radio'
+              name='preset'
+              value={p.id}
+              checked={value === p.id}
+              onChange={() => onChange(p.id)}
+              className='sr-only'
+            />
+            {p.label}
+          </label>
+        ))}
+      </div>
+      <span className='text-xs text-muted'>{PRESETS.find(p => p.id === value)?.hint}</span>
+    </fieldset>
   )
 }
 
@@ -248,6 +325,7 @@ function PageRow({
   onEngine: (e: Engine | 'skip') => void
 }) {
   const t = page.triage
+  const hidden = page.tables.filter(isHidden).length
   const engines: (Engine | 'skip')[] =
     t?.kind === 'digital' ? ['text', 'ocr', 'ai', 'skip'] : ['ocr', 'ai', 'skip']
   return (
@@ -267,7 +345,11 @@ function PageRow({
         {t ? (
           <>
             <Badge tone={KIND_TONE[t.kind]}>{kindLabel(t)}</Badge>
-            <p className='mt-1.5 max-w-prose text-muted'>{t.reason}</p>
+            <p className='mt-1.5 max-w-prose text-muted'>
+              {page.autoSkip
+                ? 'None of its tables are what you asked for, so it’s skipped.'
+                : t.reason}
+            </p>
           </>
         ) : page.status === 'error' ? (
           <p className='text-bad'>This page couldn’t be checked: {page.error}</p>
@@ -282,7 +364,10 @@ function PageRow({
           </div>
         )}
       </td>
-      <td className='hidden py-3 pr-3 text-right sm:table-cell'>{page.tables.length || ''}</td>
+      <td className='hidden py-3 pr-3 text-right sm:table-cell'>
+        {page.tables.filter(x => x.include).length || ''}
+        {hidden > 0 && <div className='text-xs text-muted'>+{hidden} hidden</div>}
+      </td>
       <td className='hidden py-3 pr-3 sm:table-cell'>
         {t && (
           <ReadWith page={page} engines={engines} aiPossible={aiPossible} onEngine={onEngine} />
