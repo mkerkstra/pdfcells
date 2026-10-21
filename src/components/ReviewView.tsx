@@ -2,22 +2,29 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Eraser,
   Redo2,
   RotateCcw,
   ScanText,
   Sparkles,
+  SquareDashed,
   TriangleAlert,
   Undo2,
 } from 'lucide-react'
-import { useState, type Dispatch, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react'
 
 import { formatUsd } from '@/lib/api'
+import { covers, resizeRegions, type UserRegion } from '@/lib/areas'
 import type { DocSource } from '@/lib/document'
+import { applyPreset, isHidden, PRESET_REASON } from '@/lib/preset'
+import { anchorsFromSelection, type ProposedAnchors } from '@/lib/region'
+import type { Box, Table, Word } from '@/lib/types'
 import { useAccount } from '@/state/account'
 import type { Action, DocState, PageState } from '@/state/doc'
+import { instantEngine, ocrTables, pageWords, readArea, textTables } from '@/state/runner'
 
 import { ExportPanel } from './ExportPanel'
-import { PageImage } from './PageImage'
+import { PageImage, type AreaChoice } from './PageImage'
 import { TableEditor } from './TableEditor'
 import { TIER_LABEL, TierPicker } from './TierPicker'
 import { ENGINE_LABEL, kindLabel } from './TriageView'
@@ -48,12 +55,27 @@ export function ReviewView({
   const account = useAccount()
   const page = doc.pages[doc.selected]
   const [activeTable, setActiveTable] = useState<string | null>(null)
+  const [showHidden, setShowHidden] = useState(false)
+  const [marking, setMarking] = useState(false)
+  const areas = useAreas(doc, dispatch, source, onRun, page)
   if (!page) return null
-  const busy = page.status === 'running' || page.status === 'queued'
+  const busy = page.status === 'running' || page.status === 'queued' || areas.working
   const select = (i: number) => {
     dispatch({ type: 'select', index: i })
     setActiveTable(null)
+    setShowHidden(false)
+    setMarking(false)
   }
+  const tables = areas.preview ?? page.tables
+  const hidden = tables.filter(isHidden)
+  const shown = tables.filter(t => !isHidden(t))
+  const outlined = showHidden ? page.tables : page.tables.filter(t => !isHidden(t))
+  const notes = [...page.warnings, ...(page.areaNotes ?? [])]
+  const reread = instantEngine(page)
+    ? ''
+    : page.run?.engine === 'ai' || (!page.run && page.engine === 'ai')
+      ? `This page is read again with AI (${TIER_LABEL[account.tier]}), sending only this area.`
+      : 'This page is read again with OCR.'
   const readOcr = () => void onRun([{ ...page, engine: 'ocr' }])
   const readAi = () => void onRun([{ ...page, engine: 'ai' }])
   const aiHint = account.aiReady
@@ -156,6 +178,28 @@ export function ReviewView({
                 {account.aiPossible && <TierPicker />}
                 <span className='mx-1 hidden h-5 w-px bg-line sm:block' aria-hidden />
                 <Button
+                  size='sm'
+                  variant={marking ? 'primary' : 'outline'}
+                  disabled={busy}
+                  aria-pressed={marking}
+                  onClick={() => setMarking(m => !m)}
+                  title='Mark an area of the page to read as a table, or to ignore. You can also drag on the page.'
+                >
+                  <SquareDashed className='size-3.5' /> Mark area
+                </Button>
+                {(page.regions?.length ?? 0) > 0 && (
+                  <Button
+                    size='icon'
+                    variant='ghost'
+                    disabled={busy}
+                    onClick={() => void areas.clear()}
+                    title='Clear the marked areas on this page'
+                    aria-label='Clear the marked areas on this page'
+                  >
+                    <Eraser className='size-4' />
+                  </Button>
+                )}
+                <Button
                   size='icon'
                   variant='ghost'
                   disabled={!doc.past.length}
@@ -201,9 +245,9 @@ export function ReviewView({
             )}
           </div>
 
-          {page.warnings.length > 0 && (
+          {notes.length > 0 && (
             <ul className='space-y-1 rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-xs'>
-              {page.warnings.map(w => (
+              {notes.map(w => (
                 <li key={w} className='flex gap-2'>
                   <TriangleAlert className='mt-0.5 size-3.5 shrink-0 text-warn' aria-hidden />
                   {w}
@@ -217,13 +261,48 @@ export function ReviewView({
               <PageImage
                 source={source}
                 n={page.n}
-                tables={page.tables}
+                tables={outlined}
                 activeId={activeTable}
                 onPick={setActiveTable}
+                regions={page.regions}
+                areas={{
+                  marking,
+                  onMarking: setMarking,
+                  propose: areas.propose,
+                  note: reread,
+                  onChoose: c => void areas.choose(c),
+                  resizable: areas.words !== null && areas.words.length > 0 && !busy,
+                  onResize: (id, box, final) => {
+                    const next = areas.resize(id, box, final)
+                    if (next) setActiveTable(next)
+                  },
+                }}
               />
+              {marking && (
+                <p className='mt-2 text-xs text-muted' aria-live='polite'>
+                  Drag on the page to mark an area, or move the box with the arrow keys and press
+                  Enter.
+                </p>
+              )}
             </div>
             <div className='min-w-0 space-y-4'>
-              {page.tables.length === 0 && !busy && (
+              {hidden.length > 0 && (
+                <HiddenTables
+                  tables={hidden}
+                  all={tables}
+                  open={showHidden}
+                  onToggle={() => setShowHidden(o => !o)}
+                  onInclude={t =>
+                    dispatch({
+                      type: 'table',
+                      index: doc.selected,
+                      tableId: t.id,
+                      table: { ...t, include: true },
+                    })
+                  }
+                />
+              )}
+              {shown.length === 0 && !busy && (
                 <div className='rounded-lg border border-dashed border-rule px-6 py-8 text-center'>
                   <p className='font-semibold'>
                     {page.engine === 'skip' && !page.run
@@ -249,11 +328,11 @@ export function ReviewView({
                   </div>
                 </div>
               )}
-              {page.tables.map((t, i) => (
+              {shown.map(t => (
                 <TableEditor
                   key={t.id}
                   table={t}
-                  index={i}
+                  index={tables.indexOf(t)}
                   active={t.id === activeTable}
                   aiAvailable={account.aiReady}
                   aiBusy={busy}
@@ -283,19 +362,218 @@ function PageStatus({ page }: { page: PageState }) {
   if (page.status === 'running' || page.status === 'queued')
     return <Spinner className='text-muted' />
   if (page.status === 'error') return <Badge tone='bad'>Error</Badge>
-  if (page.engine === 'skip' && !page.run && !page.tables.length)
+  if (page.engine === 'skip' && !page.run && !page.tables.some(t => t.include))
     return <span className='font-normal text-muted'>Skipped</span>
+  const n = page.tables.filter(t => !isHidden(t)).length
   if (page.status === 'done' || page.run)
     return (
       <span className='font-normal text-muted'>
-        {page.tables.length === 0
-          ? 'No tables'
-          : page.tables.length === 1
-            ? '1 table'
-            : `${page.tables.length} tables`}
+        {n === 0 ? 'No tables' : n === 1 ? '1 table' : `${n} tables`}
       </span>
     )
   return <span className='font-normal text-warn'>Not read yet</span>
+}
+
+/** What the hidden tables on a page have in common, in a few words. */
+function hiddenWhy(tables: Table[]): string {
+  const one = tables.length === 1
+  const reasons = new Set(tables.map(t => t.hiddenReason ?? ''))
+  if (reasons.size === 1 && reasons.has(PRESET_REASON.transactions))
+    return one ? 'it isn’t a transaction table' : 'they aren’t transaction tables'
+  if (reasons.size === 1 && reasons.has(PRESET_REASON.lineItems))
+    return one ? 'it isn’t a table of line items' : 'they aren’t tables of line items'
+  if (![...reasons].some(r => r === PRESET_REASON.transactions || r === PRESET_REASON.lineItems))
+    return one ? 'it looks like text, not data' : 'they look like text, not data'
+  return one ? 'it isn’t what you asked for' : 'they aren’t what you asked for'
+}
+
+/** A table's name for the hidden list: its title, else its first cells. */
+function label(t: Table, i: number): string {
+  const head = t.title.trim() || (t.rows[0] ?? []).filter(Boolean).slice(0, 3).join(', ')
+  return head ? `Table ${i + 1}: ${head}` : `Table ${i + 1}`
+}
+
+/** One quiet line for the tables the app left out on this page; they open with their reasons. */
+function HiddenTables({
+  tables,
+  all,
+  open,
+  onToggle,
+  onInclude,
+}: {
+  tables: Table[]
+  all: Table[]
+  open: boolean
+  onToggle: () => void
+  onInclude: (t: Table) => void
+}) {
+  const n = tables.length
+  return (
+    <div className='rounded-lg border border-line bg-card/60 px-3 py-2 text-xs text-muted'>
+      <p>
+        {n} {n === 1 ? 'block' : 'blocks'} hidden — {hiddenWhy(tables)}.{' '}
+        <button
+          type='button'
+          onClick={onToggle}
+          aria-expanded={open}
+          className='font-semibold text-accent hover:underline'
+        >
+          {open ? 'Hide' : 'Show'}
+        </button>
+      </p>
+      {open && (
+        <ul className='mt-2 space-y-1.5'>
+          {tables.map(t => {
+            const width = t.rows[0]?.length ?? 0
+            return (
+              <li
+                key={t.id}
+                className='flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-1.5'
+              >
+                <span className='min-w-0 flex-1'>
+                  <span className='block truncate text-ink'>{label(t, all.indexOf(t))}</span>
+                  <span>
+                    {t.hiddenReason} {t.rows.length} {t.rows.length === 1 ? 'row' : 'rows'}, {width}{' '}
+                    {width === 1 ? 'column' : 'columns'}.
+                  </span>
+                </span>
+                <Button size='sm' onClick={() => onInclude(t)}>
+                  Include
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Areas on the current page: proposing text markers, reading or ignoring an area, resizing a table. */
+function useAreas(
+  doc: DocState,
+  dispatch: Dispatch<Action>,
+  source: DocSource,
+  onRun: RunFn,
+  page: PageState | undefined,
+) {
+  const [loaded, setLoaded] = useState<{ page: PageState; words: Word[] } | null>(null)
+  const [preview, setPreview] = useState<{ n: number; tables: Table[] } | null>(null)
+  const [working, setWorking] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const n = page?.n ?? 0
+  const engine = page?.run?.engine
+  // Words change only with the page, how it was read, or new OCR words.
+  const same = (a: PageState | undefined, b: PageState | undefined) =>
+    !!a && !!b && a.n === b.n && a.run?.engine === b.run?.engine && a.ocrWords === b.ocrWords
+  const words = loaded && same(loaded.page, page) ? loaded.words : null
+  const wanted = words === null ? page : undefined
+
+  useEffect(() => {
+    if (!wanted) return
+    let live = true
+    void pageWords(source, wanted)
+      .catch(() => [])
+      .then(w => live && setLoaded({ page: wanted, words: w }))
+    return () => {
+      live = false
+    }
+  }, [source, wanted])
+
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), [])
+
+  const propose = (box: Box): ProposedAnchors =>
+    words?.length && engine !== 'ocr' ? anchorsFromSelection(words, box) : {}
+
+  /** The page's tables with these areas, from words at hand (no read). */
+  const local = (p: PageState, regions: UserRegion[]) => {
+    if (!words?.length) return null
+    return instantEngine(p) === 'ocr' ? ocrTables(p, words, regions) : textTables(p, words, regions)
+  }
+
+  /** Read pages again with new areas: at once where the words are at hand, else this page is read again. */
+  const apply = async (changes: { p: PageState; regions: UserRegion[] }[]) => {
+    if (!page) return
+    setWorking(true)
+    try {
+      const done: Extract<Action, { type: 'regions' }>['pages'] = []
+      let again: PageState | null = null
+      for (const { p, regions } of changes) {
+        const r = await readArea(source, p, regions)
+        if (r) done.push({ index: p.n - 1, regions, ...r })
+        else {
+          done.push({ index: p.n - 1, regions })
+          // Only the page on screen is read again; the others use the area when they're next read.
+          if (p.n === page.n && p.triage && p.triage.kind !== 'blank') again = { ...p, regions }
+        }
+      }
+      dispatch({ type: 'regions', pages: done })
+      if (again) {
+        const e = again.run?.engine ?? again.engine
+        await onRun([{ ...again, engine: e === 'skip' || e === 'text' ? 'ocr' : e }])
+      }
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const choose = async (c: AreaChoice) => {
+    if (!page) return
+    const where = c.every ? ('all' as const) : ('this' as const)
+    const region: UserRegion = c.markers?.start
+      ? {
+          kind: 'between',
+          start: c.markers.start,
+          ...(c.markers.end ? { end: c.markers.end } : {}),
+          pages: where,
+          page: page.n,
+        }
+      : {
+          kind: c.action === 'read' ? 'only' : 'ignore',
+          box: c.box,
+          pages: where,
+          page: page.n,
+          ...(c.proposed?.start ? { markers: c.proposed } : {}),
+        }
+    const targets = c.every ? doc.pages.filter(p => p.triage) : [page]
+    await apply(targets.map(p => ({ p, regions: [...(p.regions ?? []), region] })))
+  }
+
+  const clear = async () => {
+    if (page) await apply([{ p: page, regions: [] }])
+  }
+
+  /** Live while dragging (debounced), one undo step on release. Returns the table now under the box. */
+  const resize = (id: string, box: Box, final: boolean): string | null => {
+    if (!page) return null
+    const regions = resizeRegions(page.regions ?? [], page.tables, id, box, page.n)
+    if (timer.current) clearTimeout(timer.current)
+    if (!final) {
+      timer.current = setTimeout(() => {
+        const r = local(page, regions)
+        if (r) setPreview({ n: page.n, tables: applyPreset(r.tables, doc.preset) })
+      }, 120)
+      return null
+    }
+    setPreview(null)
+    const r = local(page, regions)
+    if (!r) return null
+    dispatch({
+      type: 'regions',
+      pages: [{ index: page.n - 1, regions, ...r }],
+    })
+    return r.tables.find(t => t.bbox && covers(box, t.bbox, 0.5))?.id ?? null
+  }
+
+  return {
+    words,
+    working,
+    preview: preview && preview.n === n ? preview.tables : null,
+    propose,
+    choose,
+    clear,
+    resize,
+  }
 }
 
 function RunNote({ page }: { page: PageState }) {
