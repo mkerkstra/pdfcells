@@ -1,7 +1,7 @@
 // Words → useful tables: noise removal, user regions, layout, then scoring.
 //
 //   cleanWords (running headers/footers, page numbers)
-//   → applyRegions (only / ignore / between)
+//   ∩ applyRegions (only / ignore / between, resolved on the uncleaned page)
 //   → buildTables (unchanged layout engine)
 //   → classifyBlock + scoreTable → include / hiddenReason
 //
@@ -80,9 +80,16 @@ export function extractPage(words: Word[], opts: ExtractOptions = {}): PageExtra
     removed = noise.removed
   }
 
-  const { words: kept, diagnostics } = opts.regions?.length
-    ? applyRegions(clean, opts.regions, pageNumber)
-    : { words: clean, diagnostics: [] }
+  // Regions resolve on the page as the user sees it (an anchor may sit on a
+  // running header that noise removal drops), then noise comes off.
+  let kept = clean
+  let diagnostics: RegionDiagnostic[] = []
+  if (opts.regions?.length) {
+    const r = applyRegions(words, opts.regions, pageNumber)
+    const inRegion = new Set(r.words)
+    kept = clean.filter(w => inRegion.has(w))
+    diagnostics = r.diagnostics
+  }
 
   const tables = buildTables(kept).map((t): ExtractedTable => {
     const s = scoreTable(t, kept)

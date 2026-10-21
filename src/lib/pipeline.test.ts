@@ -69,6 +69,17 @@ describe('extractPage', () => {
 })
 
 describe('extractDocument', () => {
+  it('resolves anchors on a running header that noise removal drops', () => {
+    const pages = [1, 2, 3, 4].map(() => [...line('Section A transactions', 50, 30), ...table()])
+    const r = extractDocument(pages, {
+      sizes: pages.map(() => SIZE),
+      regions: [{ kind: 'between', start: { text: 'Section A', mode: 'after' }, pages: 'all' }],
+    })
+    expect(r.map(p => [p.removed.length, p.diagnostics.length, p.tables.length])).toEqual(
+      pages.map(() => [1, 0, 1]),
+    )
+  })
+
   it('removes a running footer found across pages', () => {
     const pages = [1, 2, 3, 4].map(() => [...table(), ...line('Confidential - Acme Corp', 50, 760)])
     const r = extractDocument(pages, { sizes: pages.map(() => SIZE) })
