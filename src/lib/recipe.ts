@@ -4,8 +4,11 @@
 // name; position is only trusted when the column has no header and the table
 // is the same width. An edit that can't be placed is reported, never guessed.
 
+import { describeRegion } from './areas'
 import type { PageTables } from './checks/model'
 import { headerCells, words } from './fingerprint'
+import { applyPreset, PRESETS, type Preset } from './preset'
+import type { PortableRegion } from './region'
 import * as ops from './tableOps'
 import type { PageKind } from './triage'
 import type { ColRef, Engine, Table, TableEdit, TableOrigin } from './types'
@@ -151,6 +154,12 @@ export interface TableRule {
   /** 0-based position among its page's tables. */
   position: number
   include: boolean
+  /**
+   * The person set Include (or deleted the table), so every document follows
+   * it. Otherwise each document keeps what scoring and the preset decide for
+   * it. Missing in recipes saved before this existed: a left-out table counts as set.
+   */
+  includeSet?: boolean
   /** Set when the title was renamed in review. */
   title?: string
   edits: TableEdit[]
@@ -162,6 +171,10 @@ export interface Recipe {
   tables: TableRule[]
   /** The engine the first document's pages of each kind ended up read with. */
   engines: Partial<Record<ReadKind, Engine | 'skip'>>
+  /** "What do you want from this file?", as set on the first document. */
+  preset?: Preset
+  /** Areas marked on the first document, page-relative, text markers preferred. */
+  regions?: PortableRegion[]
 }
 
 /** Matching key for a table shape: its header, or "no header" plus width and title. */
@@ -180,6 +193,7 @@ export function buildRecipe(
   before: PageTables[],
   after: PageTables[],
   engines: Recipe['engines'],
+  extra: Pick<Recipe, 'preset' | 'regions'> = {},
 ): Recipe {
   const rules: TableRule[] = []
   const add = (r: TableRule) => {
@@ -201,6 +215,8 @@ export function buildRecipe(
         page: p.page,
         position,
         include: t.include,
+        // Left out without a reason from the app means the person left it out.
+        includeSet: !!t.includeSet || (!t.include && !t.hiddenReason),
         ...(t.title !== match.title ? { title: t.title } : {}),
         edits: t.edits ?? [],
       })
@@ -214,9 +230,15 @@ export function buildRecipe(
       if (kept.has(t.id) || reread.has(p.page)) return
       const match = t.origin ?? originOf(t)
       if (rules.some(r => key(r.match, soft) === key(match, soft))) return
-      rules.push({ match, page: p.page, position, include: false, edits: [] })
+      rules.push({ match, page: p.page, position, include: false, includeSet: true, edits: [] })
     })
-  return { source, tables: rules, engines }
+  return {
+    source,
+    tables: rules,
+    engines,
+    ...(extra.preset && extra.preset !== 'everything' ? { preset: extra.preset } : {}),
+    ...(extra.regions?.length ? { regions: extra.regions } : {}),
+  }
 }
 
 /** The rule for a table: same header (exact, then without digits); headerless tables by width and title, then by position. */
@@ -257,6 +279,8 @@ export function applyRecipe(recipe: Recipe, pages: PageTables[]): Applied {
     tables: p.tables.map((t, position) => {
       const where = `Page ${p.page}, table ${position + 1}`
       const rule = ruleFor(recipe, t, p.page, position)
+      // A table the app left out on its own needs no rule: it stays out.
+      if (!rule && !t.include && t.hiddenReason) return t
       if (!rule) {
         problems.push(`${where} doesn’t match any table in ${recipe.source}`)
         return t
@@ -271,9 +295,10 @@ export function applyRecipe(recipe: Recipe, pages: PageTables[]): Applied {
         }
         next = res
       }
+      const set = rule.includeSet ?? !rule.include
       return {
         ...next,
-        include: rule.include,
+        ...(set ? { include: rule.include, includeSet: true, hiddenReason: '' } : {}),
         title: rule.title ?? next.title,
         // The replayed edits are this table's history too, so a later recipe built from it is whole.
         origin: originOf(t),
@@ -281,17 +306,26 @@ export function applyRecipe(recipe: Recipe, pages: PageTables[]): Applied {
       }
     }),
   }))
-  if (matched === 0 && pages.some(p => p.tables.length))
+  if (matched === 0 && pages.some(p => p.tables.some(t => t.include || !t.hiddenReason)))
     problems.push(`None of its tables match ${recipe.source}`)
-  return { pages: out, problems }
+  const preset = recipe.preset
+  return {
+    pages: preset ? out.map(p => ({ ...p, tables: applyPreset(p.tables, preset) })) : out,
+    problems,
+  }
 }
 
 /** Plain list of what a recipe does, for the batch screen. */
 export function recipeSummary(r: Recipe): string[] {
   const out: string[] = []
+  const preset = PRESETS.find(p => p.id === r.preset)
+  if (preset && preset.id !== 'everything') out.push(`Keep only ${preset.label.toLowerCase()}`)
+  for (const region of r.regions ?? []) out.push(describeRegion(region))
   for (const t of r.tables) {
     const name = t.title ?? (t.match.title || t.match.header.filter(Boolean).slice(0, 3).join(', '))
     if (!t.include) {
+      // Left out by scoring or the preset, not by the person: nothing to say.
+      if (t.includeSet === false) continue
       out.push(name ? `Leave out “${name}”` : `Leave out table ${t.position + 1} on page ${t.page}`)
       continue
     }

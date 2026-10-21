@@ -180,6 +180,14 @@ function layout(g: Grid): Layout | null {
   }
 }
 
+/**
+ * The statement columns of a table (date, description, amount or debit and
+ * credit, optional balance), or null when it doesn't read as transactions.
+ */
+export function statementLayout(t: Table): StatementColumns | null {
+  return layout(buildGrid(t))?.columns ?? null
+}
+
 const round2 = (v: number) => Math.round(v * 100) / 100
 
 /** 64-bit FNV-1a as 16 hex digits (two 32-bit lanes with different offsets). */

@@ -34,6 +34,12 @@ export interface Table {
   cellConf?: (number | null)[][]
   /** Whether the table goes into the workbook. */
   include: boolean
+  /** Why the app left it out, for the UI; empty when it is included or the person left it out. */
+  hiddenReason?: string
+  /** Why scoring (pipeline.ts) leaves it out on its own, before any preset; empty when it doesn't. */
+  autoHidden?: string
+  /** The person set Include themselves: presets and recipes leave it alone. */
+  includeSet?: boolean
   /** Shape before the first edit in review (set by recordEdit). */
   origin?: TableOrigin
   /** Structural edits made in review, in order (set by recordEdit). */

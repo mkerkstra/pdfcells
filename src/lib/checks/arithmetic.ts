@@ -8,7 +8,8 @@ import type { CheckResult, Issue, Tick } from './model'
 const MIN_TIES = 3
 const MIN_SHARE = 0.7
 
-interface Triple {
+/** Columns a × b = c that hold on most rows of the table. */
+export interface Triple {
   a: number
   b: number
   c: number
@@ -39,7 +40,8 @@ function evaluate(g: Grid, a: number, b: number, c: number, rows: number[]): Tri
   return { a, b, c, rows: used, ties, breaks }
 }
 
-export function lineArithmetic(g: Grid): CheckResult {
+/** The quantity × price = amount column triples the table follows (none clash). */
+export function lineTriples(g: Grid): Triple[] {
   const rows = g.body.filter(r => !g.totalRow[r])
   const cols = g.numericCol.flatMap((ok, c) => (ok ? [c] : []))
   const found: Triple[] = []
@@ -58,6 +60,11 @@ export function lineArithmetic(g: Grid): CheckResult {
     )
     if (!clash) chosen.push(tr)
   }
+  return chosen
+}
+
+export function lineArithmetic(g: Grid): CheckResult {
+  const chosen = lineTriples(g)
   const issues: Issue[] = []
   const ticks: Tick[] = []
   const t = g.table
