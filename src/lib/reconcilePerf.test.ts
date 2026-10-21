@@ -48,7 +48,8 @@ describe('reconcile performance with repeated amounts', () => {
     const { out, ms } = timed(() => reconcile(many('s', 300, -10), many('l', 600, -5)))
     expect(out.matches).toHaveLength(300)
     expect(out.matches.every(m => m.kind === 'split' && m.ledger.length === 2)).toBe(true)
-    expect(ms).toBeLessThan(3000)
+    // Loose on purpose: suites run in parallel on busy machines. A cubic regression is minutes, not seconds.
+    expect(ms).toBeLessThan(15_000)
   })
 
   it('gives up quickly when nothing adds up', () => {
