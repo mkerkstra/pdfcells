@@ -1,5 +1,5 @@
-import { cards, h2, note, p, table } from '../html.ts'
-import { LIMITS, PRICE, PRIVACY, YEARLESS } from '../shared.ts'
+import { cards, h2, note, p, repo, table } from '../html.ts'
+import { LIMITS, PRICE, PRIVACY, YEARLESS, YEARLESS_LIMITS } from '../shared.ts'
 import type { Page } from '../types.ts'
 
 import { BANK_DOWNLOADS, BANKS } from './banks.ts'
@@ -67,11 +67,11 @@ const banks: Page = {
     p(
       'From each bank’s own help pages, checked October 2026. Outside these windows, the monthly PDF statements are the record.',
     ),
-    h2('One thing most US statements share'),
-    // STATEMENT-YEARS
-    note(YEARLESS),
+    h2('Dates without a year'),
+    p(YEARLESS),
+    note(YEARLESS_LIMITS),
     p(
-      'PDFCells has no bank-specific templates: every statement is read by the same layout engine and checked the same way. The notes on these pages come from statements the banks have published and from public records, so check your own statement against them.',
+      `PDFCells has no bank-specific templates: every statement is read by the same layout engine and checked the same way. Its tests cover layouts modelled on each bank above (${repo('src/lib/statementBanks.test.ts', 'statementBanks.test.ts')}), built from these notes, not from real statements. The notes come from statements the banks have published and from public records, so check your own statement against them.`,
     ),
   ].join(''),
   related: ['bank-statement-to-excel', 'credit-card-statement-to-excel', 'convert'],

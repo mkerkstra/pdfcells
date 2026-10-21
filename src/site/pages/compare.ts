@@ -335,8 +335,7 @@ const docuclipper: Page = {
           [
             'Statement limits',
             'Not stated',
-            // STATEMENT-YEARS
-            `${LIMITS} Dates without a year aren’t read as statements yet.`,
+            `${LIMITS} Dates without a year get their year from the printed statement period, or one you pick.`,
           ],
         ],
       ),
@@ -353,8 +352,7 @@ const docuclipper: Page = {
         'You want to see and fix each table next to the page before exporting.',
       ]),
       note(
-        // STATEMENT-YEARS
-        `PDFCells reads statements with one general layout engine; it has no bank-specific templates. Many US banks print dates without the year, and PDFCells can’t make OFX/QBO from those yet (${a('banks', 'bank notes')}).`,
+        `PDFCells reads statements with one general layout engine; it has no bank-specific templates. It takes the year for month/day dates from the statement period and combines statements printed in sections; its tests cover layouts modelled on Chase, Bank of America, Wells Fargo, Amex, Citi, Capital One and PNC statements (${a('banks', 'bank notes')}).`,
       ),
       sources([
         ['https://www.docuclipper.com/pricing/', 'DocuClipper pricing'],
@@ -633,8 +631,7 @@ const roundup: Page = {
       ul([
         'No direct QuickBooks or Xero connection, no API and no team accounts.',
         'Fewer formats: no IIF, QFX or QIF, and QuickBooks Desktop may refuse its .qbo.',
-        // STATEMENT-YEARS
-        'Statements that print dates without a year (common at US banks) can’t be exported as OFX or QBO yet.',
+        'A statement that prints no statement period needs you to pick its year before OFX or QBO export, and a batch of them can’t be exported in those formats.',
         'No security certification such as SOC 2; the privacy model is that files stay in your browser.',
         'It converts tables; it doesn’t extract named invoice fields such as invoice number or vendor.',
       ]),

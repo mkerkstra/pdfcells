@@ -1,6 +1,15 @@
 import { FACTS, REPO, SOURCE_LD } from '../facts.ts'
 import { a, ext, h2, note, ol, p, repo, table, ul } from '../html.ts'
-import { GATE, LIMITS, PRICE, STEPS_CHECK, STEPS_OPEN, STEPS_REVIEW, YEARLESS } from '../shared.ts'
+import {
+  GATE,
+  LIMITS,
+  PRICE,
+  STEPS_CHECK,
+  STEPS_OPEN,
+  STEPS_REVIEW,
+  YEARLESS,
+  YEARLESS_LIMITS,
+} from '../shared.ts'
 import type { Page } from '../types.ts'
 
 const UPDATED = '2026-10-21'
@@ -61,7 +70,6 @@ const bankStatementToExcel: Page = {
     p(
       'Dates are read month-first or day-first per column: a day above 12 anywhere in the column decides. In the Excel sheet amounts stay as printed in their own columns; the statement formats (CSV, OFX, QBO, Xero) sign every amount so money in is positive and money out is negative.',
     ),
-    // STATEMENT-YEARS
     note(YEARLESS),
     h2('Limits and cost'),
     p(LIMITS, PRICE),
@@ -149,7 +157,6 @@ const bankStatementToCsv: Page = {
       'The file starts with a UTF-8 byte order mark so Excel opens accented text correctly, and a description starting with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> gets a leading apostrophe so it can’t run as a formula.',
       'Wrapped description lines are joined onto their transaction. A row with an amount but no date takes the date above it.',
     ]),
-    // STATEMENT-YEARS
     note(YEARLESS),
     h2('When the numbers don’t tie'),
     p(
@@ -223,8 +230,7 @@ const pdfToQbo: Page = {
     ),
     h2('Before you export'),
     p(GATE),
-    // STATEMENT-YEARS
-    note(YEARLESS),
+    note(`${YEARLESS} ${YEARLESS_LIMITS}`),
     h2('Other ways to get a .qbo file'),
     p(
       `Many banks offer QuickBooks or Quicken downloads of recent activity (${a('banks', 'bank notes')}). For older statements there are desktop converters built for this job, such as ProperConvert and MoneyThumb, which support more import targets than PDFCells (${a('pdfcells-vs-properconvert', 'comparison')}, ${a('pdfcells-vs-moneythumb', 'comparison')}).`,
@@ -241,8 +247,7 @@ const pdfToQbo: Page = {
     },
     {
       q: 'Why is the QBO export greyed out?',
-      // STATEMENT-YEARS
-      a: 'The statement’s numbers don’t tie yet, or it isn’t read as a statement. The panel says which page and row to fix. Statements that print dates without a year can’t be exported as QBO yet.',
+      a: 'The statement’s numbers don’t tie yet, or it isn’t read as a statement. The panel says which page and row to fix. If the dates have no year and the page prints no statement period, pick the year in the Statement year picker.',
     },
     {
       q: 'Does PDFCells connect to QuickBooks directly?',
@@ -302,10 +307,9 @@ const pdfToOfx: Page = {
     ),
     h2('Before you export'),
     p(GATE),
-    // STATEMENT-YEARS
     note(YEARLESS),
     note(
-      'OFX files declare a checking account (or a credit card account for card statements). Savings and money market accounts aren’t distinguished. One account per export: with several accounts, PDFCells prefers a table whose running balance it recognises, then the longest; untick tables you don’t want exported.',
+      'OFX files declare a checking account (or a credit card account for card statements). Savings and money market accounts aren’t distinguished. One account per export: statements printed in sections (deposits and withdrawals, or payments and purchases, in separate tables) are combined; otherwise PDFCells prefers a table whose running balance it recognises, then the longest. Untick tables you don’t want exported.',
     ),
   ].join(''),
   faq: [
@@ -374,7 +378,6 @@ const creditCard: Page = {
     p(
       'Most card statements have no running balance, so the check is the summary: previous balance − payments and credits + purchases, fees and interest = new balance. When the summary prints totals for payments and for charges, the transactions must add up to those too. Only undated summary rows count, so a transaction called “Payment” or “Interest charged” is treated as a transaction.',
     ),
-    // STATEMENT-YEARS
     note(`Card statements often print transaction dates without the year (01/15). ${YEARLESS}`),
   ].join(''),
   faq: [
@@ -388,7 +391,7 @@ const creditCard: Page = {
     },
     {
       q: 'Does it handle several cards on one statement?',
-      a: 'The Excel export keeps every table. The statement formats export one account at a time, preferring a table whose running balance ties, then the longest; untick the tables you don’t want.',
+      a: 'The Excel export keeps every table. The statement formats export one account at a time, combining sections of one account and otherwise preferring a table whose running balance ties, then the longest; untick the tables you don’t want.',
     },
   ],
   related: [
@@ -626,7 +629,7 @@ const reconcile: Page = {
   body: [
     h2('Steps'),
     ol([
-      'Open and check the statement as usual. Confirm the statement period when asked; the last transaction date is never used as the period end.',
+      'Open and check the statement as usual. Confirm the statement period when asked; the last transaction date is never used as the period end. If the dates have no year and no period is printed, pick the statement year first.',
       'Choose <strong>Reconcile with your ledger (.xlsx)</strong> and pick the ledger file: CSV (comma, semicolon or tab) or the first sheet of an .xlsx. Legacy .xls and .ods aren’t read.',
       'Check the column mapping. QuickBooks registers and reports, Xero account transactions and generic Date/Description/Amount or Debit/Credit layouts are mapped automatically.',
       'Review matches. Set the date window (3, 7, 14 or 30 days), match or unmatch by hand, and mark old items as still outstanding.',
