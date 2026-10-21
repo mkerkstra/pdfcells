@@ -179,9 +179,16 @@ function insertInWorksheet(xml: string, markup: string): string {
   return insertElementMarkupAccordingToOrderOfSiblings(xml, markup, order, 'worksheet')
 }
 
-function selectCell(xml: string, cell: string): string {
+export function selectCell(xml: string, cell: string, sheetIndex: number): string {
   const view = findElement(xml, 'sheetView')
-  if (!view || view.selfClosingTag || view.closingTagStartIndex === undefined) return xml
+  if (!view) {
+    if (findElement(xml, 'sheetViews')) return xml
+    return insertInWorksheet(
+      xml,
+      `<sheetViews><sheetView tabSelected="${sheetIndex === 0 ? 1 : 0}" workbookViewId="0"><selection activeCell="${cell}" sqref="${cell}"/></sheetView></sheetViews>`,
+    )
+  }
+  if (view.selfClosingTag || view.closingTagStartIndex === undefined) return xml
   if (findElementInsideElement(xml, 'selection', view)) return xml
   const pane = findElementInsideElement(xml, 'pane', view)
   const active = pane?.openingTagAttributes.activePane
@@ -245,11 +252,12 @@ export const partsFeature: Feature<Content> = {
         },
       },
       'xl/worksheets/sheet{id}.xml': {
-        transform: (xml, options) => {
+        transform: (xml, options, { sheetIndex }) => {
           const p = partsOf(options)
           if (!p) return xml
           let out = xml
-          if (p.activeCell) out = selectCell(out, address(p.activeCell.row, p.activeCell.col))
+          if (p.activeCell)
+            out = selectCell(out, address(p.activeCell.row, p.activeCell.col), sheetIndex)
           if (p.commentsId !== undefined)
             out = insertInWorksheet(out, `<legacyDrawing r:id="${VML_REL}"/>`)
           if (p.tables.length)

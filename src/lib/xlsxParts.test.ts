@@ -5,6 +5,7 @@ import {
   columnNames,
   commentsXml,
   numberParts,
+  selectCell,
   tableName,
   tableRef,
   tableXml,
@@ -101,5 +102,26 @@ describe('numberParts', () => {
     ])
     expect(a.parts?.commentsId).toBeUndefined()
     expect(b.parts?.commentsId).toBe(1)
+  })
+})
+
+describe('selectCell', () => {
+  const ws = (inner: string) => `<worksheet xmlns="m">${inner}<sheetData/></worksheet>`
+
+  it('adds a view with the active cell when the sheet has none', () => {
+    expect(selectCell(ws(''), 'A3', 0)).toBe(
+      ws(
+        '<sheetViews><sheetView tabSelected="1" workbookViewId="0"><selection activeCell="A3" sqref="A3"/></sheetView></sheetViews>',
+      ),
+    )
+  })
+
+  it('selects in the frozen pane after the pane element', () => {
+    const frozen = ws(
+      '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>',
+    )
+    expect(selectCell(frozen, 'A2', 1)).toContain(
+      '<pane ySplit="1" activePane="bottomRight" state="frozen"/><selection pane="bottomRight" activeCell="A2" sqref="A2"/></sheetView>',
+    )
   })
 })
