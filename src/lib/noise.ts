@@ -101,7 +101,13 @@ interface Candidate {
   ny: number
   key: string
   band: 'top' | 'bottom'
-  /** Close enough to body content that it is probably part of it (a column header). */
+  /**
+   * Close enough to body content that it may be part of it: within 1.8 line
+   * pitches of the next line towards the body. Lines made only of numbers
+   * (page numbers look like a sparse table row's last amount) are kept when
+   * near; other lines only when that neighbour has ≥2 columns (a repeated
+   * column header sitting on its first row).
+   */
   attached: boolean
 }
 
@@ -121,9 +127,11 @@ function candidates(words: Word[], page: number, size: PageSize | undefined): Ca
     // The neighbour towards the body: a running header sits above whitespace,
     // a column header sits right on top of its first row.
     const next = band === 'top' ? lines[i + 1] : lines[i - 1]
-    const attached =
-      next !== undefined && Math.abs(next.yc - line.yc) <= pitch * 1.8 && runs(next) >= 2
-    out.push({ page, line, ny, key: normalizeText(lineText(line)), band, attached })
+    const near = next !== undefined && Math.abs(next.yc - line.yc) <= pitch * 1.8
+    const text = lineText(line)
+    const numeric = isPageNumberLine(text) || isNumericCell(text)
+    const attached = near && (numeric || runs(next) >= 2)
+    out.push({ page, line, ny, key: normalizeText(text), band, attached })
   })
   return out
 }
@@ -217,8 +225,8 @@ export interface BlockStats {
   allNumeric: boolean
   /** A row of ≥4 numbers in arithmetic progression (x-axis ticks: 0, 10, 20, 30). */
   evenRow: boolean
-  /** A column of ≥3 numbers in arithmetic progression (y-axis ticks). */
-  evenCol: boolean
+  /** Every row holding ≥3 numbers is an arithmetic progression (ticks, year labels). */
+  allRowsEven: boolean
   /** Rows, header included. */
   rows: number
 }
@@ -267,9 +275,6 @@ export function blockStats(table: LocalTable, words: Word[] = []): BlockStats {
 
   const allCells = table.rows.flat().filter(c => c.trim() !== '')
   const numRows = table.rows.map(r => r.map(toNumber).filter((n): n is number => n !== null))
-  const numCols = Array.from({ length: cols }, (_, c) =>
-    table.rows.map(r => toNumber(r[c] ?? '')).filter((n): n is number => n !== null),
-  )
 
   return {
     bodyRows: body.length,
@@ -299,7 +304,7 @@ export function blockStats(table: LocalTable, words: Word[] = []): BlockStats {
     pageRefsAscend: refs.every((n, i) => i === 0 || n >= (refs[i - 1] ?? 0)),
     allNumeric: allCells.length > 0 && allCells.every(c => toNumber(c) !== null),
     evenRow: numRows.some(r => r.length >= 4 && progression(r)),
-    evenCol: numCols.some(progression),
+    allRowsEven: numRows.filter(r => r.length >= 3).every(progression),
     rows: table.rows.length,
   }
 }
@@ -311,9 +316,11 @@ export function blockStats(table: LocalTable, words: Word[] = []): BlockStats {
  * - toc:   ≥3 body rows; dot leaders on ≥50% of rows; the last cell is a
  *          1–3 digit page number on ≥60% of rows and those never decrease.
  * - axis:  every cell (header included) is a number, so there are no row
- *          labels, and either ≤3 rows with one evenly spaced row of ≥4 ticks
- *          (an x-axis) or ≤2 columns with one evenly spaced column (a y-axis
- *          beside bar values). Larger all-number grids stay data.
+ *          labels; ≤3 rows; one row of ≥4 evenly spaced ticks; and every row
+ *          with ≥3 numbers is evenly spaced (ticks over year labels). One
+ *          row of real values, or a sequential ID column, keeps it data.
+ *          Vertical (y-axis) ticks are single-column lines buildTables
+ *          never turns into a block, so they need no rule.
  * - prose: no number/date column; <15% numeric cells; ≥75% letters; ≥4 words
  *          per cell on average; and either ≥25% of cells carry sentence
  *          punctuation or cells average ≥7 words.
@@ -327,7 +334,7 @@ export function classifyBlock(table: LocalTable, words: Word[] = []): BlockKind 
 export function classifyStats(s: BlockStats): BlockKind {
   if (s.bodyRows >= 3 && s.leaderShare >= 0.5 && s.pageRefShare >= 0.6 && s.pageRefsAscend)
     return 'toc'
-  if (s.allNumeric && ((s.rows <= 3 && s.evenRow) || (s.cols <= 2 && s.evenCol))) return 'axis'
+  if (s.allNumeric && s.rows <= 3 && s.evenRow && s.allRowsEven) return 'axis'
   if (
     s.typedCols === 0 &&
     s.numericShare < 0.15 &&

@@ -71,6 +71,22 @@ describe('cleanWords', () => {
     expect(cleanWords([page], { sizes: sizes(1) }).removed).toEqual([])
   })
 
+  it('keeps a sparse amount-only row at the bottom of a table', () => {
+    const tail = grid(
+      [
+        ['Item', 'Amount'],
+        ['Paper', '10'],
+        ['Toner', '20'],
+        ['', '40'],
+        ['', '50'],
+      ],
+      [50, 300],
+      { top: 646 },
+    )
+    expect(cleanWords([tail], { sizes: sizes(1) }).removed).toEqual([])
+    expect(cleanWords([tail, tail, tail], { sizes: sizes(3) }).removed).toEqual([])
+  })
+
   it('works without page sizes, from the text extent', () => {
     const pages = [1, 2].map(n => [
       ...line('Quarterly report', 50, 20),
@@ -157,6 +173,29 @@ describe('classifyBlock', () => {
     const [t] = buildTables(words)
     expect(t).toBeDefined()
     expect(t && classifyBlock(t, words)).toBe('axis')
+  })
+
+  it('a sequential ID column or one row of real values keeps an all-number grid data', () => {
+    const ids = grid(
+      [
+        ['1', '200'],
+        ['2', '310'],
+        ['3', '425'],
+        ['4', '590'],
+      ],
+      [50, 200],
+    )
+    const [a] = buildTables(ids)
+    expect(a && classifyBlock(a, ids)).toBe('data')
+    const quarters = grid(
+      [
+        ['1', '2', '3', '4'],
+        ['120', '340', '210', '99'],
+      ],
+      [60, 160, 260, 360],
+    )
+    const [b] = buildTables(quarters)
+    expect(b && classifyBlock(b, quarters)).toBe('data')
   })
 
   it('a text-only key/value list is unknown, not prose', () => {
