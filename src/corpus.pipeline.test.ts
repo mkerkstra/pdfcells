@@ -52,41 +52,46 @@ async function facts(file: string): Promise<PageFacts[]> {
   return out
 }
 
-describe('extractDocument on the golden corpus', () => {
-  const scores: [string, number][] = []
+// Lines noise removal may drop from the corpus; every other fixture loses nothing.
+const REMOVED: Record<string, string[]> = {
+  'statement.pdf': ['1 page-number Page 1 of 2', '2 page-number Page 2 of 2'],
+}
 
-  it.each(FIXTURES)('%s: same tables as triage, none hidden', async f => {
+// The weakest corpus table is the EU invoice's key/value block (≈0.81: two
+// columns, three rows, no header); the threshold is 0.5. A table dropping
+// below this floor is a regression in the scoring weights.
+const SCORE_FLOOR = 0.75
+
+describe('extractDocument on the golden corpus', () => {
+  it.each(FIXTURES)('%s: same tables as triage, none hidden, nothing else removed', async f => {
     const ps = await facts(f)
     const golden = ps.map(p => triage(p, true))
     const got = extractDocument(
       ps.map(p => p.words),
       { sizes: ps.map(p => ({ width: p.width, height: p.height })) },
     )
+    expect(got.flatMap(p => p.removed.map(r => `${r.page} ${r.reason} ${r.text}`))).toEqual(
+      REMOVED[f] ?? [],
+    )
     golden.forEach((g, i) => {
       // Only text-layer pages produce local tables; scans and garbled pages go to OCR/AI.
       if (g.kind !== 'digital') return
+      const shape = (t: { title: string; headerRows: number; rows: string[][] }) => ({
+        title: t.title,
+        headerRows: t.headerRows,
+        rows: t.rows,
+      })
       const page = got[i]
-      expect(page?.tables.map(t => t.rows)).toEqual(g.localTables.map(t => t.rows))
+      expect(page?.tables.map(shape)).toEqual(g.localTables.map(shape))
       for (const t of page?.tables ?? []) {
-        expect({ f, page: i + 1, title: t.title, include: t.include, why: t.hiddenReason }).toEqual(
-          {
-            f,
-            page: i + 1,
-            title: t.title,
-            include: true,
-            why: '',
-          },
-        )
-        scores.push([`${f}:${i + 1}:${t.title}`, t.score])
+        const at = `${f} p${i + 1} "${t.title}"`
+        expect({ at, include: t.include, why: t.hiddenReason }).toEqual({
+          at,
+          include: true,
+          why: '',
+        })
+        expect(t.score, at).toBeGreaterThanOrEqual(SCORE_FLOOR)
       }
     })
-  })
-
-  // The weakest is the EU invoice's key/value block (0.81: two columns, three
-  // rows, no header); the rest are ≥ 0.92. The threshold is 0.5.
-  it('every corpus table clears the threshold with margin', () => {
-    expect(scores.length).toBe(20)
-    const low = scores.filter(([, s]) => s < 0.75)
-    expect(low).toEqual([])
   })
 })
