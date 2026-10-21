@@ -631,7 +631,7 @@ const roundup: Page = {
       ul([
         'No direct QuickBooks or Xero connection, no API and no team accounts.',
         'Fewer formats: no IIF, QFX or QIF, and QuickBooks Desktop may refuse its .qbo.',
-        'A statement that prints no statement period needs you to pick its year before OFX or QBO export, and a batch of them can’t be exported in those formats.',
+        'A statement whose transaction dates omit the year and that prints no statement period needs you to pick its year before OFX or QBO export, and a batch of them can’t be exported in those formats.',
         'No security certification such as SOC 2; the privacy model is that files stay in your browser.',
         'It converts tables; it doesn’t extract named invoice fields such as invoice number or vendor.',
       ]),

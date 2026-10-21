@@ -244,7 +244,7 @@ const wellsFargo = page({
       '<strong>Balance check:</strong> because Wells Fargo prints a balance only at the end of each day, rows without one carry their amounts into the next printed balance. Once the balances tie over a run of rows, each printed daily balance is checked; when one doesn’t tie, PDFCells flags that day’s balance and lists the amounts that could explain it, and names the exact cell when only one fits.',
       '<strong>Signs:</strong> Deposits/Credits and Withdrawals/Debits are separate columns, so keep them separate in Excel or compute <code>Deposits − Withdrawals</code>.',
       '<strong>Summary of checks written</strong> repeats the checks already in Transaction history. Untick that table so checks aren’t counted twice.',
-      '<strong>Statement formats:</strong> the M/D dates take their year from the statement period at the top (a <code>2/29</code> only fits a leap year), and OFX, QBO, the Xero CSV and the bank CSV are offered once the daily balances tie. The balance check needs at least three printed balances that tie, so a statement covering only a day or two may not qualify.',
+      '<strong>Statement formats:</strong> the M/D dates take their year from the statement period at the top (a <code>2/29</code> only fits a leap year), and OFX, QBO, the Xero CSV and the bank CSV are offered once the daily balances tie. The balance check needs three tying steps between printed balances (at least four daily balances), so a statement covering only a few days may not qualify.',
     ]),
     yearFix('“January 1, 2016 - January 31, 2016”'),
   ].join(''),
