@@ -54,6 +54,34 @@ func ModelFor(t Tier) (string, bool) {
 // MaxOutputTokens bounds one page's response; dense ledgers can run long.
 const MaxOutputTokens = 16_000
 
+// fallbackTargets are the models a refused page can be re-served on by
+// fallbacks "default", which routes one hop by refusal category.
+var fallbackTargets = []string{"claude-opus-4-8", "claude-opus-5"}
+
+// WorstCost bounds what one page can cost on a tier before markup: the tier's
+// model at full output and, where fallback is on, one more full attempt on the
+// priciest target, whose input also carries the declined attempt's partial
+// output. Paid holds must cover it, or a fallback settles below zero.
+func WorstCost(t Tier, input int64) (int64, error) {
+	spec, ok := tiers[t]
+	if !ok {
+		return 0, fmt.Errorf("extract: unknown tier %q", t)
+	}
+	worst, err := pricing.Cost(pricing.Usage{Model: spec.Model, Input: input, Output: MaxOutputTokens})
+	if err != nil || !spec.Fallback {
+		return worst, err
+	}
+	var hop int64
+	for _, m := range fallbackTargets {
+		c, err := pricing.Cost(pricing.Usage{Model: m, Input: input + MaxOutputTokens, Output: MaxOutputTokens})
+		if err != nil {
+			return 0, err
+		}
+		hop = max(hop, c)
+	}
+	return worst + hop, nil
+}
+
 // BaseURL is the only place page images and API keys are sent. A variable
 // only so tests can point it at a fake.
 var BaseURL = "https://api.anthropic.com/"

@@ -146,8 +146,7 @@ func (s *Server) extract(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if source == "credits" {
-		model, _ := extract.ModelFor(req.Tier)
-		worst, err := pricing.Cost(pricing.Usage{Model: model, Input: estInput, Output: extract.MaxOutputTokens})
+		worst, err := extract.WorstCost(req.Tier, estInput)
 		if err != nil {
 			s.internal(w, r, "pricing", err)
 			return
