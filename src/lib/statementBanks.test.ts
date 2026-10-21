@@ -512,6 +512,48 @@ describe('Bank of America: deposits, withdrawals, checks and fees in separate se
 })
 
 describe('sections stay out of the way of ordinary statements', () => {
+  it('a card’s one Transactions table with payments among purchases reads as printed', () => {
+    const s = readStatement(
+      [
+        page(1, [
+          table(
+            [
+              ['Date', 'Description', 'Amount'],
+              ['03/02/2026', 'Coffee', '6.50'],
+              ['03/04/2026', 'PAYMENT - THANK YOU', '-500.00'],
+              ['03/06/2026', 'Shell', '41.20'],
+            ],
+            { title: 'Transactions', id: 't' },
+          ),
+        ]),
+      ],
+      { creditCard: true },
+    )
+    expect(s?.sections).toBeUndefined()
+    expect(s?.transactions.map(t => t.amount)).toEqual([-6.5, 500, -41.2])
+  })
+
+  it('a month with only an unsigned withdrawals section is money out', () => {
+    const s = readStatement([
+      page(1, [
+        summary('s', [
+          ['Beginning balance', '500.00'],
+          ['Ending balance', '440.00'],
+        ]),
+        table(
+          [
+            ['Date', 'Description', 'Amount'],
+            ['10/01/2025', 'ATM Withdrawal', '40.00'],
+            ['10/09/2025', 'POS Purchase', '20.00'],
+          ],
+          { title: 'Banking/Debit Card Withdrawals and Purchases', id: 'w' },
+        ),
+      ]),
+    ])
+    expect(s?.transactions.map(t => t.amount)).toEqual([-40, -20])
+    expect(s?.gate.ok).toBe(true)
+  })
+
   it('one transaction table plus a titled fees table still reads the transaction table alone', () => {
     const s = readStatement([
       page(1, [

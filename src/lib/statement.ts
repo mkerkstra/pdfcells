@@ -684,7 +684,8 @@ interface Section {
  * Chase business checking, PNC, and card statements with Payments and
  * Purchases sections. Only when no table has a running balance and the
  * longest table is itself a section, so a statement with one transaction
- * table and a small titled extra (fees) keeps reading as before.
+ * table and a small titled extra (fees) keeps reading as before; and when
+ * there are two sections or more, or the one there is needs its signs turned.
  */
 function sectionCandidates(cands: Candidate[], card: boolean): Section[] | null {
   const plain = (x: Candidate) => x.lay.columns.balance === undefined && x.lay.pairs === null
@@ -698,6 +699,9 @@ function sectionCandidates(cands: Candidate[], card: boolean): Section[] | null 
     const sign = titled(cand)
     if (sign !== null) out.push({ cand, sign })
   }
+  // One titled table alone ("Transactions" on a card) reads as before, unless
+  // it is printed against its own sign (a withdrawals-only month, unsigned).
+  if (out.length === 1 && out[0] && signed(out[0]) === out[0].cand.txns) return null
   return out.toSorted((a, b) => a.cand.joined.seq - b.cand.joined.seq)
 }
 
