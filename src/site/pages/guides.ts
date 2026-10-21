@@ -135,7 +135,7 @@ const bankStatementToCsv: Page = {
         ],
         [
           'Table CSV',
-          'Each table exactly as it appears in the grid',
+          'Each table as it appears in the grid (with Real numbers on, the default, amounts and dates are normalised; turn it off for text exactly as printed)',
           'Any table, not only statements. Several tables download as a .zip of CSV files.',
         ],
       ],
@@ -167,7 +167,7 @@ const bankStatementToCsv: Page = {
     },
     {
       q: 'Can I get a CSV of a table that isn’t a bank statement?',
-      a: 'Yes. Choose CSV in the export bar to download each table exactly as it appears in the grid.',
+      a: 'Yes. Choose CSV in the export bar to download each table as it appears in the grid. Turn off Real numbers to keep amounts and dates exactly as printed.',
     },
   ],
   related: ['bank-statement-to-excel', 'pdf-to-ofx', 'pdf-to-qbo', 'private-pdf-to-excel'],
@@ -300,7 +300,7 @@ const pdfToOfx: Page = {
     p(GATE),
     note(YEARLESS),
     note(
-      'OFX files declare a checking account (or a credit card account for card statements). Savings and money market accounts aren’t distinguished. One account per export: a statement with several accounts exports its longest transaction table.',
+      'OFX files declare a checking account (or a credit card account for card statements). Savings and money market accounts aren’t distinguished. One account per export: with several accounts, PDFCells prefers a table whose running balance it recognises, then the longest; untick tables you don’t want exported.',
     ),
   ].join(''),
   faq: [
@@ -382,7 +382,7 @@ const creditCard: Page = {
     },
     {
       q: 'Does it handle several cards on one statement?',
-      a: 'The Excel export keeps every table. The statement formats export one account at a time, using the longest transaction table.',
+      a: 'The Excel export keeps every table. The statement formats export one account at a time, preferring a table whose running balance ties, then the longest; untick the tables you don’t want.',
     },
   ],
   related: [
@@ -419,7 +419,7 @@ const invoice: Page = {
       [
         [
           'Line totals',
-          'Quantity × unit price = line total, once most rows of the table fit that pattern. A quantity of 1 proves nothing, so it is skipped.',
+          'Quantity × unit price = line total, once most rows of the table fit that pattern. Rows with a quantity of 1 can’t establish the pattern on their own, but are checked once it is established.',
         ],
         [
           'Subtotal and tax tie to total',
@@ -628,7 +628,7 @@ const reconcile: Page = {
     ]),
     h2('How matching works'),
     ul([
-      'Same amount within the date window. Payee similarity breaks ties, then the nearer date. A pick between equally good but different-looking entries is flagged “Check”.',
+      'Same amount within the date window. Entries whose payees clearly match come first, then the nearer date, then payee similarity. A pick between equally good but different-looking entries is flagged “Check”.',
       'Splits: one line equal to the sum of 2–4 lines on the other side.',
       'Identical entries (same amount, date and payee) are paired in file order.',
       'Ledger entries dated before the statement go in <em>Before this statement</em>, each with a “Still outstanding” toggle, for a cheque written last month that cleared this month.',
