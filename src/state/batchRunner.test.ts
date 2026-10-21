@@ -171,6 +171,14 @@ describe('rereads with marked areas', () => {
     ])
   })
 
+  it('sends a page moved to AI with the areas, so only they are uploaded', () => {
+    const out = rereads({ ...recipe, engines: { scanned: 'ai' } }, [
+      page(2, 'scanned', 'ocr', 'ocr'),
+    ])
+    expect(out.map(p => [p.n, p.engine])).toEqual([[2, 'ai']])
+    expect(out[0]?.regions).toHaveLength(1)
+  })
+
   it('says which pages the areas didn’t reach, in plain words', () => {
     const pages = [
       { ...page(1, 'digital', 'text', 'text'), areaNotes: ['No line containing “x” on page 1'] },

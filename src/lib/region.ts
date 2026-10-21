@@ -148,10 +148,22 @@ export function sectionsOpenAtStart(
   pages: { n: number; words: Word[] }[],
   regions: Region[],
 ): Map<number, Set<string>> {
-  const open = new Set<string>()
+  return sectionsAcross(pages, regions).open
+}
+
+/**
+ * sectionsOpenAtStart, plus, by page, a note for each section whose end
+ * marker never turns up after its start: everything after the start was
+ * kept, which is worth saying rather than doing silently.
+ */
+export function sectionsAcross(
+  pages: { n: number; words: Word[] }[],
+  regions: Region[],
+): { open: Map<number, Set<string>>; unclosed: Map<number, string[]> } {
+  const open = new Map<string, number>()
   const out = new Map<number, Set<string>>()
   for (const pg of [...pages].sort((a, b) => a.n - b.n)) {
-    out.set(pg.n, new Set(open))
+    out.set(pg.n, new Set(open.keys()))
     const lines = groupLines(pg.words)
     for (const r of regions) {
       if (r.kind !== 'between' || !regionApplies(r, pg.n)) continue
@@ -160,10 +172,20 @@ export function sectionsOpenAtStart(
       const from = s >= 0 ? s + 1 : 0
       if (s < 0 && !open.has(key)) continue
       if (r.end && findLine(lines, r.end, from) >= 0) open.delete(key)
-      else open.add(key)
+      else if (!open.has(key)) open.set(key, pg.n)
     }
   }
-  return out
+  const unclosed = new Map<number, string[]>()
+  const byKey = new Map(
+    regions.flatMap(r => (r.kind === 'between' ? [[sectionKey(r), r] as const] : [])),
+  )
+  for (const [key, n] of open) {
+    const r = byKey.get(key)
+    if (r?.kind !== 'between' || !r.end) continue
+    const note = `“${r.end.text}” wasn’t found after “${r.start.text}” (page ${n}), so everything after it was kept.`
+    unclosed.set(n, [...(unclosed.get(n) ?? []), note])
+  }
+  return { open: out, unclosed }
 }
 
 /**

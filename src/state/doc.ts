@@ -29,6 +29,8 @@ export interface PageState {
   regions?: UserRegion[]
   /** sectionKey()s of marked sections that began on an earlier page and continue onto this one. */
   openSections?: string[]
+  /** Marked sections that start on this page and never reach their end marker, in plain words. */
+  sectionNotes?: string[]
   /** Running headers, footers and page numbers found across the document (PDF text pages). */
   noise?: PageNoise
   /** Words OCR read on the whole page, so a marked area is re-read without OCR again. Not saved. */
@@ -63,6 +65,7 @@ export type Action =
         index: number
         regions: UserRegion[]
         openSections?: string[]
+        sectionNotes?: string[]
         tables?: Table[]
         warnings?: string[]
         notes?: string[]
@@ -177,6 +180,7 @@ export function reducer(s: DocState, a: Action): DocState {
             ...pg,
             regions: x.regions,
             openSections: x.openSections ?? [],
+            sectionNotes: x.sectionNotes ?? [],
             // A skipped PDF text page read through an area is read now.
             ...(x.tables && !pg.run
               ? {

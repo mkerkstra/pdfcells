@@ -19,7 +19,7 @@ import type { PageSize } from '@/lib/noise'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import type { Recipe, ReadKind } from '@/lib/recipe'
-import { regionApplies, sectionsOpenAtStart } from '@/lib/region'
+import { regionApplies, sectionsAcross } from '@/lib/region'
 import { readStatement } from '@/lib/statement'
 import { triage as classify, type PageTriage } from '@/lib/triage'
 import type { Engine, Tier, Word } from '@/lib/types'
@@ -200,8 +200,11 @@ export async function readItem(
       const all: { n: number; words: Word[] }[] = []
       for (let n = 1; n <= doc.pages; n++)
         all.push({ n, words: (await (await doc.page(n)).facts()).words })
-      const open = sectionsOpenAtStart(all, sections)
-      for (const p of full) p.openSections = [...(open.get(p.n) ?? [])]
+      const { open, unclosed } = sectionsAcross(all, sections)
+      for (const p of full) {
+        p.openSections = [...(open.get(p.n) ?? [])]
+        p.sectionNotes = unclosed.get(p.n) ?? []
+      }
     }
     await runPages(doc, full, action => dispatch({ type: 'doc', id, action }), { tier }, hooks)
     dispatch({ type: 'forget', id })
@@ -344,7 +347,8 @@ export function enginesOf(pages: PageState[]): Recipe['engines'] {
  * Pages of a file the recipe reads again: with a different engine than the
  * batch did, or with the areas marked on the first file. Areas need the
  * page's words, so PDF text and OCR pages are read again with them (free);
- * AI pages aren't, and applyToPages says so.
+ * AI pages aren't, and applyToPages says so. A page read again with AI for
+ * its engine carries the areas, so only they are sent.
  */
 export function rereads(recipe: Recipe, pages: PageState[]): PageState[] {
   const areas = recipe.regions ?? []
@@ -360,8 +364,10 @@ export function rereads(recipe: Recipe, pages: PageState[]): PageState[] {
     const applies = here.some(r => regionApplies(r, p.n))
     // A PDF text page with no table found may have one inside an area that covers it.
     if (!p.run && applies && digital && want !== 'skip') engine = 'text'
-    const withAreas = applies && engine !== undefined && engine !== 'ai'
-    if (engine === undefined || (engine === p.run?.engine && !withAreas)) return []
-    return [{ ...p, engine, ...(withAreas ? { regions: here } : {}) }]
+    if (engine === undefined) return []
+    // Areas alone are a reason to read again only when it's free; a page read
+    // again for any reason is read with the areas, AI included.
+    if (engine === p.run?.engine && !(applies && engine !== 'ai')) return []
+    return [{ ...p, engine, ...(applies ? { regions: here } : {}) }]
   })
 }

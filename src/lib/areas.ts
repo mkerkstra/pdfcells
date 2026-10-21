@@ -12,7 +12,7 @@ import {
   type ProposedAnchors,
   type Region,
 } from './region'
-import type { Box, Table } from './types'
+import type { Box, Table, TableEdit } from './types'
 
 /** A region as marked in review, with the text markers proposed for it (batch replay prefers them). */
 export type UserRegion = Region & { markers?: ProposedAnchors }
@@ -86,7 +86,9 @@ export function resizeRegions(
 /**
  * Tables read again after an area changed, with what the person did to the
  * same table before: its name, their Include choice, and (when it came out
- * the same size) its cells and edit history.
+ * the same size) its header rows, edit history and the header text they
+ * typed. Cells always come from the new read, so text an area now leaves
+ * out never comes back from the old one.
  */
 export function carryOver(before: Table[], after: Table[]): Table[] {
   return after.map(t => {
@@ -103,7 +105,7 @@ export function carryOver(before: Table[], after: Table[]): Table[] {
       ...t,
       ...(same
         ? {
-            rows: was.rows,
+            rows: typedHeaders(t.rows, was.edits ?? []),
             headerRows: was.headerRows,
             ...(was.origin ? { origin: was.origin } : {}),
             ...(was.edits ? { edits: was.edits } : {}),
@@ -114,6 +116,18 @@ export function carryOver(before: Table[], after: Table[]): Table[] {
       ...(was.includeSet ? { include: was.include, includeSet: true, hiddenReason: '' } : {}),
     }
   })
+}
+
+/** Header cells the person typed, written over freshly read rows of the same shape. */
+function typedHeaders(rows: string[][], edits: TableEdit[]): string[][] {
+  const typed = edits.filter(e => e.op === 'header')
+  if (!typed.length) return rows
+  const out = rows.map(r => [...r])
+  for (const e of typed) {
+    const row = out[e.row]
+    if (row && e.col.index < row.length) row[e.col.index] = e.text
+  }
+  return out
 }
 
 const round = (b: { x0: number; y0: number; x1: number; y1: number }) =>

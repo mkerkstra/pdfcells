@@ -7,6 +7,7 @@ import {
   cropForAI,
   fromPortable,
   regionFromBox,
+  sectionsAcross,
   sectionsOpenAtStart,
   toPortable,
   type Region,
@@ -308,5 +309,30 @@ describe('sections across pages', () => {
       [section],
     )
     expect(texts(applyRegions(p2b, [section], 2, open.get(2)).words)).toBe('03/04 Salary 3,000.00')
+  })
+})
+
+describe('sectionsAcross', () => {
+  it('says when a section’s end marker never turns up', () => {
+    const w = (text: string, y: number) => ({ text, x0: 10, x1: 100, y0: y, y1: y + 10 })
+    const pages = [
+      { n: 1, words: [w('Transactions', 10), w('a', 30)] },
+      { n: 2, words: [w('b', 10), w('Disclosures', 30)] },
+    ]
+    const r = {
+      kind: 'between' as const,
+      start: { text: 'Transactions', mode: 'after' as const },
+      end: { text: 'Summary', mode: 'before' as const },
+      pages: 'all' as const,
+    }
+    const { open, unclosed } = sectionsAcross(pages, [r])
+    expect(open.get(2)?.size).toBe(1)
+    expect(unclosed.get(1)).toEqual([
+      '“Summary” wasn’t found after “Transactions” (page 1), so everything after it was kept.',
+    ])
+    expect(
+      sectionsAcross(pages, [{ ...r, end: { text: 'Disclosures', mode: 'before' as const } }])
+        .unclosed.size,
+    ).toBe(0)
   })
 })

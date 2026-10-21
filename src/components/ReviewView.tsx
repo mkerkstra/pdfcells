@@ -517,19 +517,21 @@ function useAreas(
     try {
       const done: Extract<Action, { type: 'regions' }>['pages'] = []
       let again: PageState | null = null
-      for (const { p: before, regions, openSections } of withOpenSections(doc.pages, changes)) {
-        const p = { ...before, openSections }
+      const read = await withOpenSections(doc.pages, changes, x => pageWords(source, x))
+      for (const { p: before, regions, openSections, sectionNotes } of read) {
+        const p = { ...before, openSections, sectionNotes }
         const r = await readArea(source, p, regions)
         if (r)
           done.push({
             index: p.n - 1,
             regions,
             openSections,
+            sectionNotes,
             ...r,
             tables: carryOver(p.tables, r.tables),
           })
         else {
-          done.push({ index: p.n - 1, regions, openSections })
+          done.push({ index: p.n - 1, regions, openSections, sectionNotes })
           // Only the page on screen is read again; the others use the area when they're next read.
           if (p.n === page.n && p.triage && p.triage.kind !== 'blank') again = { ...p, regions }
         }

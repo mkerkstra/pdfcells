@@ -46,6 +46,30 @@ describe('tableBlock', () => {
     ])
   })
 
+  it('moves a subtotal inside the lines below them, so a pivot never counts it', () => {
+    const t = table(
+      [
+        ['Item', 'Amount'],
+        ['A', '10.00'],
+        ['B', '20.00'],
+        ['Subtotal food', '30.00'],
+        ['C', '5.00'],
+        ['D', '6.00'],
+        ['E', '7.00'],
+        ['Total', '48.00'],
+      ],
+      { title: 'Invoice' },
+    )
+    const b = tableBlock(t, 0, { ...opts, names: new Set() })
+    // Lines A2:B6 hold only the five lines: 10+20+5+6+7 = 48.
+    expect(b.table).toMatchObject({ headerRow: 0, lastRow: 5 })
+    expect(b.dataRows).toEqual([1, 2, 4, 5, 6])
+    const amounts = b.rows.slice(1, 6).map(r => (r[1] as { value: unknown }).value)
+    expect(amounts).toEqual([10, 20, 5, 6, 7])
+    expect(b.rows[6]?.[0]).toMatchObject({ value: 'Subtotal food' })
+    expect(b.rows[7]?.[0]).toMatchObject({ value: 'Total' })
+  })
+
   it('writes no formulas when numbers stay text', () => {
     const b = tableBlock(invoice, 0, { ...opts, typed: false, names: new Set() })
     expect(b.rows).toHaveLength(6)

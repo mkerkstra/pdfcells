@@ -13,7 +13,7 @@ import {
   cropForAI,
   regionApplies,
   sectionKey,
-  sectionsOpenAtStart,
+  sectionsAcross,
   type PixelRect,
 } from '@/lib/region'
 import { triage as classify } from '@/lib/triage'
@@ -97,7 +97,7 @@ export function textTables(p: PageState, words: Word[], regions = p.regions ?? [
   return {
     tables: x.tables.map(t => fromLocal(t)),
     warnings: [],
-    notes: x.diagnostics.map(d => d.message),
+    notes: [...x.diagnostics.map(d => d.message), ...(p.sectionNotes ?? [])],
   }
 }
 
@@ -108,7 +108,11 @@ export function ocrTables(p: PageState, words: Word[], regions = p.regions ?? []
   const warnings = tables.length
     ? []
     : ['OCR found no table on this page. If it has one, read it again with AI.']
-  return { tables, warnings, notes: r.diagnostics.map(d => d.message) }
+  return {
+    tables,
+    warnings,
+    notes: [...r.diagnostics.map(d => d.message), ...(p.sectionNotes ?? [])],
+  }
 }
 
 /** How a page's tables can be read again with new areas without reading the page again. */
@@ -157,19 +161,41 @@ function unionBox(boxes: Box[]): Box | null {
   }
 }
 
-/** The part of a rendered page to read: every area the page is limited to, or null for all of it. */
-function readBox(
+export const NOTHING_MARKED =
+  'Nothing marked on this page was found, so it wasn’t sent. Mark an area on it, or clear its areas.'
+
+/**
+ * The part of a rendered page to read: every area the page is limited to,
+ * null for all of it, or 'none' when the page is limited but nothing on it
+ * is marked (a text marker not found, or one on a page with no PDF text).
+ */
+export function readBox(
   regions: UserRegion[],
   words: Word[] | null,
   n: number,
   open: ReadonlySet<string> = new Set(),
-): Box | null {
+): Box | null | 'none' {
   if (!regions.some(r => r.kind !== 'ignore')) return null
   const boxes = regions.flatMap(r => (r.kind === 'only' ? [r.box] : []))
   // With a text layer, text markers resolve to the lines they cover; an area
   // with no text in it (a picture of a table) still counts.
   const kept = words ? applyRegions(words, regions, n, open).words : []
-  return unionBox([...kept, ...boxes])
+  return unionBox([...kept, ...boxes]) ?? 'none'
+}
+
+/**
+ * The PDF text sent with an AI page. With areas, only the words they keep,
+ * from whatever text the page has (garbled text included); never the whole
+ * page's text, which would carry what was ignored.
+ */
+export function aiHint(
+  page: PageState,
+  words: Word[],
+  regions: UserRegion[],
+  open: ReadonlySet<string>,
+): string {
+  if (!regions.length) return page.triage?.textHint ?? ''
+  return words.length ? linesToText(applyRegions(words, regions, page.n, open).words) : ''
 }
 
 /** A copy of part of a canvas, with ignored areas painted white. */
@@ -332,21 +358,19 @@ export async function runPage(
       })
       return
     }
+    const open = new Set(page.openSections)
+    // Batch pages keep slim summaries without words: get them from the open document.
+    const pageText =
+      page.triage?.kind === 'blank' || page.triage?.image ? [] : await textWords(page, source)
+    const textLayer = page.triage?.kind === 'digital' ? pageText : []
+    const box = readBox(regions, textLayer.length ? textLayer : null, page.n, open)
+    // Limited to areas that aren't on this page: nothing is sent.
+    if (box === 'none') throw new Error(NOTHING_MARKED)
     const { canvas, scale } = await source.render(2000)
-    const textLayer = page.triage?.kind === 'digital' ? page.triage.words : []
-    const box = readBox(
-      regions,
-      textLayer.length ? textLayer : null,
-      page.n,
-      new Set(page.openSections),
-    )
     // Only the marked area (and its PDF text) is sent; ignored areas are blanked.
     const rect = box ? cropForAI(box, size, scale) : null
     const image = cropCanvas(canvas, rect, ignored, scale)
-    const hint =
-      regions.length && textLayer.length
-        ? linesToText(applyRegions(textLayer, regions, page.n, new Set(page.openSections)).words)
-        : (page.triage?.textHint ?? '')
+    const hint = aiHint(page, pageText, regions, open)
     const res = await readWithAi({
       tier: ai.tier,
       image_base64: await toJpegBase64(image),
@@ -460,10 +484,11 @@ export async function runPages(
  * worked out across the whole document (a section that starts on page 1 runs
  * on through later pages until its end marker).
  */
-export function withOpenSections<T extends { p: PageState; regions: UserRegion[] }>(
+export async function withOpenSections<T extends { p: PageState; regions: UserRegion[] }>(
   pages: PageState[],
   changes: T[],
-): (T & { openSections: string[] })[] {
+  wordsOf: (p: PageState) => Promise<Word[]>,
+): Promise<(T & { openSections: string[]; sectionNotes: string[] })[]> {
   const regionsFor = new Map(changes.map(c => [c.p.n, c.regions]))
   const all = pages.map(p => ({ n: p.n, regions: regionsFor.get(p.n) ?? p.regions ?? [] }))
   const sections = [
@@ -474,11 +499,13 @@ export function withOpenSections<T extends { p: PageState; regions: UserRegion[]
         .map(r => [sectionKey(r), r]),
     ).values(),
   ]
-  if (!sections.length) return changes.map(c => ({ ...c, openSections: [] }))
-  const words = pages.map(p => ({
-    n: p.n,
-    words: (p.run?.engine === 'ocr' ? p.ocrWords : p.triage?.words) ?? [],
+  if (!sections.length) return changes.map(c => ({ ...c, openSections: [], sectionNotes: [] }))
+  // Batch pages keep slim summaries without words, so they come from the document.
+  const words = await Promise.all(pages.map(async p => ({ n: p.n, words: await wordsOf(p) })))
+  const { open, unclosed } = sectionsAcross(words, sections)
+  return changes.map(c => ({
+    ...c,
+    openSections: [...(open.get(c.p.n) ?? [])],
+    sectionNotes: unclosed.get(c.p.n) ?? [],
   }))
-  const open = sectionsOpenAtStart(words, sections)
-  return changes.map(c => ({ ...c, openSections: [...(open.get(c.p.n) ?? [])] }))
 }

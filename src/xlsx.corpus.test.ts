@@ -89,6 +89,7 @@ describe('statement.pdf workbook', () => {
     // The joined statement is one table on sheet1, with a Balance check column.
     const t1 = files.get('xl/tables/table1.xml') ?? ''
     expect(t1).toContain('name="Date"')
+    expect(t1).toContain('name="Line"')
     expect(t1).toContain('name="Balance check"')
     expect(files.get('xl/worksheets/_rels/sheet1.xml.rels')).toContain('../tables/table1.xml')
     expect(files.get('xl/worksheets/sheet1.xml')).toMatch(
@@ -101,7 +102,10 @@ describe('statement.pdf workbook', () => {
     const files = await workbook('statement.pdf')
     const sheet1 = formulas(files.get('xl/worksheets/sheet1.xml') ?? '')
     expect(sheet1.length).toBeGreaterThan(40)
-    expect(sheet1[0]).toBe('ROUND(D2+SUM(C3)-D3,2)')
+    // Found by PDF line number, so sorting the Table keeps the check right.
+    expect(sheet1[0]).toBe(
+      'ROUND(SUMIFS(Account_00012345[Balance],Account_00012345[Line],1)+SUMIFS(Account_00012345[Amount],Account_00012345[Line],"&gt;1",Account_00012345[Line],"&lt;=2")-D3,2)',
+    )
     // No formula keeps the leading "=" (OOXML stores formulas without it).
     expect(sheet1.every(f => !f.startsWith('='))).toBe(true)
     const all = [...files.entries()]

@@ -14,7 +14,14 @@ import {
   type EditSummary,
   type SourceInfo,
 } from './xlsxAudit'
-import { balanceFormulas, differenceFormat, totalFormulas, type RowAt } from './xlsxChecks'
+import {
+  balanceFormulas,
+  differenceFormat,
+  partialTotals,
+  totalFormulas,
+  type Lines,
+  type RowAt,
+} from './xlsxChecks'
 import {
   address,
   columnNames,
@@ -25,7 +32,7 @@ import {
   type PartsSheet,
   type TableSpec,
 } from './xlsxParts'
-import { summarySheets, type SummarySource } from './xlsxSummary'
+import { columnRef, summarySheets, type SummarySource } from './xlsxSummary'
 
 export type { SourceInfo }
 
@@ -197,22 +204,49 @@ export function tableBlock(t: Table, start: number, o: BlockOptions): Block {
   )
   // A table without a header gets one: Excel Tables and PivotTables need column names.
   const shift = h === 0 ? 1 : 0
-  const at: RowAt = i => start + i + shift
   const headerRow = start + Math.max(0, h - 1)
   const lastData = lastDataRow(t)
-  const dataRows = Array.from({ length: Math.max(0, lastData - h + 1) }, (_, k) => h + k)
+  // Subtotals inside the lines move below them with the closing totals, so
+  // the Excel Table holds lines only and a PivotTable never counts a total.
+  const total = totalRows(t)
+  const span = (a: number, b: number) => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k)
+  const inside = span(h, lastData + 1)
+  const dataRows = inside.filter(i => !total[i])
+  const order = [
+    ...span(0, h),
+    ...dataRows,
+    ...inside.filter(i => total[i]),
+    ...span(lastData + 1, t.rows.length),
+  ]
+  const pos = new Map(order.map((i, k) => [i, k]))
+  const at: RowAt = i => start + shift + (pos.get(i) ?? i)
   const hasTable = dataRows.length > 0 && width > 0
 
   const names = columnNames(headerTexts(t, width))
-  const balance = o.typed && hasTable ? balanceFormulas(t, at) : null
-  const columns = balance ? columnNames([...names, 'Balance check']) : names
-  const totals = o.typed ? totalFormulas(t, at) : []
+  const name = hasTable ? tableName(t.title.trim() || o.base, o.names) : ''
+  // A running balance, or a total over only some lines, is checked by PDF
+  // line number (a Line column), so sorting the Table keeps the checks right.
+  const hasBalance = o.typed && hasTable && balanceFormulas(t, at) !== null
+  const numbered = hasBalance || (o.typed && hasTable && partialTotals(t, dataRows))
+  const extra = [...(numbered ? ['Line'] : []), ...(hasBalance ? ['Balance check'] : [])]
+  const columns = columnNames([...names, ...extra])
+  const lineOf = new Map(dataRows.map((r, k) => [r, k + 1]))
+  const lines: Lines | undefined = numbered
+    ? {
+        ref: c => columnRef({ name, columns }, c),
+        line: columnRef({ name, columns }, width),
+        of: r => lineOf.get(r),
+      }
+    : undefined
+  const balance = hasBalance ? balanceFormulas(t, at, lines) : null
+  const totals = o.typed ? totalFormulas(t, at, lines, dataRows) : []
   const formulaAt = new Map(totals.map(f => [`${f.row}:${f.col}`, f.formula]))
   const checkAt = new Map(balance?.checks.map(c => [c.row, c.formula]))
 
   const rows: Row[] = []
   if (shift) rows.push(columns.map(n => ({ value: n, type: String, fontWeight: 'bold' })))
-  t.rows.forEach((r, i) => {
+  for (const i of order) {
+    const r = t.rows[i] ?? []
     const cells: Row = Array.from({ length: width }, (_, c): Cell => {
       const raw = r[c] ?? ''
       if (i < h - 1)
@@ -229,10 +263,20 @@ export function tableBlock(t: Table, start: number, o: BlockOptions): Block {
         }
       return bodyCell(raw, o.typed, types[c], formats[c] ?? null)
     })
+    if (numbered) {
+      const n = lineOf.get(i)
+      if (i === h - 1)
+        cells.push({ value: columns[width] ?? 'Line', type: String, fontWeight: 'bold' })
+      else
+        cells.push(
+          n === undefined ? null : { value: n, type: Number, format: '0', textColor: GREY },
+        )
+    }
     if (balance) {
       const f = checkAt.get(i)
+      const c = width + (numbered ? 1 : 0)
       if (i === h - 1)
-        cells.push({ value: columns[width] ?? 'Balance check', type: String, fontWeight: 'bold' })
+        cells.push({ value: columns[c] ?? 'Balance check', type: String, fontWeight: 'bold' })
       else if (f)
         cells.push({
           value: f,
@@ -243,7 +287,7 @@ export function tableBlock(t: Table, start: number, o: BlockOptions): Block {
       else cells.push(null)
     }
     rows.push(cells)
-  })
+  }
 
   if (totals.length)
     rows.push(...checkBlock(t, totals, columns, formats, types, at, start + rows.length))
@@ -251,9 +295,9 @@ export function tableBlock(t: Table, start: number, o: BlockOptions): Block {
   const table: TableSpec | undefined = hasTable
     ? {
         id: 0,
-        name: tableName(t.title.trim() || o.base, o.names),
+        name,
         headerRow,
-        lastRow: at(lastData),
+        lastRow: at(dataRows.at(-1) ?? h),
         firstCol: 0,
         columns,
       }

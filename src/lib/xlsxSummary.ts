@@ -33,13 +33,15 @@ export interface SummarySheet {
   widths: number[]
 }
 
-// Characters that need the column name in its own brackets: Tbl[[Paid in]].
-const SPECIAL = /[\s,:.[\]#'"{}$^&*+=\-<>/]/
+// Anything but letters, digits and _ puts the column name in its own
+// brackets: Tbl[[Paid in]]. Brackets, #, ' and @ are escaped with ' (a bare
+// @ would mean "this row").
+const SPECIAL = /[^\p{L}\p{N}_]/u
 
 /** Structured reference to a table column: Tbl_Statement[Amount], Tbl[[Money in]]. */
-export function columnRef(spec: TableSpec, col: number): string {
+export function columnRef(spec: Pick<TableSpec, 'name' | 'columns'>, col: number): string {
   const name = spec.columns[col] ?? ''
-  const escaped = name.replace(/[[\]#']/g, ch => `'${ch}`)
+  const escaped = name.replace(/[[\]#'@]/g, ch => `'${ch}`)
   return SPECIAL.test(name) ? `${spec.name}[[${escaped}]]` : `${spec.name}[${escaped}]`
 }
 

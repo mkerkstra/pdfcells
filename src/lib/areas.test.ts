@@ -172,7 +172,40 @@ describe('recipes with a preset and areas', () => {
 })
 
 describe('carryOver', () => {
-  it('keeps the person’s cells, name and Include on the same table read again', () => {
+  it('never brings back text the new areas leave out, keeps typed headers', () => {
+    const bbox = { x0: 50, y0: 50, x1: 500, y1: 300 }
+    const old = {
+      ...t('old', bbox, [
+        ['Item', 'Amount'],
+        ['Fee SECRET', '9'],
+      ]),
+      headerRows: 1,
+      edits: [
+        {
+          op: 'header' as const,
+          row: 0,
+          col: { name: 'Amt', nth: 0, index: 1, width: 2 },
+          text: 'Amount',
+        },
+      ],
+    }
+    const [out] = carryOver(
+      [old],
+      [
+        t('new', bbox, [
+          ['Item', 'Amt'],
+          ['Fee', '9'],
+        ]),
+      ],
+    )
+    expect(out?.rows).toEqual([
+      ['Item', 'Amount'],
+      ['Fee', '9'],
+    ])
+    expect(out?.headerRows).toBe(1)
+  })
+
+  it('keeps the person’s name and Include on the same table read again, cells from the new read', () => {
     const bbox = { x0: 50, y0: 50, x1: 500, y1: 300 }
     const edited = {
       ...t('old', bbox, [['a', '9']]),
@@ -181,7 +214,7 @@ describe('carryOver', () => {
       includeSet: true,
     }
     const [same] = carryOver([edited], [t('new', bbox, [['a', '1']])])
-    expect(same).toMatchObject({ id: 'new', rows: [['a', '9']], title: 'Renamed', include: false })
+    expect(same).toMatchObject({ id: 'new', rows: [['a', '1']], title: 'Renamed', include: false })
     // A different size keeps the name and Include, not the cells.
     const [grown] = carryOver(
       [edited],
