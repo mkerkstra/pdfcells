@@ -23,7 +23,13 @@ import { createWorker, type Worker } from 'tesseract.js'
 
 import { buildTables, type LocalTable } from '../../src/lib/layout'
 import { wordsFromBlocks } from '../../src/lib/ocr'
-import { fromCrop, mergeWords, retryBox, retryReason } from '../../src/lib/ocrRetry'
+import {
+  fromCrop,
+  lowConfidenceShare,
+  mergeWords,
+  retryBox,
+  retryReason,
+} from '../../src/lib/ocrRetry'
 import { createPpocr, type Ppocr } from '../../src/lib/ppocr/engine'
 import { PPOCR_MODELS } from '../../src/lib/ppocr/models'
 import { ppocrWordsToPage } from '../../src/lib/ppocr/words'
@@ -46,22 +52,6 @@ const asTable = (t: LocalTable, i: number): Table => ({
   cellConf: t.cellConf,
   include: true,
 })
-
-/** Cells under 70 % OCR confidence / non-empty cells, over every table. */
-function lowConf(tables: Table[]): string {
-  let low = 0
-  let all = 0
-  for (const t of tables)
-    t.rows.forEach((r, i) =>
-      r.forEach((c, j) => {
-        if (!c.trim()) return
-        all++
-        const conf = t.cellConf?.[i]?.[j]
-        if (conf !== null && conf !== undefined && conf < 70) low++
-      }),
-    )
-  return `${low}/${all}`
-}
 
 export function ppocrRetryEngine(mode: RetryMode, margin: number): Engine {
   let svc: Promise<Ppocr> | undefined
@@ -146,7 +136,7 @@ export function ppocrRetryEngine(mode: RetryMode, margin: number): Engine {
         costMicros: 0,
         notes: [
           `trigger: ${trigger}`,
-          `low-confidence cells: ${lowConf(tables)}`,
+          `low-confidence share: ${(lowConfidenceShare(tables) * 100).toFixed(0)}%`,
           `crop: ${(area * 100).toFixed(0)}% of the page`,
           `det ${Math.round(timing.detMs)} ms, rec ${Math.round(timing.recMs)} ms, ${timing.boxes} boxes`,
         ],

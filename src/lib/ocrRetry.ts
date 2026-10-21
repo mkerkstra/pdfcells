@@ -7,7 +7,7 @@ import type { Box, Table, Word } from './types'
 import { review } from './validate'
 
 /** Checks whose failure on an OCR page usually means a misread, not a layout quirk. */
-const WEAK_KINDS = new Set(['total', 'balance', 'arithmetic', 'crossfoot', 'tie', 'low-confidence'])
+const WEAK_KINDS = new Set(['total', 'balance', 'arithmetic', 'crossfoot', 'tie'])
 
 /** The parts of a page the offer looks at (a PageState fits). */
 export interface RetryPage {
@@ -39,17 +39,32 @@ export function retryReason(p: RetryPage): RetryReason | null {
   if (p.status !== 'done' || p.run?.engine !== 'ocr' || p.run.recognizer === 'ppocr') return null
   if (p.triage?.kind === 'blank') return null
   if (p.tables.length === 0) return 'no-table'
-  let low = 0
-  let cells = 0
   for (const t of p.tables) {
-    cells += t.rows.reduce((n, r) => n + r.filter(c => c.trim() !== '').length, 0)
     for (const i of review(t).issues) {
-      if (!WEAK_KINDS.has(i.kind)) continue
-      if (i.kind !== 'low-confidence') return 'checks'
-      low++
+      if (WEAK_KINDS.has(i.kind)) return 'checks'
     }
   }
-  return cells > 0 && low / cells >= LOW_CONFIDENCE_SHARE ? 'low-confidence' : null
+  return lowConfidenceShare(p.tables) >= LOW_CONFIDENCE_SHARE ? 'low-confidence' : null
+}
+
+/**
+ * Share of the tables' non-empty cells OCR was under 70 % sure of (the
+ * review's low-confidence cut-off), read from cellConf itself: the review
+ * drops a cell's low-confidence flag when the cell also has a type issue.
+ */
+export function lowConfidenceShare(tables: readonly Pick<Table, 'rows' | 'cellConf'>[]): number {
+  let low = 0
+  let cells = 0
+  for (const t of tables)
+    t.rows.forEach((r, i) =>
+      r.forEach((c, j) => {
+        if (c.trim() === '') return
+        cells++
+        const conf = t.cellConf?.[i]?.[j]
+        if (conf !== null && conf !== undefined && conf < 70) low++
+      }),
+    )
+  return cells ? low / cells : 0
 }
 
 /**

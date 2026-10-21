@@ -63,6 +63,36 @@ describe('retryReason', () => {
     expect(retryReason(ocrPage([unsure]))).toBe('low-confidence')
   })
 
+  it('counts an unsure cell that is also a type outlier (the review keeps only one flag)', () => {
+    const t = table(
+      [['10'], ['20'], ['3O'], ['40'], ['50']].map(r => [...r, 'x']),
+      {
+        headerRows: 0,
+        cellConf: [
+          [99, 99],
+          [99, 99],
+          [40, 99],
+          [99, 99],
+          [99, 99],
+        ],
+      },
+    )
+    // 1 of 10 non-empty cells: under the share.
+    expect(retryReason(ocrPage([t]))).toBeNull()
+    const two = table(t.rows, {
+      headerRows: 0,
+      cellConf: [
+        [99, 99],
+        [99, 99],
+        [40, 50],
+        [99, 99],
+        [99, 99],
+      ],
+    })
+    // 2 of 10: a fifth.
+    expect(retryReason(ocrPage([two]))).toBe('low-confidence')
+  })
+
   it('a stray unsure cell on a good page does not nag', () => {
     // 1 of 8 cells under 70 %.
     const stray = table(footed.rows, {
