@@ -2,11 +2,15 @@
 // survives re-renders; results flow back through dispatch.
 
 import { api, ApiError, toApiTable, type ExtractRequest, type ExtractResponse } from '@/lib/api'
-import { toJpegBase64, type DocSource } from '@/lib/document'
-import { buildTables, type LocalTable } from '@/lib/layout'
+import type { UserRegion } from '@/lib/areas'
+import { toJpegBase64, type DocSource, type PageSource } from '@/lib/document'
+import { buildTables, linesToText, type LocalTable } from '@/lib/layout'
+import { cleanWords, type PageSize } from '@/lib/noise'
 import { ocrWords } from '@/lib/ocr'
+import { extractPage, type ExtractedTable, type PageNoise } from '@/lib/pipeline'
+import { applyRegions, cropForAI, regionApplies, type PixelRect } from '@/lib/region'
 import { triage as classify } from '@/lib/triage'
-import type { Table, Tier } from '@/lib/types'
+import type { Box, Table, Tier, Word } from '@/lib/types'
 
 import type { Action, PageState } from './doc'
 
@@ -15,7 +19,9 @@ type Dispatch = (a: Action) => void
 let seq = 0
 const newId = () => `t${++seq}`
 
-export function fromLocal(t: LocalTable): Table {
+/** A table from the layout engine; one from the pipeline keeps its scoring verdict. */
+export function fromLocal(t: LocalTable | ExtractedTable): Table {
+  const hidden = 'hiddenReason' in t ? t.hiddenReason : undefined
   return {
     id: newId(),
     title: t.title,
@@ -24,8 +30,160 @@ export function fromLocal(t: LocalTable): Table {
     notes: '',
     bbox: t.bbox,
     cellConf: t.cellConf,
-    include: true,
+    include: !hidden,
+    ...(hidden === undefined ? {} : { hiddenReason: hidden, autoHidden: hidden }),
   }
+}
+
+export interface ExtractedPage {
+  index: number
+  tables: Table[]
+  noise: PageNoise
+}
+
+/**
+ * The pipeline over a whole document's PDF text pages: running headers and
+ * footers found across them, then each page's tables scored. `words[i]` is
+ * page i's text layer; pages that aren't PDF text pass null and are left out.
+ */
+export function documentTables(
+  words: (Word[] | null)[],
+  sizes: (PageSize | undefined)[],
+): ExtractedPage[] {
+  const idx = words.flatMap((w, i) => (w ? [i] : []))
+  const clean = cleanWords(
+    idx.map(i => words[i] ?? []),
+    { sizes: idx.map(i => sizes[i]) },
+  )
+  return idx.map((i, k) => {
+    const noise: PageNoise = {
+      dropped: clean.dropped[k] ?? [],
+      removed: clean.removed.filter(r => r.page === k + 1).map(r => ({ ...r, page: i + 1 })),
+    }
+    const x = extractPage(words[i] ?? [], { pageNumber: i + 1, pageSize: sizes[i], noise })
+    return { index: i, tables: x.tables.map(t => fromLocal(t)), noise }
+  })
+}
+
+const sizeOf = (p: PageState): PageSize | undefined =>
+  p.triage ? { width: p.triage.width, height: p.triage.height } : undefined
+
+const active = (p: PageState, regions: UserRegion[] = p.regions ?? []) =>
+  regions.filter(r => regionApplies(r, p.n))
+
+export interface AreaRead {
+  tables: Table[]
+  warnings: string[]
+  /** Where an area couldn't be placed on the page: a text marker that isn't on it. */
+  notes: string[]
+}
+
+/** A PDF text page's tables through the pipeline, with its document-level noise and these areas. */
+export function textTables(p: PageState, words: Word[], regions = p.regions ?? []): AreaRead {
+  const x = extractPage(words, {
+    pageNumber: p.n,
+    pageSize: sizeOf(p),
+    regions: active(p, regions),
+    noise: p.noise ?? true,
+  })
+  return {
+    tables: x.tables.map(t => fromLocal(t)),
+    warnings: [],
+    notes: x.diagnostics.map(d => d.message),
+  }
+}
+
+/** OCR words to tables, inside these areas. */
+export function ocrTables(p: PageState, words: Word[], regions = p.regions ?? []): AreaRead {
+  const r = applyRegions(words, active(p, regions), p.n)
+  const tables = buildTables(r.words).map(t => fromLocal(t))
+  const warnings = tables.length
+    ? []
+    : ['OCR found no table on this page. If it has one, read it again with AI.']
+  return { tables, warnings, notes: r.diagnostics.map(d => d.message) }
+}
+
+/** How a page's tables can be read again with new areas without reading the page again. */
+export function instantEngine(p: PageState): 'text' | 'ocr' | null {
+  if (p.run?.engine === 'ocr') return p.ocrWords ? 'ocr' : null
+  if (p.triage?.kind === 'digital' && (!p.run || p.run.engine === 'text')) return 'text'
+  return null
+}
+
+async function textWords(p: PageState, source: PageSource | Promise<PageSource>): Promise<Word[]> {
+  // Batch pages keep slim summaries without words: get them from the open document.
+  if (p.triage?.words.length) return p.triage.words
+  return (await (await source).facts()).words
+}
+
+/**
+ * A page read again with new areas, free and at once: PDF text pages through
+ * the pipeline, OCR pages from the words OCR already read. Null when the page
+ * has to be read again with OCR or AI (scans not yet read, AI pages).
+ */
+export async function readArea(
+  doc: DocSource,
+  p: PageState,
+  regions: UserRegion[],
+): Promise<AreaRead | null> {
+  const engine = instantEngine(p)
+  if (engine === 'ocr' && p.ocrWords) return ocrTables(p, p.ocrWords, regions)
+  if (engine === 'text') return textTables(p, await textWords(p, doc.page(p.n)), regions)
+  return null
+}
+
+/** The page's PDF text words, for drawing and resizing areas (empty for scans). */
+export async function pageWords(doc: DocSource, p: PageState): Promise<Word[]> {
+  if (p.run?.engine === 'ocr') return p.ocrWords ?? []
+  if (p.triage?.kind !== 'digital') return []
+  return textWords(p, doc.page(p.n))
+}
+
+function unionBox(boxes: Box[]): Box | null {
+  if (!boxes.length) return null
+  return {
+    x0: Math.min(...boxes.map(b => Math.min(b.x0, b.x1))),
+    y0: Math.min(...boxes.map(b => Math.min(b.y0, b.y1))),
+    x1: Math.max(...boxes.map(b => Math.max(b.x0, b.x1))),
+    y1: Math.max(...boxes.map(b => Math.max(b.y0, b.y1))),
+  }
+}
+
+/** The part of a rendered page to read: every area the page is limited to, or null for all of it. */
+function readBox(regions: UserRegion[], words: Word[] | null, n: number): Box | null {
+  if (!regions.some(r => r.kind !== 'ignore')) return null
+  if (words) {
+    // With a text layer, text markers resolve to the lines they cover.
+    const kept = applyRegions(words, regions, n).words
+    if (kept.length) return unionBox(kept)
+  }
+  return unionBox(regions.flatMap(r => (r.kind === 'only' ? [r.box] : [])))
+}
+
+/** A copy of part of a canvas, with ignored areas painted white. */
+function cropCanvas(
+  canvas: HTMLCanvasElement,
+  rect: PixelRect | null,
+  blank: Box[],
+  scale: number,
+): HTMLCanvasElement {
+  if (!rect && blank.length === 0) return canvas
+  const r = rect ?? { x: 0, y: 0, width: canvas.width, height: canvas.height }
+  const out = document.createElement('canvas')
+  out.width = Math.max(1, r.width)
+  out.height = Math.max(1, r.height)
+  const ctx = out.getContext('2d')
+  if (!ctx) return canvas
+  ctx.drawImage(canvas, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height)
+  ctx.fillStyle = '#fff'
+  for (const b of blank)
+    ctx.fillRect(
+      b.x0 * scale - r.x,
+      b.y0 * scale - r.y,
+      (b.x1 - b.x0) * scale,
+      (b.y1 - b.y0) * scale,
+    )
+  return out
 }
 
 /** Two tables on one page never share a name: they become two sheets. */
@@ -58,11 +216,16 @@ export async function triageAll(
   dispatch: Dispatch,
   signal: AbortSignal,
 ) {
+  const words: (Word[] | null)[] = []
+  const sizes: (PageSize | undefined)[] = []
   for (let i = 0; i < doc.pages; i++) {
     if (signal.aborted) return
+    words[i] = null
     try {
       const page = await doc.page(i + 1)
       const triage = classify(await page.facts(), aiAvailable)
+      if (triage.kind === 'digital') words[i] = triage.words
+      sizes[i] = { width: triage.width, height: triage.height }
       dispatch({
         type: 'triaged',
         index: i,
@@ -78,6 +241,9 @@ export async function triageAll(
       })
     }
   }
+  // Running headers and footers need every page, so the pipeline runs once they're all in.
+  if (signal.aborted) return
+  dispatch({ type: 'extracted', pages: documentTables(words, sizes) })
 }
 
 export interface AiOptions {
@@ -109,30 +275,66 @@ export async function runPage(
   dispatch({ type: 'status', index, status: 'running', progress: 0 })
   try {
     const source = await doc.page(page.n)
+    const regions = active(page)
+    const ignored = regions.flatMap(r => (r.kind === 'ignore' ? [r.box] : []))
+    const size = sizeOf(page) ?? { width: source.width, height: source.height }
     if (engine === 'text') {
-      const tables = (page.triage?.localTables ?? []).map(t => fromLocal(t))
-      dispatch({ type: 'result', index, tables, warnings: [], run: { engine: 'text' } })
+      const { tables, warnings, notes } = textTables(page, await textWords(page, source))
+      dispatch({
+        type: 'result',
+        index,
+        tables,
+        warnings,
+        notes,
+        run: { engine: 'text' },
+        regions: page.regions,
+      })
       return
     }
     if (engine === 'ocr') {
       // ~300 dpi for a letter page; OCR accuracy drops sharply below ~200.
       const { canvas, scale } = await source.render(3000)
-      const words = await ocrWords(canvas, scale, p =>
-        dispatch({ type: 'status', index, status: 'running', progress: p }),
+      const only = regions.some(r => r.kind === 'between')
+        ? null
+        : unionBox(regions.flatMap(r => (r.kind === 'only' ? [r.box] : [])))
+      // An area is read on its own: OCR sees only the crop.
+      const rect = only ? cropForAI(only, size, scale) : null
+      const progress = (p: number) =>
+        dispatch({ type: 'status', index, status: 'running', progress: p })
+      const dx = rect ? rect.x / scale : 0
+      const dy = rect ? rect.y / scale : 0
+      const words = (await ocrWords(cropCanvas(canvas, rect, [], scale), scale, progress)).map(w =>
+        rect ? { ...w, x0: w.x0 + dx, x1: w.x1 + dx, y0: w.y0 + dy, y1: w.y1 + dy } : w,
       )
-      const tables = buildTables(words).map(t => fromLocal(t))
-      const warnings = tables.length
-        ? []
-        : ['OCR found no table on this page. If it has one, read it again with AI.']
-      dispatch({ type: 'result', index, tables, warnings, run: { engine: 'ocr' } })
+      const { tables, warnings, notes } = ocrTables(page, words)
+      dispatch({
+        type: 'result',
+        index,
+        tables,
+        warnings,
+        notes,
+        run: { engine: 'ocr' },
+        regions: page.regions,
+        // Words of a crop can't serve another area later.
+        ocrWords: rect ? undefined : words,
+      })
       return
     }
-    const { canvas } = await source.render(2000)
+    const { canvas, scale } = await source.render(2000)
+    const textLayer = page.triage?.kind === 'digital' ? page.triage.words : []
+    const box = readBox(regions, textLayer.length ? textLayer : null, page.n)
+    // Only the marked area (and its PDF text) is sent; ignored areas are blanked.
+    const rect = box ? cropForAI(box, size, scale) : null
+    const image = cropCanvas(canvas, rect, ignored, scale)
+    const hint =
+      regions.length && textLayer.length
+        ? linesToText(applyRegions(textLayer, regions, page.n).words)
+        : (page.triage?.textHint ?? '')
     const res = await readWithAi({
       tier: ai.tier,
-      image_base64: await toJpegBase64(canvas),
+      image_base64: await toJpegBase64(image),
       media_type: 'image/jpeg',
-      text_layer: page.triage?.textHint ?? '',
+      text_layer: hint,
       text_layer_trusted: page.triage?.textTrusted ?? false,
       page_number: page.n,
       current: ai.current?.map(toApiTable),
@@ -152,6 +354,7 @@ export async function runPage(
         chargedMicros: res.charged_micros,
         costMicros: res.anthropic_cost_micros,
       },
+      regions: page.regions,
     })
   } catch (e) {
     dispatch({

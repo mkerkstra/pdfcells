@@ -4,6 +4,7 @@
 // summaries. AI pages from every file share the same three slots
 // (runner.aiSlots), and every AI read goes through runner.readWithAi.
 
+import { regionsForPage } from '@/lib/areas'
 import { MAX_BATCH_PAGES, readTables } from '@/lib/batch'
 import type { DocSource } from '@/lib/document'
 import {
@@ -14,17 +15,18 @@ import {
   similarity,
   type Fingerprint,
 } from '@/lib/fingerprint'
+import type { PageSize } from '@/lib/noise'
 import { openDocument } from '@/lib/open'
 import { PasswordRequired } from '@/lib/pdf'
 import type { Recipe, ReadKind } from '@/lib/recipe'
 import { readStatement } from '@/lib/statement'
 import { triage as classify, type PageTriage } from '@/lib/triage'
-import type { Engine, Tier } from '@/lib/types'
+import type { Engine, Tier, Word } from '@/lib/types'
 
 import type { BatchAction, BatchGroup, BatchItem, ReadChoice } from './batch'
 import { slimTriage } from './batch'
 import type { PageState } from './doc'
-import { fromLocal, runPages, semaphore, type RunHooks } from './runner'
+import { documentTables, fromLocal, runPages, semaphore, type RunHooks } from './runner'
 
 type Dispatch = (a: BatchAction) => void
 
@@ -98,7 +100,10 @@ async function checkOne(
       action: { type: 'open', fileName: item.doc.fileName, pageCount: doc.pages },
     })
     let letterhead = ''
+    const words: (Word[] | null)[] = []
+    const sizes: (PageSize | undefined)[] = []
     for (let i = 0; i < doc.pages; i++) {
+      words[i] = null
       if (signal.aborted) {
         dispatch({ type: 'item', id, patch: { status: 'waiting' } })
         return 0
@@ -106,6 +111,8 @@ async function checkOne(
       try {
         const t = classify(await (await doc.page(i + 1)).facts(), aiAvailable)
         if (i === 0) letterhead = t.textHint.split('\n').slice(0, 8).join('\n')
+        if (t.kind === 'digital') words[i] = t.words
+        sizes[i] = { width: t.width, height: t.height }
         dispatch({
           type: 'doc',
           id,
@@ -124,6 +131,12 @@ async function checkOne(
         })
       }
     }
+    // Running headers and footers are found across the file, then tables scored.
+    dispatch({
+      type: 'doc',
+      id,
+      action: { type: 'extracted', pages: documentTables(words, sizes) },
+    })
     dispatch({ type: 'item', id, patch: { status: 'checked', letterhead } })
     return doc.pages
   } catch (e) {
@@ -316,13 +329,26 @@ export function enginesOf(pages: PageState[]): Recipe['engines'] {
   return out
 }
 
-/** Pages of a file the recipe reads with a different engine than the batch did. */
+/**
+ * Pages of a file the recipe reads again: with a different engine than the
+ * batch did, or with the areas marked on the first file. Areas need the
+ * page's words, so PDF text and OCR pages are read again with them (free);
+ * AI pages aren't, and applyToPages says so.
+ */
 export function rereads(recipe: Recipe, pages: PageState[]): PageState[] {
+  const areas = recipe.regions ?? []
   return pages.flatMap(p => {
-    if (!p.triage || !p.run) return []
+    if (!p.triage) return []
     const want = recipe.engines[readKind(p.triage)]
-    if (!want || want === 'skip' || want === p.run.engine) return []
-    if (want === 'text' && p.triage.kind !== 'digital') return []
-    return [{ ...p, engine: want }]
+    const digital = p.triage.kind === 'digital'
+    let engine: Engine | 'skip' | undefined = p.run?.engine
+    if (p.run && want && want !== 'skip' && want !== p.run.engine && (want !== 'text' || digital))
+      engine = want
+    // A PDF text page with no table found may have one inside an area.
+    if (!p.run && areas.length && digital) engine = 'text'
+    const withAreas = areas.length > 0 && engine !== undefined && engine !== 'ai'
+    if (engine === undefined || (engine === p.run?.engine && !withAreas)) return []
+    const size = { width: p.triage.width, height: p.triage.height }
+    return [{ ...p, engine, ...(withAreas ? { regions: regionsForPage(areas, size) } : {}) }]
   })
 }

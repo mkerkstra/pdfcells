@@ -1,5 +1,8 @@
+import type { UserRegion } from '@/lib/areas'
+import type { PageNoise } from '@/lib/pipeline'
+import { applyPreset, type Preset } from '@/lib/preset'
 import type { PageTriage } from '@/lib/triage'
-import type { Engine, Table, Tier } from '@/lib/types'
+import type { Engine, Table, Tier, Word } from '@/lib/types'
 
 export type PageStatus = 'analyzing' | 'ready' | 'queued' | 'running' | 'done' | 'error'
 
@@ -22,12 +25,24 @@ export interface PageState {
   tables: Table[]
   warnings: string[]
   run?: RunInfo
+  /** Areas marked in review (page space). Part of the page, so undo covers them. */
+  regions?: UserRegion[]
+  /** Running headers, footers and page numbers found across the document (PDF text pages). */
+  noise?: PageNoise
+  /** Words OCR read on the whole page, so a marked area is re-read without OCR again. Not saved. */
+  ocrWords?: Word[]
+  /** Set when the preset left nothing on the page, so it was skipped rather than read. */
+  autoSkip?: boolean
+  /** Where a marked area couldn't be placed on this page, in plain words. */
+  areaNotes?: string[]
 }
 
 export interface DocState {
   fileName: string
   pages: PageState[]
   selected: number
+  /** What the person wants from the file (pre-check). */
+  preset: Preset
   past: PageState[][]
   future: PageState[][]
 }
@@ -36,20 +51,66 @@ export type Action =
   | { type: 'open'; fileName: string; pageCount: number }
   | { type: 'reset' }
   | { type: 'triaged'; index: number; triage: PageTriage; tables: Table[] }
+  /** Tables from the document-level pipeline (noise across pages, scoring), PDF text pages only. */
+  | { type: 'extracted'; pages: { index: number; tables: Table[]; noise: PageNoise }[] }
+  | { type: 'preset'; preset: Preset }
+  /** Marked areas changed; tables (when given) are the pages read again with them. One undo step. */
+  | {
+      type: 'regions'
+      pages: {
+        index: number
+        regions: UserRegion[]
+        tables?: Table[]
+        warnings?: string[]
+        notes?: string[]
+      }[]
+    }
   | { type: 'engine'; index: number; engine: Engine | 'skip' }
   | { type: 'status'; index: number; status: PageStatus; progress?: number; error?: string }
-  | { type: 'result'; index: number; tables: Table[]; warnings: string[]; run: RunInfo }
+  | {
+      type: 'result'
+      index: number
+      tables: Table[]
+      warnings: string[]
+      run: RunInfo
+      /** The areas the page was read with, and where they couldn't be placed. */
+      regions?: UserRegion[]
+      notes?: string[]
+      ocrWords?: Word[]
+    }
   | { type: 'table'; index: number; tableId: string; table: Table | null }
   | { type: 'select'; index: number }
   | { type: 'undo' }
   | { type: 'redo' }
 
-export const initialDoc: DocState = { fileName: '', pages: [], selected: 0, past: [], future: [] }
+export const initialDoc: DocState = {
+  fileName: '',
+  pages: [],
+  selected: 0,
+  preset: 'everything',
+  past: [],
+  future: [],
+}
 
 const HISTORY = 100
 
 function patch(s: DocState, index: number, p: Partial<PageState>): PageState[] {
   return s.pages.map((pg, i) => (i === index ? { ...pg, ...p } : pg))
+}
+
+const included = (p: PageState) => p.tables.some(t => t.include)
+
+/**
+ * A PDF text page waiting for AI because of an irregular table is skipped
+ * when the preset leaves none of its tables, and goes back to its
+ * recommendation when one returns. Pages already read are left alone.
+ */
+function autoSkip(p: PageState): PageState {
+  if (p.triage?.kind !== 'digital' || p.status === 'done' || p.run) return p
+  if (!p.autoSkip && p.engine === 'ai' && !included(p))
+    return { ...p, engine: 'skip', autoSkip: true }
+  if (p.autoSkip && included(p)) return { ...p, engine: p.triage.recommended, autoSkip: false }
+  return p
 }
 
 /** Push the current pages onto the undo stack (user-visible table changes only). */
@@ -73,19 +134,66 @@ export function reducer(s: DocState, a: Action): DocState {
       }
     case 'reset':
       return initialDoc
+    case 'extracted': {
+      const by = new Map(a.pages.map(p => [p.index, p]))
+      return {
+        ...s,
+        pages: s.pages.map((pg, i) => {
+          const x = by.get(i)
+          // Only pages still showing their PDF text tables (not read with OCR or AI since).
+          if (!x || (pg.run && pg.run.engine !== 'text')) return pg
+          return autoSkip({ ...pg, tables: applyPreset(x.tables, s.preset), noise: x.noise })
+        }),
+      }
+    }
+    case 'preset':
+      return {
+        ...s,
+        preset: a.preset,
+        pages: s.pages.map(pg => {
+          const tables = applyPreset(pg.tables, a.preset)
+          return autoSkip(tables === pg.tables ? pg : { ...pg, tables })
+        }),
+      }
+    case 'regions': {
+      const by = new Map(a.pages.map(p => [p.index, p]))
+      return commit(
+        s,
+        s.pages.map((pg, i) => {
+          const x = by.get(i)
+          if (!x) return pg
+          return {
+            ...pg,
+            regions: x.regions,
+            // A skipped PDF text page read through an area is read now.
+            ...(x.tables && !pg.run
+              ? {
+                  run: { engine: 'text' as const },
+                  engine: 'text' as const,
+                  status: 'done' as const,
+                }
+              : {}),
+            ...(x.tables ? { tables: applyPreset(x.tables, s.preset) } : {}),
+            ...(x.warnings ? { warnings: x.warnings } : {}),
+            ...(x.notes ? { areaNotes: x.notes } : {}),
+          }
+        }),
+      )
+    }
     case 'triaged':
       return {
         ...s,
         pages: patch(s, a.index, {
           triage: a.triage,
           engine: a.triage.recommended,
-          tables: a.tables,
+          tables: applyPreset(a.tables, s.preset),
           status: a.triage.recommended === 'text' ? 'done' : 'ready',
           run: a.triage.recommended === 'text' ? { engine: 'text' } : undefined,
-        }),
+          autoSkip: false,
+        }).map((pg, i) => (i === a.index ? autoSkip(pg) : pg)),
       }
     case 'engine':
-      return { ...s, pages: patch(s, a.index, { engine: a.engine }) }
+      return { ...s, pages: patch(s, a.index, { engine: a.engine, autoSkip: false }) }
     case 'status':
       return {
         ...s,
@@ -95,9 +203,12 @@ export function reducer(s: DocState, a: Action): DocState {
       return commit(
         s,
         patch(s, a.index, {
-          tables: a.tables,
+          tables: applyPreset(a.tables, s.preset),
           warnings: a.warnings,
           run: a.run,
+          ...(a.regions ? { regions: a.regions } : {}),
+          areaNotes: a.notes ?? [],
+          ocrWords: a.ocrWords,
           status: 'done',
           error: undefined,
           progress: undefined,
@@ -106,9 +217,15 @@ export function reducer(s: DocState, a: Action): DocState {
     case 'table': {
       const page = s.pages[a.index]
       if (!page) return s
-      const tables = a.table
+      const prev = page.tables.find(t => t.id === a.tableId)
+      // Include set by hand wins over scoring and the preset from now on.
+      const next =
+        a.table && prev && a.table.include !== prev.include
+          ? { ...a.table, includeSet: true, hiddenReason: '' }
+          : a.table
+      const tables = next
         ? page.tables
-            .map(t => (t.id === a.tableId ? a.table : t))
+            .map(t => (t.id === a.tableId ? next : t))
             .filter((t): t is Table => t !== null)
         : page.tables.filter(t => t.id !== a.tableId)
       return commit(s, patch(s, a.index, { tables }))

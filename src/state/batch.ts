@@ -121,6 +121,19 @@ function mapItem(s: BatchState, id: string, fn: (it: BatchItem) => BatchItem): B
   return { ...s, items: s.items.map(it => (it.id === id ? fn(it) : it)) }
 }
 
+/** Why a recipe's marked areas didn't reach part of a document, in plain words. */
+export function areaProblems(recipe: Recipe, pages: PageState[]): string[] {
+  if (!recipe.regions?.length) return []
+  return pages.flatMap(p => [
+    ...(p.areaNotes ?? []),
+    ...(p.run?.engine === 'ai'
+      ? [
+          `Page ${p.n} was read with AI, so the areas marked on ${recipe.source} weren’t used there. Read it again to use them.`,
+        ]
+      : []),
+  ])
+}
+
 /** Pages with their tables replaced by a recipe's result. */
 export function applyToPages(
   recipe: Recipe,
@@ -133,7 +146,7 @@ export function applyToPages(
       const tables = byPage.get(p.n)
       return tables ? { ...p, tables } : p
     }),
-    problems: res.problems,
+    problems: [...areaProblems(recipe, pages), ...res.problems],
   }
 }
 
@@ -181,7 +194,7 @@ export function batchReducer(s: BatchState, a: BatchAction): BatchState {
           return {
             ...it,
             read: base,
-            doc: { ...it.doc, pages, past: [], future: [] },
+            doc: { ...it.doc, pages, preset: recipe.preset ?? 'everything', past: [], future: [] },
             recipeProblems: problems,
             reviewed: false,
           }
@@ -213,15 +226,18 @@ function settlePage(p: PageState): PageState {
     : p
 }
 
+/** OCR words stay in memory only: a marked area on a resumed OCR page reads it again. */
+const slimPage = (p: PageState): PageState => (p.ocrWords ? { ...p, ocrWords: undefined } : p)
+
 function settleItem(it: BatchItem): BatchItem {
   const status: ItemStatus =
     it.status === 'checking' ? 'waiting' : it.status === 'reading' ? 'checked' : it.status
-  const pages = it.doc.pages.map(settlePage)
+  const pages = it.doc.pages.map(p => slimPage(settlePage(p)))
   return {
     ...it,
     status,
     doc: { ...it.doc, pages, past: [], future: [], selected: 0 },
-    read: it.read?.map(settlePage),
+    read: it.read?.map(p => slimPage(settlePage(p))),
   }
 }
 
@@ -238,7 +254,9 @@ export function deserialize(x: unknown): BatchState | null {
   return {
     ...saved.state,
     considered: saved.state.considered ?? [],
-    items: saved.state.items.map(settleItem),
+    items: saved.state.items.map(it =>
+      settleItem({ ...it, doc: { ...it.doc, preset: it.doc.preset ?? 'everything' } }),
+    ),
   }
 }
 
