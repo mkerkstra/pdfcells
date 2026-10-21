@@ -6,7 +6,7 @@ const CASES: [string, string][] = [
   // Processor prefixes hide the merchant.
   ['SQ *BLUE BOTTLE COFFEE OAKLAND CA', 'Blue Bottle Coffee'],
   ['SQ*BLUE BOTTLE COFFEE', 'Blue Bottle Coffee'],
-  ['TST* THE FRENCH LAUNDRY YOUNTVILLE CA', 'The French Laundry'],
+  ['TST* THE FRENCH LAUNDRY YOUNTVILLE CA', 'The French Laundry Yountville'],
   ['TST*SWEETGREEN 0123 NEW YORK NY', 'Sweetgreen'],
   ['PAYPAL *EBAY INC 4029357733 CA', 'Ebay'],
   ['PAYPAL *SPOTIFY', 'Spotify'],
@@ -55,6 +55,13 @@ const CASES: [string, string][] = [
   ['SPOTIFY USA 877-778-1161 NY 15JAN', 'Spotify'],
   ['GITHUB INC. SAN FRANCISCO CA', 'Github'],
   ['ADOBE *CREATIVE CLD 408-536-6000 CA', 'Adobe Creative'],
+  // Regression (Codex P2-5): a trailing state alone doesn't make the word before it a city.
+  ['BANK OF AMERICA CA', 'Bank Of America'],
+  ['THE HOME DEPOT CA', 'The Home Depot'],
+  ['PAYPAL *JOHN SMITH CA', 'John Smith'],
+  ['JOES PLUMBING NY', 'Joes Plumbing'],
+  ['SALT LAKE CITY UT', 'Salt Lake City'],
+  ['DELTA 0062 SALT LAKE CITY UT', 'Delta'],
   // Mixed case is someone's own wording: keep it.
   ['Transfer to Savings 1234', 'Transfer to Savings'],
   ['Payroll Acme Ltd', 'Payroll Acme'],

@@ -6,8 +6,7 @@ import { CATEGORIES, categoryOf, type CategorySource } from '@/lib/categories'
 import { aiErrorCopy, aiRequest, categoriseWithAi } from '@/lib/categoriseAi'
 import { formatNumber } from '@/lib/checks/grid'
 import type { PageTables } from '@/lib/checks/model'
-import { looksLikeCreditCard } from '@/lib/creditCard'
-import { readStatement, type Statement } from '@/lib/statement'
+import { detectCreditCard, readStatement, type Statement } from '@/lib/statement'
 import type { TransactionOptions } from '@/lib/transactions'
 import { useAccount } from '@/state/account'
 import {
@@ -44,7 +43,7 @@ export function useTransactions(pages: PageTables[]): TransactionsState {
   const [cardMode, setCardMode] = useState<CardMode>(undefined)
   const [open, setOpen] = useState(false)
   const categories = useCategories()
-  const detected = useMemo(() => looksLikeCreditCard(pages), [pages])
+  const detected = useMemo(() => detectCreditCard(pages), [pages])
   const creditCard = cardMode ?? detected
   const read = useMemo(() => readStatement(pages, { creditCard }), [pages, creditCard])
   const statement = useMemo(() => {
@@ -139,7 +138,10 @@ function CategoriesDialog({
       )
       rememberAi(out.answers)
       const placed = Object.values(out.answers).filter(c => c !== 'Uncategorised').length
-      setMessage(`AI placed ${placed} of ${out.asked} ${out.asked === 1 ? 'payee' : 'payees'}.`)
+      setMessage(
+        `AI placed ${placed} of ${out.asked} ${out.asked === 1 ? 'payee' : 'payees'}.` +
+          (out.remaining ? ` ${out.remaining} more left: click again to send them.` : ''),
+      )
       if (out.response?.source !== 'byok') account.refreshMe()
     } catch (e) {
       setError(aiErrorCopy(e))
@@ -228,7 +230,7 @@ function CategoriesDialog({
               {busy ? <Spinner /> : <Sparkles className='size-4' />}
               {pending === null
                 ? 'Nothing left to categorise'
-                : `Categorise ${pending.payees.length} ${pending.payees.length === 1 ? 'payee' : 'payees'}`}
+                : `Categorise ${pending.keys.length} ${pending.keys.length === 1 ? 'payee' : 'payees'}`}
             </Button>
             {!account.aiReady && <span className='text-muted'>{account.signIn}</span>}
             {message && <span className='text-muted'>{message}</span>}

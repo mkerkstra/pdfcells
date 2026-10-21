@@ -6,8 +6,7 @@
 
 import { categorise, type CategoryRule } from './categories'
 import type { PageTables } from './checks/model'
-import { looksLikeCreditCard } from './creditCard'
-import { readStatement, type Statement } from './statement'
+import { detectCreditCard, readStatement, type Statement } from './statement'
 import type { Table } from './types'
 
 export interface TransactionOptions {
@@ -55,7 +54,7 @@ export function prepareTransactions(
   opts: TransactionOptions | undefined,
   originals?: Map<string, Table>,
 ): Prepared {
-  const creditCard = opts?.creditCard ?? looksLikeCreditCard(pages)
+  const creditCard = opts?.creditCard ?? detectCreditCard(pages)
   if (!opts?.columns) return { pages, originals, creditCard }
   const s = readStatement(pages, { creditCard })
   if (!s || s.transactions.length === 0) return { pages, originals, creditCard }

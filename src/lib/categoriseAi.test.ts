@@ -1,8 +1,17 @@
+import { readFileSync } from 'node:fs'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, type CategorizeRequest } from './api'
-import { categorise } from './categories'
-import { aiErrorCopy, aiRequest, categoriseWithAi, AI_MAX_PAYEES } from './categoriseAi'
+import { aiKey, categorise, categoryOf } from './categories'
+import {
+  aiErrorCopy,
+  aiRequest,
+  categoriseWithAi,
+  AI_MAX_PAYEE_CHARS,
+  AI_MAX_PAYEES,
+  AI_MAX_TOTAL_CHARS,
+} from './categoriseAi'
 import { table } from './checks/testing'
 import { readStatement } from './statement'
 import { prepareTransactions } from './transactions'
@@ -35,9 +44,9 @@ describe('AI categorisation request (leak test)', () => {
   const txns = s?.transactions ?? []
 
   it('sends only cleaned payee names the local rules left uncategorised', () => {
-    const req = aiRequest(txns, { rules: [] }, 'fast')
-    expect(req).toEqual({ tier: 'fast', payees: ['Mystery Vendor', 'Acme Widgets'] })
-    const body = JSON.stringify(req)
+    const batch = aiRequest(txns, { rules: [] }, 'fast')
+    expect(batch?.request).toEqual({ tier: 'fast', payees: ['Mystery Vendor', 'Acme Widgets'] })
+    const body = JSON.stringify(batch?.request)
     for (const leak of ['SECRET', '4821', '1042', '993.50', '-6.50', '2026', 'Opening'])
       expect(body).not.toContain(leak)
   })
@@ -56,9 +65,58 @@ describe('AI categorisation request (leak test)', () => {
       description: '',
       amount: -1,
     }))
-    const req = aiRequest(many, { rules: [] }, 'max')
-    expect(req?.payees).toHaveLength(AI_MAX_PAYEES)
-    expect(Math.max(...(req?.payees ?? []).map(p => p.length))).toBeLessThanOrEqual(80)
+    const batch = aiRequest(many, { rules: [] }, 'max')
+    expect(batch?.request.payees.length).toBeLessThanOrEqual(AI_MAX_PAYEES)
+    expect(Math.max(...(batch?.request.payees ?? []).map(p => p.length))).toBeLessThanOrEqual(80)
+  })
+
+  // Regression (Codex P2-7): 101 payees of 80 characters is 8,080, over the
+  // server's 8,000 total; the request must stop below it and leave the rest.
+  it('keeps under the hosted total, leaving the rest for the next click', () => {
+    const many = Array.from({ length: 101 }, (_, i) => ({
+      payee: String(i).padStart(3, '0') + 'y'.repeat(77),
+      description: '',
+      amount: -1,
+    }))
+    const batch = aiRequest(many, { rules: [] }, 'fast')
+    const total = (batch?.request.payees ?? []).reduce((n, p) => n + Array.from(p).length, 0)
+    expect(total).toBeLessThanOrEqual(AI_MAX_TOTAL_CHARS)
+    expect(batch?.request.payees).toHaveLength(100)
+    expect(batch?.remaining).toBe(1)
+  })
+
+  // Regression (Codex P2-6): a payee cut to 80 characters for the request is
+  // answered under its full name, so the answer applies and isn't asked again.
+  it('stores answers for long payees under the full payee', async () => {
+    const long = { payee: 'Z'.repeat(81), description: '', amount: -1 }
+    const call = vi.fn(async (req: CategorizeRequest) => ({
+      categories: req.payees.map(() => 'Travel'),
+      source: 'free' as const,
+      charged_micros: 0,
+    }))
+    const out = await categoriseWithAi([long], { rules: [] }, 'fast', call)
+    expect(call.mock.calls[0]?.[0].payees).toEqual(['Z'.repeat(80)])
+    const ai = { [aiKey(long.payee)]: out.answers[long.payee] ?? '' }
+    expect(categoryOf(long, { rules: [], ai })).toEqual({ category: 'Travel', source: 'ai' })
+    expect(aiRequest([long], { rules: [], ai }, 'fast')).toBeNull()
+  })
+
+  it('uses the server’s hosted caps (backend/extract/categorize.go)', () => {
+    const go = readFileSync(new URL('../../backend/extract/categorize.go', import.meta.url), 'utf8')
+    const cap = (name: string) =>
+      Number(new RegExp(`${name}\\s*=\\s*([\\d_]+)`).exec(go)?.[1]?.replaceAll('_', ''))
+    expect([
+      cap('HostedMaxPayees'),
+      cap('HostedMaxPayeeRunes'),
+      cap('HostedMaxPayeeTotal'),
+    ]).toEqual([AI_MAX_PAYEES, AI_MAX_PAYEE_CHARS, AI_MAX_TOTAL_CHARS])
+  })
+
+  // Regression (Codex P2-8): an "Uncategorised" answer counts as asked.
+  it('never asks again about a payee the AI already answered Uncategorised', () => {
+    const q = { payee: 'Qxzzy', description: '', amount: -1 }
+    expect(aiRequest([q], { rules: [] }, 'fast')?.keys).toEqual(['Qxzzy'])
+    expect(aiRequest([q], { rules: [], ai: { qxzzy: 'Uncategorised' } }, 'fast')).toBeNull()
   })
 
   it('maps answers back by payee', async () => {

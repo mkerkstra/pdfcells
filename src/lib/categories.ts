@@ -188,7 +188,11 @@ export function categorise<T extends Categorisable>(
 /** Payees the local path left uncategorised: the only ones worth asking the AI about. */
 export function uncategorisedPayees(txns: Categorisable[], ctx: CategoryContext): string[] {
   const out = new Map<string, string>()
-  for (const t of txns)
-    if (categoryOf(t, ctx).source === 'none' && t.payee.trim()) out.set(aiKey(t.payee), t.payee)
+  for (const t of txns) {
+    // Already asked, even if the answer was "Uncategorised": asking again would bill again.
+    const asked = ctx.ai?.[aiKey(t.payee)] !== undefined
+    if (!asked && categoryOf(t, ctx).source === 'none' && t.payee.trim())
+      out.set(aiKey(t.payee), t.payee)
+  }
   return [...out.values()]
 }

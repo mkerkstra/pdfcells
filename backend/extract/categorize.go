@@ -134,13 +134,20 @@ func (r *CategorizeRequest) OutputTokens() int64 {
 	return int64(categorizeTokensFixed + categorizeTokensEach*len(r.Payees))
 }
 
-// EstimateInputTokens is a conservative pre-flight estimate for the credit hold.
+// EstimateInputTokens bounds the prompt for the credit hold. A token covers
+// at least one byte, so the bytes of everything sent (prompt, system prompt,
+// output schema) plus message framing can't be exceeded, whatever the script.
 func (r *CategorizeRequest) EstimateInputTokens() int64 {
-	n := 0
-	for _, p := range r.Payees {
-		n += len(p) + 8 // numbering and escaping
-	}
-	return int64(n)/2 + int64(len(categorizeSystem))/2 + 1_000
+	schema, _ := json.Marshal(categorizeSchema)
+	return int64(len(categorizePrompt(r.Payees))+len(categorizeSystem)+len(schema)) + 1_000
+}
+
+// CategorizeHold is the worst-case usage to reserve credits for: this tier's
+// model only (RunCategorize asks for no fallback), the input bound and the
+// full output budget.
+func CategorizeHold(r CategorizeRequest) pricing.Usage {
+	model, _ := ModelFor(r.Tier)
+	return pricing.Usage{Model: model, Input: r.EstimateInputTokens(), Output: r.OutputTokens()}
 }
 
 const categorizeSystem = `You categorise bank and credit-card transactions for bookkeeping.
@@ -237,10 +244,9 @@ func RunCategorize(ctx context.Context, apiKey string, req CategorizeRequest) (*
 			Format: anthropic.BetaJSONOutputFormatParam{Schema: categorizeSchema},
 		},
 	}
-	if spec.Fallback {
-		params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
-		params.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
-	}
+	// No server-side fallback: the credit hold is priced for this tier's
+	// model alone (CategorizeHold), and a fallback iteration on another model
+	// would settle above it. A refused list just comes back as ErrRefused.
 	msg, err := client.Beta.Messages.New(ctx, params)
 	if err != nil {
 		return nil, err

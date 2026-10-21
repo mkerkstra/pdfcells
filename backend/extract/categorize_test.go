@@ -123,6 +123,40 @@ func fakeMessages(t *testing.T, text string) (sent func() string) {
 	return func() string { mu.Lock(); defer mu.Unlock(); return body }
 }
 
+// Regression (Codex P1-3): the hold is priced for one model, so no request
+// may ask for a server-side fallback that would settle on another.
+func TestRunCategorizeAsksForNoFallback(t *testing.T) {
+	for _, tier := range []Tier{TierFast, TierAccurate, TierMax} {
+		sent := fakeMessages(t, `{"results":[]}`)
+		if _, err := RunCategorize(context.Background(), "k", CategorizeRequest{Tier: tier, Payees: []string{"Shop"}}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(sent(), "fallback") {
+			t.Fatalf("%s: request asks for a fallback:\n%s", tier, sent())
+		}
+	}
+}
+
+// Regression (Codex P1-3): the hold covers the largest hosted request on the
+// tier's model, whatever the script (a token is at least one byte).
+func TestCategorizeHoldCoversWorstCase(t *testing.T) {
+	payees := make([]string, HostedMaxPayees)
+	for i := range payees {
+		payees[i] = strings.Repeat("😀", HostedMaxPayeeTotal/HostedMaxPayees)
+	}
+	req := CategorizeRequest{Tier: TierAccurate, Payees: payees}
+	hold := CategorizeHold(req)
+	if hold.Model != "claude-sonnet-5-5" {
+		t.Fatalf("hold model %q", hold.Model)
+	}
+	if bytes := int64(len(categorizePrompt(payees)) + len(categorizeSystem)); hold.Input < bytes {
+		t.Fatalf("hold input %d below the prompt's %d bytes", hold.Input, bytes)
+	}
+	if hold.Output != req.OutputTokens() {
+		t.Fatalf("hold output %d, max_tokens %d", hold.Output, req.OutputTokens())
+	}
+}
+
 func TestRunCategorize(t *testing.T) {
 	sent := fakeMessages(t, `{"results":[{"index":1,"category":"Meals and entertainment"},{"index":2,"category":"Fuel and vehicle"}]}`)
 	req := CategorizeRequest{Tier: TierFast, Payees: []string{"Blue Bottle Coffee", "Shell <Oil>"}}

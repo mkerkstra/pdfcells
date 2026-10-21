@@ -366,9 +366,20 @@ export interface ReadOptions {
   creditCard?: boolean
 }
 
+/**
+ * Whether to read the document as a credit card when the person hasn't said:
+ * card summary lines are printed (looksLikeCreditCard) and no table has a
+ * running balance that ties. A tying balance reads correctly as a bank
+ * account, so on that evidence bank wins; the person can still switch.
+ */
+export function detectCreditCard(pages: PageTables[]): boolean {
+  if (!looksLikeCreditCard(pages)) return false
+  return !joinWithOrigins(pages).some(j => balanceLayout(buildGrid(j.table)) !== null)
+}
+
 /** The document's bank or card statement, or null when no table reads as one. */
 export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Statement | null {
-  const detected = looksLikeCreditCard(pages)
+  const detected = detectCreditCard(pages)
   const card = opts.creditCard ?? detected
   const cands = joinWithOrigins(pages)
     .map(j => read(j, card))
@@ -544,7 +555,10 @@ function decideCard(
   const near = (a: number, b: number, terms: number) =>
     Math.abs(a - b) <= tolerance(Math.max(decimals, card.dec), terms, a)
   const reasons = [...cand.problems]
-  if (opening === undefined || closing === undefined) {
+  // The new balance has to be printed: one worked out from these same
+  // transactions would check them against themselves.
+  const printed = card.closing ?? summary.closing
+  if (opening === undefined || printed === undefined || closing !== printed) {
     reasons.push(
       'There’s no balance column and no account summary (previous balance and new balance) to check the amounts against',
     )

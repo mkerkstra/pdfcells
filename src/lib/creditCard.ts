@@ -1,43 +1,73 @@
 // Credit-card statements: the printed balance is the amount owed, so a
-// purchase raises it. Detection here is deliberately conservative (two
-// distinct card-only markers somewhere in the document's tables); the person
-// can always switch the mode in the export panel.
+// purchase raises it. Detection is deliberately conservative: it only counts
+// labelled summary lines with a value next to them (a "Minimum payment due"
+// row with an amount), in included tables, on undated rows, so a transaction
+// called "Credit line transfer" or an unticked offer box never flips a bank
+// statement. The person can always switch the mode in the export panel.
 
 import { parseDate } from './cells'
 import { buildGrid, cell } from './checks/grid'
 import type { PageTables } from './checks/model'
 
-/** Words only a card statement prints. Each counts once, however often it appears. */
+/** Summary labels only a card statement prints, matched against the whole label cell. */
 const MARKERS: [string, RegExp][] = [
-  ['minimum', /\bminimum\s+(?:payment|amount)(?:\s+due)?\b/i],
-  ['limit', /\bcredit\s+(?:limit|line)\b/i],
-  ['available', /\bavailable\s+credit\b/i],
-  ['due', /\bpayment\s+due\s+date\b/i],
-  ['apr', /\b(?:annual\s+percentage\s+rate|APR)\b/],
-  ['cash', /\bcash\s+advances?\b/i],
-  ['purchases', /^\s*(?:total\s+)?(?:purchases|new\s+charges)\s*:?\s*$/i],
+  ['minimum', /^(?:total\s+)?minimum\s+(?:payment|amount)(?:\s+due)?$/i],
+  ['limit', /^(?:total\s+)?credit\s+(?:limit|line)$/i],
+  ['available', /^available\s+credit(?:\s+line)?$/i],
+  ['due', /^payment\s+due\s+date$/i],
+  ['cash', /^cash\s+advances?$/i],
+  ['purchases', /^(?:total\s+)?(?:purchases|new\s+charges)$/i],
 ]
 
-/** The card markers found in the document's included tables and titles. */
+const DATED = /^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s*$/
+const isDated = (c: string) => DATED.test(c) || parseDate(c) !== null
+
+const label = (text: string) =>
+  text
+    .trim()
+    .replace(/\s*:$/, '')
+    .replace(/^[+−–-]\s*/, '')
+    .replace(/\s+/g, ' ')
+
+/**
+ * The card markers in the document: a label cell on an undated row of an
+ * included table, with a number (or, for the due date, a date) to its right.
+ */
 export function creditCardMarkers(pages: PageTables[]): string[] {
   const found = new Set<string>()
-  const scan = (s: string) => {
-    for (const [name, re] of MARKERS) if (re.test(s)) found.add(name)
-  }
   for (const p of pages)
     for (const t of p.tables) {
-      scan(t.title)
-      for (const r of t.rows) for (const c of r) if (c) scan(c)
+      if (!t.include) continue
+      const g = buildGrid(t)
+      t.rows.forEach((r, row) => {
+        if (row < t.headerRows) return
+        r.forEach((text, lc) => {
+          const l = label(text)
+          const hit = MARKERS.find(([, re]) => re.test(l))
+          if (!hit) return
+          const right = r.slice(lc + 1)
+          const valued =
+            hit[0] === 'due'
+              ? right.some(isDated)
+              : right.some((_, k) => cell(g, row, lc + 1 + k) !== null) &&
+                !r.some((c, k) => k !== lc && isDated(c))
+          if (valued) found.add(hit[0])
+        })
+      })
     }
   return [...found].toSorted()
 }
 
-/** True when at least two distinct card-only markers are printed. */
+/** True when at least two distinct card summary lines are printed with values. */
 export function looksLikeCreditCard(pages: PageTables[]): boolean {
   return creditCardMarkers(pages).length >= 2
 }
 
-/** A card's account summary. All values as printed, positive. */
+/**
+ * A card's account summary. Balances keep their printed sign (a new balance
+ * of -50.00 is a credit balance on an overpaid card); movement totals are
+ * positive.
+ */
 export interface CardSummary {
   /** Previous balance (owed). */
   opening?: number
@@ -49,8 +79,6 @@ export interface CardSummary {
   closing?: number
   dec: number
 }
-
-const DATED = /^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s*$/
 
 type CardRole = 'opening' | 'credits' | 'charges' | 'closing'
 
@@ -68,14 +96,9 @@ const CARD_ROLES: [CardRole, RegExp][] = [
 ]
 
 function roleOf(text: string): { role: CardRole; label: string } | null {
-  const label = text
-    .trim()
-    .replace(/\s*:$/, '')
-    .replace(/^[+−–-]\s*/, '')
-    .replace(/\s+/g, ' ')
-  if (!label) return null
-  for (const [role, re] of CARD_ROLES)
-    if (re.test(label)) return { role, label: label.toLowerCase() }
+  const l = label(text)
+  if (!l) return null
+  for (const [role, re] of CARD_ROLES) if (re.test(l)) return { role, label: l.toLowerCase() }
   return null
 }
 
@@ -94,7 +117,7 @@ export function cardSummary(pages: PageTables[]): CardSummary {
       const g = buildGrid(t)
       t.rows.forEach((r, row) => {
         // A dated row is a transaction ("Payment", "Interest charged"), not a summary line.
-        if (row < t.headerRows || r.some(c => DATED.test(c) || parseDate(c) !== null)) return
+        if (row < t.headerRows || r.some(isDated)) return
         r.forEach((text, lc) => {
           const hit = roleOf(text)
           if (!hit) return
@@ -103,10 +126,11 @@ export function cardSummary(pages: PageTables[]): CardSummary {
             if (v === null) continue
             const byLabel = seen.get(hit.role) ?? new Map<string, number>()
             seen.set(hit.role, byLabel)
+            // Balances keep their sign; payments and charges print either way.
+            const value = hit.role === 'opening' || hit.role === 'closing' ? v : Math.abs(v)
             const prev = byLabel.get(hit.label)
-            if (prev !== undefined && prev !== Math.abs(v))
-              conflicts.add(`${hit.role}:${hit.label}`)
-            byLabel.set(hit.label, Math.abs(v))
+            if (prev !== undefined && prev !== value) conflicts.add(`${hit.role}:${hit.label}`)
+            byLabel.set(hit.label, value)
             dec = Math.max(dec, g.dec[row]?.[col] ?? 0)
             return
           }

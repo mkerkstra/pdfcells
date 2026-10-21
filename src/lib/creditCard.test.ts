@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { table } from './checks/testing'
 import { cardSummary, creditCardMarkers, looksLikeCreditCard } from './creditCard'
-import { readStatement } from './statement'
+import { detectCreditCard, readStatement } from './statement'
 import type { Table } from './types'
 
 const doc = (...tables: Table[][]) => tables.map((ts, i) => ({ page: i + 1, tables: ts }))
@@ -172,5 +172,108 @@ describe('readStatement in card mode', () => {
         'There’s no balance column and no account summary (previous balance and new balance) to check the amounts against',
       ],
     })
+  })
+})
+
+describe('Codex review regressions', () => {
+  const bankWithCardWords = table([
+    ['Date', 'Description', 'Amount', 'Balance'],
+    ['03/01/2026', 'Opening balance', '', '1,000.00'],
+    ['03/02/2026', 'Credit line transfer', '500.00', '1,500.00'],
+    ['03/03/2026', 'Cash advance repayment', '-10.00', '1,490.00'],
+    ['03/04/2026', 'Rent', '-100.00', '1,390.00'],
+    ['03/05/2026', 'Minimum payment', '-25.00', '1,365.00'],
+  ])
+
+  // P1-1: dated transaction wording is not card evidence.
+  it('bank transactions named like card terms keep bank signs', () => {
+    expect(creditCardMarkers(doc([bankWithCardWords]))).toEqual([])
+    const s = readStatement(doc([bankWithCardWords]))
+    expect(s?.creditCard).toBe(false)
+    expect(s?.transactions.map(t => t.amount)).toEqual([500, -10, -100, -25])
+  })
+
+  // P1-1: an excluded table (an unticked offer box) is not evidence.
+  it('ignores card terms in excluded tables', () => {
+    const offer = table(
+      [
+        ['Special offer', ''],
+        ['Credit limit', '5,000.00'],
+        ['Available credit', '5,000.00'],
+      ],
+      { include: false },
+    )
+    expect(looksLikeCreditCard(doc([{ ...offer, include: true }]))).toBe(true)
+    expect(looksLikeCreditCard(doc([offer, bankWithCardWords]))).toBe(false)
+    expect(readStatement(doc([offer, bankWithCardWords]))?.creditCard).toBe(false)
+  })
+
+  // P1-1: a label without a value next to it (prose, an offer heading) is not evidence.
+  it('needs a value next to each card label', () => {
+    const prose = table([
+      ['Your card'],
+      ['Credit limit'],
+      ['Minimum payment due'],
+      ['Available credit'],
+    ])
+    expect(looksLikeCreditCard(doc([prose]))).toBe(false)
+  })
+
+  // P1-1: a running balance that ties under bank signs beats card summary lines.
+  it('a tying running balance reads as a bank account unless the person picks card', () => {
+    expect(detectCreditCard(doc([SUMMARY, WITH_BALANCE]))).toBe(false)
+    expect(readStatement(doc([SUMMARY, WITH_BALANCE]))?.creditCard).toBe(false)
+    expect(readStatement(doc([SUMMARY, WITH_BALANCE]), { creditCard: true })?.creditCard).toBe(true)
+    expect(detectCreditCard(doc([SUMMARY, NO_BALANCE]))).toBe(true)
+  })
+
+  // P1-2: a new balance worked out from the transactions can't check them.
+  it('the card gate needs a printed new balance', () => {
+    const partial = table([
+      ['Account summary', ''],
+      ['Previous balance', '1,000.00'],
+      ['Minimum payment due', '25.00'],
+      ['Credit limit', '20,000.00'],
+    ])
+    const misread = table([
+      ['Date', 'Description', 'Amount'],
+      ['03/02/2026', 'Coffee', '9,999.00'],
+      ['03/03/2026', 'Books', '20.00'],
+      ['03/04/2026', 'Fuel', '30.00'],
+    ])
+    const s = readStatement(doc([partial, misread]))
+    expect(s?.creditCard).toBe(true)
+    expect(s?.gate).toEqual({
+      ok: false,
+      reasons: [
+        'There’s no balance column and no account summary (previous balance and new balance) to check the amounts against',
+      ],
+    })
+  })
+
+  // P2-4: an overpaid card prints a negative (credit) new balance.
+  it('keeps the sign of a credit balance', () => {
+    const summary = table([
+      ['Account summary', ''],
+      ['Previous balance', '0.00'],
+      ['Payments and credits', '100.00'],
+      ['Purchases', '50.00'],
+      ['New balance', '-50.00'],
+      ['Minimum payment due', '0.00'],
+      ['Credit limit', '5,000.00'],
+    ])
+    const txns = table([
+      ['Date', 'Description', 'Amount'],
+      ['03/02/2026', 'Payment', '-100.00'],
+      ['03/09/2026', 'Books', '50.00'],
+    ])
+    expect(cardSummary(doc([summary])).closing).toBe(-50)
+    const s = readStatement(doc([summary, txns]))
+    expect([s?.opening, s?.closing, s?.transactions.map(t => t.amount)]).toEqual([
+      0,
+      -50,
+      [100, -50],
+    ])
+    expect(s?.gate).toEqual({ ok: true, basis: 'summary', label: 'summary ties' })
   })
 })

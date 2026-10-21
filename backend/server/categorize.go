@@ -109,8 +109,7 @@ func (s *Server) categorize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if source == "credits" {
-		model, _ := extract.ModelFor(req.Tier)
-		worst, err := pricing.Cost(pricing.Usage{Model: model, Input: req.EstimateInputTokens(), Output: req.OutputTokens()})
+		worst, err := pricing.Cost(extract.CategorizeHold(req))
 		if err != nil {
 			s.internal(w, r, "pricing", err)
 			return

@@ -137,28 +137,59 @@ function tidy(s: string): string {
     .replace(/\s{2,}/g, ' ')
 }
 
-/** Drop a trailing "CITY ST" or "CITY GB" printed by card networks (upper-case descriptors only). */
+/**
+ * Where noise was cut out. A city only goes when there's evidence it is one:
+ * a store number, phone or reference right before it, or a known city name.
+ * A trailing state alone doesn't prove the word before it is a place
+ * ("BANK OF AMERICA CA", "PAYPAL *JOHN SMITH CA"), so then only the code goes.
+ */
+const MARK = '¤'
+
+/** Cities card networks print often, as one to three words. */
+const KNOWN_CITIES = new Set(
+  (
+    'NEW YORK|BROOKLYN|LOS ANGELES|CHICAGO|HOUSTON|PHOENIX|PHILADELPHIA|SAN ANTONIO|SAN DIEGO|DALLAS|AUSTIN|' +
+    'SAN JOSE|SAN FRANCISCO|OAKLAND|BERKELEY|EMERYVILLE|PALO ALTO|MOUNTAIN VIEW|SUNNYVALE|SANTA CLARA|SEATTLE|' +
+    'BELLEVUE|REDMOND|PORTLAND|DENVER|BOULDER|BOSTON|CAMBRIDGE|WASHINGTON|ATLANTA|MIAMI|MIAMI BEACH|ORLANDO|TAMPA|' +
+    'NASHVILLE|MEMPHIS|NEW ORLEANS|LAS VEGAS|SALT LAKE CITY|MINNEAPOLIS|ST PAUL|ST LOUIS|KANSAS CITY|DETROIT|' +
+    'CLEVELAND|COLUMBUS|CINCINNATI|PITTSBURGH|BALTIMORE|CHARLOTTE|RALEIGH|RICHMOND|SACRAMENTO|FRESNO|SAN MATEO|' +
+    'SANTA MONICA|IRVINE|PASADENA|LONG BEACH|HONOLULU|ANCHORAGE|ALBUQUERQUE|TUCSON|EL PASO|FORT WORTH|OKLAHOMA CITY|' +
+    'INDIANAPOLIS|MILWAUKEE|LOUISVILLE|JERSEY CITY|NEWARK|BENTONVILLE|' +
+    'LONDON|MANCHESTER|BIRMINGHAM|LEEDS|GLASGOW|EDINBURGH|BRISTOL|LIVERPOOL|DUBLIN|' +
+    'TORONTO|VANCOUVER|MONTREAL|CALGARY|OTTAWA|SYDNEY|MELBOURNE|BRISBANE|PERTH|ADELAIDE|AUCKLAND'
+  ).split('|'),
+)
+
+/** Drop a trailing state or country code, and the city before it when there's evidence (upper-case descriptors only). */
 function dropLocation(s: string): string {
-  let words = s.split(' ')
-  const last = words.at(-1) ?? ''
-  const isCode = /^[A-Z]{2,3}$/.test(last) && (STATES.has(last) || COUNTRIES.has(last))
-  if (!isCode || words.length < 2) return s
-  words = words.slice(0, -1)
-  // "APPLE CA": only the code goes.
-  if (words.length === 1) return (words[0]?.length ?? 0) > 3 ? (words[0] ?? s) : s
-  // A country after a state ("CA US") or a city: drop one more code.
-  const again = words.at(-1) ?? ''
-  if (words.length >= 3 && /^[A-Z]{2,3}$/.test(again) && STATES.has(again))
-    words = words.slice(0, -1)
-  if (words.length < 2) return s
-  // The city is the last word, or the last two when they read as one name.
-  const city = words.at(-1) ?? ''
-  const before = words.at(-2) ?? ''
-  if (!/^[A-Z.'-]+$/.test(city)) return words.join(' ')
-  let cut = 1
-  if (words.length >= 3 && (CITY_START.has(before) || CITY_END.has(city))) cut = 2
-  const kept = words.slice(0, -cut)
-  return kept.length > 0 ? kept.join(' ') : words.join(' ')
+  const words = s.split(' ').filter(Boolean)
+  while (words.at(-1) === MARK) words.pop()
+  const isCode = (w: string | undefined) =>
+    w !== undefined && /^[A-Z]{2,3}$/.test(w) && (STATES.has(w) || COUNTRIES.has(w))
+  if (!isCode(words.at(-1)) || words.length < 2) return s
+  words.pop()
+  // A state before a country ("CA US").
+  if (words.length >= 2 && isCode(words.at(-1)) && STATES.has(words.at(-1) ?? '')) words.pop()
+  const alpha = (w: string | undefined) => w !== undefined && /^[A-Z][A-Z.'-]*$/.test(w)
+  const tail = (n: number) => words.slice(-n)
+  let cut = 0
+  for (const n of [3, 2, 1])
+    if (words.length > n && tail(n).every(alpha) && KNOWN_CITIES.has(tail(n).join(' '))) {
+      cut = n
+      break
+    }
+  // Evidence: a store number, phone or reference cut out right before the city.
+  if (!cut && alpha(words.at(-1))) {
+    if (words.at(-2) === MARK) cut = 1
+    else if (
+      words.at(-3) === MARK &&
+      alpha(words.at(-2)) &&
+      (CITY_START.has(words.at(-2) ?? '') || CITY_END.has(words.at(-1) ?? ''))
+    )
+      cut = 2
+  }
+  const kept = words.slice(0, words.length - cut)
+  return kept.some(w => w !== MARK && /[A-Z]/.test(w)) ? kept.join(' ') : words.join(' ')
 }
 
 /** Split "X *Y" from a merchant that isn't a known processor: keep the merchant. */
@@ -196,9 +227,10 @@ export function cleanPayee(description: string): string {
     '$1',
   )
   s = s.replace(/\bwww\./gi, '')
-  for (const re of NOISE) s = s.replace(re, ' ')
-  s = tidy(s)
-  if (shouting) s = tidy(dropLocation(s))
+  for (const re of NOISE) s = s.replace(re, ` ${MARK} `)
+  s = collapse(s)
+  if (shouting) s = dropLocation(s)
+  s = tidy(s.replaceAll(MARK, ' '))
   s = s.replace(CORPORATE, '')
   s = tidy(s)
   for (const [re, name] of ALIASES) if (re.test(s)) return name
