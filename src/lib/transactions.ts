@@ -14,6 +14,8 @@ export interface TransactionOptions {
   columns: boolean
   /** Card or bank; undefined detects it. */
   creditCard?: boolean
+  /** The statement's closing year, for dates printed without one; undefined reads it from the page. */
+  year?: number
   rules: CategoryRule[]
   /** AI answers by aiKey(payee). */
   ai?: Record<string, string>
@@ -56,12 +58,13 @@ export function prepareTransactions(
 ): Prepared {
   const creditCard = opts?.creditCard ?? detectCreditCard(pages)
   if (!opts?.columns) return { pages, originals, creditCard }
-  const s = readStatement(pages, { creditCard })
+  const s = readStatement(pages, { creditCard, year: opts.year })
   if (!s || s.transactions.length === 0) return { pages, originals, creditCard }
   const txns = categorise(s.transactions, { rules: opts.rules, ai: opts.ai })
   const byPart = new Map<string, Map<number, [string, string]>>()
   for (const x of txns) {
-    const part = s.parts.find(p => p.page === x.page)
+    // Sections put several tables on one page: the transaction names its own.
+    const part = s.parts.find(p => p.page === x.page && p.id === x.table)
     if (!part) continue
     const m = byPart.get(part.id) ?? new Map<number, [string, string]>()
     m.set(x.row, [x.payee, x.category])

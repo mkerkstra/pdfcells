@@ -58,6 +58,8 @@ export function parseNumber(
   // Thin spaces and apostrophes are thousands separators in several locales.
   s = s.replace(/[\s  ']/g, '')
   const [thousands, decimal] = locale === 'comma' ? ['.', ','] : [',', '.']
+  // Sub-unit amounts printed without the leading zero (.99, as Chase cards print them).
+  if (s.startsWith(decimal) && /^\d+$/.test(s.slice(1))) s = `0${s}`
   if (!/^\d/.test(s)) return null
   const grouped = new RegExp(`^\\d{1,3}(\\${thousands}\\d{3})+(\\${decimal}\\d+)?$`)
   const plain = new RegExp(`^\\d+(\\${decimal}\\d+)?$`)
@@ -105,8 +107,19 @@ function utc(y: number, m: number, d: number): Date | null {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d ? dt : null
 }
 
-export function parseDate(raw: string, order: DateOrder = 'mdy'): Date | null {
-  const s = raw.trim()
+const monthOf = (name: string): number | undefined =>
+  MONTHS[name.slice(0, 4).toLowerCase()] ?? MONTHS[name.slice(0, 3).toLowerCase()]
+
+// A trailing asterisk marks a posting date (American Express prints "01/20/26*").
+const clean = (raw: string) => raw.trim().replace(/\s*\*$/, '')
+
+/**
+ * A date as printed, or null. Dates printed without a year ("01/05", "2/29",
+ * "Aug 6") are only read against a statement period (`anchor`), which
+ * decides the year.
+ */
+export function parseDate(raw: string, order: DateOrder = 'mdy', anchor?: YearAnchor): Date | null {
+  const s = clean(raw)
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)
   if (m) return utc(+(m[1] ?? 0), +(m[2] ?? 0) - 1, +(m[3] ?? 0))
   m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s)
@@ -118,25 +131,127 @@ export function parseDate(raw: string, order: DateOrder = 'mdy'): Date | null {
   }
   m = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/.exec(s)
   if (m) {
-    const mon =
-      MONTHS[(m[1] ?? '').slice(0, 4).toLowerCase()] ??
-      MONTHS[(m[1] ?? '').slice(0, 3).toLowerCase()]
+    const mon = monthOf(m[1] ?? '')
     return mon === undefined ? null : utc(+(m[3] ?? 0), mon, +(m[2] ?? 0))
   }
   m = /^(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/.exec(s)
   if (m) {
-    const mon =
-      MONTHS[(m[2] ?? '').slice(0, 4).toLowerCase()] ??
-      MONTHS[(m[2] ?? '').slice(0, 3).toLowerCase()]
+    const mon = monthOf(m[2] ?? '')
     return mon === undefined ? null : utc(+(m[3] ?? 0), mon, +(m[1] ?? 0))
   }
-  return null
+  if (!anchor) return null
+  const dm = parseDayMonth(s, order)
+  return dm ? placeDate(dm, anchor) : null
+}
+
+/** A cell that reads as a date, with or without a year (a transaction row, not a summary line). */
+export function isDateCell(raw: string): boolean {
+  return parseDate(raw) !== null || parseDayMonth(raw) !== null
+}
+
+/** A month and day printed without a year; month is 0-based. */
+export interface DayMonth {
+  month: number
+  day: number
+}
+
+/** "01/05", "2/29", "Aug 6", "Aug. 6", "6 Aug" (a trailing * allowed), or null. */
+export function parseDayMonth(raw: string, order: DateOrder = 'mdy'): DayMonth | null {
+  const s = clean(raw)
+  // No dots: 12.25 is a number, not December 25.
+  let m = /^(\d{1,2})[/-](\d{1,2})$/.exec(s)
+  let month: number | undefined
+  let day: number
+  if (m) {
+    const a = +(m[1] ?? 0)
+    const b = +(m[2] ?? 0)
+    ;[month, day] = order === 'mdy' ? [a - 1, b] : [b - 1, a]
+  } else if ((m = /^([A-Za-z]{3,9})\.?\s+(\d{1,2})$/.exec(s))) {
+    month = monthOf(m[1] ?? '')
+    day = +(m[2] ?? 0)
+  } else if ((m = /^(\d{1,2})\s+([A-Za-z]{3,9})\.?$/.exec(s))) {
+    month = monthOf(m[2] ?? '')
+    day = +(m[1] ?? 0)
+  } else return null
+  if (month === undefined || month < 0 || month > 11 || day < 1) return null
+  // Valid in some year: Feb 29 is checked against a leap year.
+  return utc(2000, month, day) ? { month, day } : null
+}
+
+/** Decide M/D vs D/M for year-less dates from any value that's only valid one way. */
+export function detectDayMonthOrder(values: string[]): DateOrder {
+  for (const v of values) {
+    const m = /^(\d{1,2})[/-](\d{1,2})$/.exec(clean(v))
+    if (!m) continue
+    if (+(m[1] ?? 0) > 12) return 'dmy'
+    if (+(m[2] ?? 0) > 12) return 'mdy'
+  }
+  return 'mdy'
+}
+
+/**
+ * What decides the year of a date printed without one: the statement period
+ * (start and end) or just its closing date, as printed on the statement.
+ */
+export interface YearAnchor {
+  start?: Date
+  end: Date
+  /** The printed text it came from, for the person to see. */
+  text: string
+}
+
+const DAY = 86_400_000
+/** How far outside the period a year-less date may fall (card transaction dates precede posting). */
+const SLACK_DAYS = 45
+
+/**
+ * The year that puts a month and day inside the anchor's period (or, with a
+ * closing date only, in the year up to it). A December date on a statement
+ * that closes in January takes the earlier year; Feb 29 only lands in a
+ * leap year. Null when no year puts it near the period.
+ */
+export function placeDate(dm: DayMonth, anchor: YearAnchor): Date | null {
+  const end = anchor.end.getTime()
+  const start = anchor.start?.getTime() ?? end - 364 * DAY
+  const y = anchor.end.getUTCFullYear()
+  let best: Date | null = null
+  let bestDist = Infinity
+  for (const year of [y + 1, y, y - 1, y - 2]) {
+    const d = utc(year, dm.month, dm.day)
+    if (!d) continue
+    const t = d.getTime()
+    const dist = t < start ? start - t : t > end ? t - end : 0
+    if (dist < bestDist) [best, bestDist] = [d, dist]
+  }
+  return bestDist <= SLACK_DAYS * DAY ? best : null
+}
+
+/**
+ * An anchor from a year the person picked, taken as the year the statement
+ * closes in. The closing month is the end of the run of months the dates
+ * cover (Dec and Jan close in Jan), so December dates on a January
+ * statement get the year before.
+ */
+export function chosenYearAnchor(year: number, dates: DayMonth[]): YearAnchor {
+  const months = [...new Set(dates.map(d => d.month))].toSorted((a, b) => a - b)
+  let endMonth = 11
+  if (months.length) {
+    // The largest gap between months present (going round the year) follows the closing month.
+    let gap = -1
+    months.forEach((m, i) => {
+      const next = months[(i + 1) % months.length] ?? m
+      const g = (next - m + 12) % 12 || 12
+      if (g > gap) [gap, endMonth] = [g, m]
+    })
+  }
+  const end = new Date(Date.UTC(year, endMonth + 1, 0))
+  return { end, text: String(year) }
 }
 
 /** Decide M/D vs D/M from any value that's only valid one way. */
 export function detectDateOrder(values: string[]): DateOrder {
   for (const v of values) {
-    const m = /^(\d{1,2})[/.-](\d{1,2})[/.-]\d{2,4}$/.exec(v.trim())
+    const m = /^(\d{1,2})[/.-](\d{1,2})[/.-]\d{2,4}$/.exec(clean(v))
     if (!m) continue
     if (+(m[1] ?? 0) > 12) return 'dmy'
     if (+(m[2] ?? 0) > 12) return 'mdy'

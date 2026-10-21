@@ -68,6 +68,11 @@ export interface CheckResult {
 export interface PageTables {
   page: number
   tables: Table[]
+  /**
+   * The page's text as lines (PageTriage.textHint), when it's at hand: a
+   * statement period printed outside any table dates year-less transactions.
+   */
+  text?: string
 }
 
 /** An issue located in a document: which page and table it belongs to. */

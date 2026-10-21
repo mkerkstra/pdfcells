@@ -10,7 +10,7 @@ PDFCells looks at every included table, joins tables that continue onto the next
 
 Each row becomes one transaction:
 
-- **Date** as printed, read M/D or D/M the same way the rest of the app reads it (a day above 12 anywhere in the column decides).
+- **Date** as printed, read M/D or D/M the same way the rest of the app reads it (a day above 12 anywhere in the column decides). A trailing `*` (American Express marks posting dates `01/20/26*`) is dropped. See [Dates without a year](#dates-without-a-year) for `01/05`, `2/29` and `Aug 6`.
 - **Amount**, signed so money in is positive and money out is negative. When there is a balance column, the sign comes from the running-balance check: an amount that raises the balance is money in. So `(39.51)`, `39.51-`, a value in a Debit or Withdrawals column, and `-39.51` all export as `-39.51`.
 - **Description**, as printed. Wrapped description lines are joined onto their transaction. A row with an amount but no date takes the date above it.
 - **Payee**, the description cleaned up (see [Payee cleanup](#payee-cleanup)).
@@ -25,11 +25,36 @@ On a credit card statement the balance is what you owe, so a purchase raises it.
 - **Detection.** A statement is read as a credit card when its account summary prints at least two card-only lines with a value next to them: minimum payment due, credit limit or credit line, available credit, payment due date (with a date), cash advances, or purchases or new charges. Only undated rows of included tables count, so a transaction called "Credit line transfer" or an unticked offer box doesn't. "New balance" alone isn't enough, because some bank statements print it. A running balance isn't evidence either way: the arithmetic of money held and money owed is the same, so it ties under both readings. The export panel shows Bank account or Credit card, marked "(detected)", and you can switch it. The switch applies to the Excel export and to every statement format.
 - **Signs.** With a running balance, the balance check works the same as on a bank statement (the balance owed is the previous balance owed plus purchases minus payments), and each amount is signed the other way round. Without one, a single Amount column is read as purchases positive, as cards print them; Payments and Charges (or Purchases) columns read as money in and money out.
 - **Balances** stay as printed everywhere except OFX/QBO: the bank CSV's Balance and the panel's "new balance owed" show the amount owed. A credit balance on an overpaid card keeps its minus sign (a new balance of -50.00 is 50.00 in your favour).
-- **The gate without a balance column.** The card summary has to print a previous balance and a new balance (a new balance worked out from the transactions would only check them against themselves). Like the bank summary, it's read from undated rows of included tables only, so a transaction described as "New balance" or a left-out table doesn't count. The transactions have to move one to the other: previous balance − payments + charges = new balance. When the summary prints payments and credits, and charges (purchases, fees charged, interest charged, cash advances, balance transfers; several lines are added up), those must match the transactions too, and the summary itself has to tie. A dated row such as "Payment" or "Interest charged" in the transaction table is a transaction, never a summary line.
+- **The gate without a balance column.** The card summary has to print a previous balance and a new balance (a new balance worked out from the transactions would only check them against themselves). Like the bank summary, it's read from undated rows of included tables only, so a transaction described as "New balance" or a left-out table doesn't count. The transactions have to move one to the other: previous balance − payments + charges = new balance. When the summary prints payments and credits ("Payments/Credits" too), and charges (purchases, transactions, fees charged, interest charged, cash advances, balance transfers; several lines are added up), those must match the transactions too, and the summary itself has to tie. A dated row such as "Payment" or "Interest charged" in the transaction table, year-less ("01/05", "Aug 6") or not, is a transaction, never a summary line.
 - **Excel.** The Balance check formula doesn't change. It's built from the arithmetic that made the balance tie, so on a card it already reads "previous owed + purchases − payments − owed" and evaluates to 0 (`src/lib/creditCard.xlsx.test.ts`), in the same sort-safe SUMIFS-by-Line form. The amounts in the Excel Table stay as printed. What flips is the summary sheets: By month, By description and By category count payments as money in and purchases as money out.
 - **Batches.** Each statement is detected on its own. A group that mixes card and bank statements can't be exported as one file; split the group.
 
-The statement period is the one printed in a table title ("statement period 03/01/2026 to 03/31/2026") when there is one, otherwise the first and last transaction dates. The closing balance is the last printed balance, or the summary's closing balance.
+The statement period is the printed one (see below) when it covers every transaction, otherwise the first and last transaction dates. The closing balance is the last printed balance, or the summary's closing balance.
+
+## Dates without a year
+
+Chase, Wells Fargo, Citi, Capital One and PNC print transaction dates as month and day only (`01/05`, `2/29`, `Aug 6`). A date column is read as one when at least 80% of its cells are dates with or without a year. The year comes from the statement period, found in the page's text (outside the tables too), table titles and notes, and every row of every table, included or not (`findPeriod` in `src/lib/statement.ts`), in this order:
+
+1. A range of two full dates on a line with a period word (period, cycle, statement, opening, closing, billing, date): "Statement period 12/15/2025 - 01/14/2026", "Opening/Closing Date 12/29/16 - 01/28/17", "Billing Period: 12/23/14-01/22/15", "For the period 09/25/2025 to 10/24/2025".
+2. A dated opening and closing balance: "Beginning balance on August 1, 2026" with "Ending balance on August 31, 2026".
+3. A labelled closing date alone: "Closing Date 01/14/26", "Statement date", "Statement ending".
+4. A bare range of 6 to 100 days: "January 1, 2016 - January 31, 2016", "December 15, 2025 through January 14, 2026".
+
+Each date takes the year that puts it inside the period, or within 45 days of it (a card's transaction date can precede the cycle). So on a statement from December 15 to January 14, `12/20` is in the earlier year and `01/05` in the later one, and `2/29` lands only in a leap year in range. With a closing date alone, dates fall in the year up to it. A date that no year puts near the period blocks the export: "The date on page 1, row 4 isn't in the statement period (…)".
+
+The export panel shows a **Statement year** picker whenever the dates have no year, defaulting to the year from the statement ("2026 (from the statement)"). The year picked is the year the statement closes in; the dates' months decide the closing month, so December dates on a January statement still get the year before. A picked year wins over the printed period. When the page prints no period and no year is picked, every export is off, the plain bank CSV included ("Export anyway" isn't offered), because the dates would be guesses. Batches can't ask, so a batch statement without a printed period stays blocked; saved batch pages keep no page text, so there only titles and table rows count. In the Excel export these columns stay text as printed.
+
+## Sections
+
+Bank of America, Chase business checking, PNC and most card statements print deposits and withdrawals (payments and purchases) as separate tables, each under its own title, with one amount column and no running balance. When no table has a running balance and the longest table has a section title, every table with a section title is read and the transactions are combined in date order:
+
+- **Bank titles.** Money in: deposits, credits, additions, receipts. Money out: withdrawals, debits, subtractions, deductions, checks, purchases, fees, charges, payments. A title that names both, or neither, isn't a section.
+- **Card titles.** Money in: payments, credits, refunds, returns, adjustments. Money out: purchases, charges, fees, interest, cash advances, balance transfers, transactions.
+- **Signs.** When every amount in a section has the sign opposite to the section (Chase and PNC print withdrawals unsigned), the section is negated. When they already have its sign (Bank of America prints `-800.00` under withdrawals) or the signs are mixed (a refund among purchases), they stay as printed.
+- **Pages.** A table on the next page with the same columns continues the section, unless its title names a different section ("Withdrawals and other subtractions" after "Deposits and other additions"); "– continued" titles always continue.
+- **Checks.** A table with a date, a check number and an amount but no description (Bank of America's Checks) reads each row as "Check 1041".
+
+A statement with one transaction table and a small titled extra (a Fees table) still reads the transaction table alone.
 
 ## The accuracy gate
 
@@ -37,6 +62,8 @@ OFX, QBO and Xero exports are only offered when PDFCells' own checks say the num
 
 - **With a balance column**, the running-balance check has to pass on the joined table, so the balance on every row equals the previous balance plus that row's amount, including across page breaks. Every transaction has to sit inside the checked run (an amount the check couldn't use, for example next to an unreadable balance, blocks the export). If the statement prints an opening or closing balance in a summary, those have to match too.
 - **Without a balance column**, the account summary has to tie (opening + credits − debits = closing), and the transactions have to add up to it: money in to the summary's credits, money out to its debits.
+- **With sections**, the printed opening and closing balance (on a card, previous and new balance) have to be printed, and opening + money in − money out has to equal closing (on a card, previous − payments + charges = new). Each section has to add up to its own total line when it prints one ("Total deposits and other additions"), and money in and out to the summary's credits and debits (on a card, payments and credits, and charges) when it prints them. Summary labels may carry a date ("Beginning balance on August 1, 2026"), and a summary printed across, with labels in the header row and values below (PNC's Balance Summary), counts too.
+- **Dates without a year** need a printed period or a picked year (see above).
 
 When the gate fails, the panel says why, using the same messages as the review screen, with the page and row: "Balance doesn't tie on page 1, row 11: Credit should be 397.86 (balance goes from 2,948.91 to 3,346.77). Fix it first." Correct the cell in the grid and the export switches on.
 

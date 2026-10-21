@@ -5,7 +5,7 @@
 // called "Credit line transfer" or an unticked offer box never flips a bank
 // statement. The person can always switch the mode in the export panel.
 
-import { parseDate } from './cells'
+import { isDateCell } from './cells'
 import { buildGrid, cell } from './checks/grid'
 import type { PageTables } from './checks/model'
 
@@ -19,8 +19,7 @@ const MARKERS: [string, RegExp][] = [
   ['purchases', /^(?:total\s+)?(?:purchases|new\s+charges)$/i],
 ]
 
-const DATED = /^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s*$/
-const isDated = (c: string) => DATED.test(c) || parseDate(c) !== null
+const isDated = isDateCell
 
 const label = (text: string) =>
   text
@@ -86,11 +85,11 @@ const CARD_ROLES: [CardRole, RegExp][] = [
   ['opening', /^(?:previous|prior|opening|beginning|last\s+statement)\s+balance$/i],
   [
     'credits',
-    /^(?:total\s+)?(?:payments?(?:,?\s*(?:and|&)\s*(?:other\s+)?credits)?|(?:other\s+)?credits)$/i,
+    /^(?:total\s+)?(?:payments?(?:,?\s*(?:and|&|\/)\s*(?:other\s+)?credits)?|(?:other\s+)?credits)$/i,
   ],
   [
     'charges',
-    /^(?:total\s+)?(?:purchases(?:\s+and\s+(?:other\s+)?(?:charges|debits))?|new\s+charges|other\s+charges|fees(?:\s+charged)?|interest(?:\s+charged)?|cash\s+advances?|balance\s+transfers?)$/i,
+    /^(?:total\s+)?(?:purchases(?:\s+and\s+(?:other\s+)?(?:charges|debits))?|new\s+charges|other\s+charges|transactions|fees(?:\s+charged)?|interest(?:\s+charged)?|cash\s+advances?|balance\s+transfers?)$/i,
   ],
   ['closing', /^(?:new|closing|ending|statement)\s+balance$/i],
 ]

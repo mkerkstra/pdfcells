@@ -1,6 +1,7 @@
 import { Download, FileUp, ListChecks } from 'lucide-react'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { readTables } from '@/lib/batch'
 import { formatNumber } from '@/lib/checks/grid'
 import { guessColumns, ledgerSource, type ColumnMap } from '@/lib/ledgerColumns'
 import { LEDGER_ACCEPT, LEDGER_LIMITS, readLedgerFile } from '@/lib/ledgerFile'
@@ -31,13 +32,7 @@ interface Ledger {
 const WINDOWS = [3, 7, 14, 30]
 
 export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode }) {
-  const pages = useMemo(
-    () =>
-      doc.pages
-        .filter(p => p.engine !== 'skip' || p.run)
-        .map(p => ({ page: p.n, tables: p.tables })),
-    [doc.pages],
-  )
+  const pages = useMemo(() => readTables(doc.pages), [doc.pages])
   const statement = useMemo(() => readStatement(pages), [pages])
   const [ledger, setLedger] = useState<Ledger | null>(null)
   const [flip, setFlip] = useState<boolean | undefined>(undefined)

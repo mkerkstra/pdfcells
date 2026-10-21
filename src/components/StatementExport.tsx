@@ -41,10 +41,10 @@ function showDate(iso: string, order: Statement['dateOrder']): string {
 /** "45 transactions, 03/01/2026–03/31/2026, closing balance 1,547.18" */
 export function statementSummaryLine(s: Statement): string {
   const n = s.transactions.length
-  const parts = [
-    `${n} ${n === 1 ? 'transaction' : 'transactions'}`,
-    `${showDate(s.period.start, s.dateOrder)}–${showDate(s.period.end, s.dateOrder)}`,
-  ]
+  const parts = [`${n} ${n === 1 ? 'transaction' : 'transactions'}`]
+  // Without a year the dates are only provisional: don't show one.
+  if (s.year?.source !== 'missing')
+    parts.push(`${showDate(s.period.start, s.dateOrder)}–${showDate(s.period.end, s.dateOrder)}`)
   if (s.closing !== undefined)
     parts.push(
       `${s.creditCard ? 'new balance owed' : 'closing balance'} ${formatNumber(s.closing, s.decimals)}`,
@@ -94,7 +94,9 @@ export function StatementExport({
 
   const gate = statement?.gate
   const blocked = !gate?.ok
-  const override = blocked && statement !== null && format === 'csv' && anyway
+  // Dates without a year can't be exported at all, not even "anyway".
+  const undated = statement?.year?.source === 'missing'
+  const override = blocked && statement !== null && format === 'csv' && anyway && !undated
   const canDownload = statement !== null && (!blocked || override)
 
   const run = () => {
@@ -164,7 +166,7 @@ export function StatementExport({
             <option value='mdy'>Dates as MM/DD/YYYY</option>
           </select>
         )}
-        {blocked && statement && format === 'csv' && (
+        {blocked && statement && format === 'csv' && !undated && (
           <label className='flex items-center gap-1.5 text-warn'>
             <input type='checkbox' checked={anyway} onChange={e => setAnyway(e.target.checked)} />
             Export anyway, I’ll check the numbers myself

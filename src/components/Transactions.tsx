@@ -6,7 +6,12 @@ import { CATEGORIES, categoryOf, type CategorySource } from '@/lib/categories'
 import { aiErrorCopy, aiRequest, categoriseWithAi } from '@/lib/categoriseAi'
 import { formatNumber } from '@/lib/checks/grid'
 import type { PageTables } from '@/lib/checks/model'
-import { detectCreditCard, readStatement, type Statement } from '@/lib/statement'
+import {
+  detectCreditCard,
+  readStatement,
+  type Statement,
+  type StatementYear,
+} from '@/lib/statement'
 import type { TransactionOptions } from '@/lib/transactions'
 import { useAccount } from '@/state/account'
 import {
@@ -27,6 +32,8 @@ export type CardMode = boolean | undefined
 export interface TransactionsState {
   /** Card mode in effect. */
   creditCard: boolean
+  /** The closing year the person picked for dates printed without one (undefined: from the page). */
+  year: number | undefined
   /** What the person set (undefined: detected). */
   cardMode: CardMode
   categories: CategoryState
@@ -34,18 +41,24 @@ export interface TransactionsState {
   statement: Statement | null
   /** For buildWorkbook. */
   workbook: (columns: boolean) => TransactionOptions
-  /** Card or bank picker and the Categories button. */
+  /** Card or bank picker, the statement year (for dates without one) and the Categories button. */
   controls: ReactNode
 }
 
 /** Card mode, categories and the controls for them, shared by the Excel and statement exports. */
 export function useTransactions(pages: PageTables[]): TransactionsState {
   const [cardMode, setCardMode] = useState<CardMode>(undefined)
+  const [year, setYear] = useState<number | undefined>(undefined)
   const [open, setOpen] = useState(false)
   const categories = useCategories()
   const detected = useMemo(() => detectCreditCard(pages), [pages])
   const creditCard = cardMode ?? detected
-  const read = useMemo(() => readStatement(pages, { creditCard }), [pages, creditCard])
+  const read = useMemo(() => readStatement(pages, { creditCard, year }), [pages, creditCard, year])
+  // What the page itself says, to label the default choice.
+  const printed = useMemo(
+    () => (year === undefined ? read : readStatement(pages, { creditCard }))?.year,
+    [read, pages, creditCard, year],
+  )
   const statement = useMemo(() => {
     if (!read) return null
     const ctx = { rules: categories.rules, ai: categories.ai }
@@ -67,6 +80,7 @@ export function useTransactions(pages: PageTables[]): TransactionsState {
         <option value='bank'>Bank account{!detected ? ' (detected)' : ''}</option>
         <option value='card'>Credit card{detected ? ' (detected)' : ''}</option>
       </select>
+      {read?.year && <YearPicker year={year} printed={printed} onChange={setYear} />}
       {statement && (
         <Button
           onClick={() => setOpen(true)}
@@ -87,12 +101,63 @@ export function useTransactions(pages: PageTables[]): TransactionsState {
 
   return {
     creditCard,
+    year,
     cardMode,
     categories,
     statement,
-    workbook: columns => ({ columns, creditCard, rules: categories.rules, ai: categories.ai }),
+    workbook: columns => ({
+      columns,
+      creditCard,
+      year,
+      rules: categories.rules,
+      ai: categories.ai,
+    }),
     controls,
   }
+}
+
+const THIS_YEAR = new Date().getFullYear()
+
+/**
+ * The year a statement closes in, for dates printed without one ("01/05",
+ * "Aug 6"). The default is the year from the printed statement period; when
+ * the page doesn't print one, the person has to pick, and every export
+ * stays off until they do.
+ */
+function YearPicker({
+  year,
+  printed,
+  onChange,
+}: {
+  year: number | undefined
+  printed: StatementYear | undefined
+  onChange: (year: number | undefined) => void
+}) {
+  const years = Array.from({ length: 16 }, (_, i) => THIS_YEAR + 1 - i)
+  if (year !== undefined && !years.includes(year)) years.push(year)
+  const found = printed?.source === 'printed' ? printed.year : undefined
+  return (
+    <select
+      value={year ?? ''}
+      onChange={e => onChange(e.target.value ? Number(e.target.value) : undefined)}
+      className={cn(FIELD, 'h-9 px-2 text-sm', year === undefined && !found && 'text-bad')}
+      aria-label='Statement year'
+      title={
+        found
+          ? `The dates print no year. PDFCells took it from “${printed?.text ?? ''}”, so a December date on a January statement gets the year before. Change it if that’s wrong.`
+          : 'The dates print no year and the statement period isn’t on the page. Pick the year the statement closes in; December dates on a January statement get the year before.'
+      }
+    >
+      <option value=''>
+        {found ? `${found} (from the statement)` : 'Pick the statement year'}
+      </option>
+      {years.map(y => (
+        <option key={y} value={y}>
+          Closes in {y}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 const SOURCE: Record<CategorySource, string> = {

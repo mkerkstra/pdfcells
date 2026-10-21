@@ -18,7 +18,7 @@ import {
   type MatchOptions,
   type Overrides,
 } from './reconcile'
-import { titlePeriod, type Statement } from './statement'
+import { findPeriod, type Statement } from './statement'
 import type { ReconcileSheetInput, StatementLine } from './xlsxReconcile'
 
 export interface Period {
@@ -27,18 +27,18 @@ export interface Period {
   end: string
 }
 
+const isoDate = (d: Date) => d.toISOString().slice(0, 10)
+
 /**
  * The statement period when the statement prints it ("statement period
- * 03/01/2026 to 03/31/2026") and it covers every transaction; null when the
- * period is only the first and last transaction dates, which the person has
- * to confirm before it can serve as the cutoff.
+ * 03/01/2026 to 03/31/2026", found by findPeriod) and it covers every
+ * transaction; null when the period is only the first and last transaction
+ * dates, which the person has to confirm before it can serve as the cutoff.
  */
 export function printedPeriod(s: Statement, pages: PageTables[]): Period | null {
-  const p = titlePeriod(
-    pages.flatMap(x => x.tables.map(t => t.title)),
-    s.dateOrder,
-  )
-  if (!p) return null
+  const printed = findPeriod(pages, s.dateOrder)
+  if (!printed?.start) return null
+  const p = { start: isoDate(printed.start), end: isoDate(printed.end) }
   const dates = s.transactions.map(t => t.date)
   return dates.every(d => d >= p.start && d <= p.end) ? p : null
 }

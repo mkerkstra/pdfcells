@@ -12,7 +12,7 @@ import {
 } from '../cells'
 import type { Table } from '../types'
 
-const TOTAL = /^\s*(grand\s+)?(sub)?total\b|^\s*sum\b/i
+const TOTAL = /^\s*(grand\s+)?(sub)?totals?\b|^\s*sum\b/i
 
 /** A row labelled as a total or subtotal. */
 export function isTotalRow(row: string[]): boolean {

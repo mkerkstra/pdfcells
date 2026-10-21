@@ -151,8 +151,8 @@ describe('readStatement: joining pages', () => {
     const [j, s] = joinWithOrigins(doc([p1], [p2, summary]))
     expect(j?.table.rows).toHaveLength(6)
     expect(j?.origin.slice(4)).toEqual([
-      { page: 2, row: 1 },
-      { page: 2, row: 2 },
+      { page: 2, row: 1, id: 't' },
+      { page: 2, row: 2, id: 't' },
     ])
     expect(s?.pages).toEqual([2])
     const st = readStatement(doc([p1], [p2, summary]))

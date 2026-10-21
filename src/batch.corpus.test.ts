@@ -156,8 +156,9 @@ describe('batch of five statements and one invoice', () => {
     const combined = combineStatements(statements)
     expect(combined.transactions).toHaveLength(72)
     expect(new Set(combined.transactions.map(x => x.fitid)).size).toBe(72)
-    // The rename replaced the "Statement period" titles, so the period is the first and last dates.
-    expect(combined.period).toEqual({ start: '2026-01-02', end: '2026-05-19' })
+    // The rename replaced the "Statement period" titles, but the page text still prints the
+    // period, so it runs to the last statement's printed end, not its last transaction.
+    expect(combined.period).toEqual({ start: '2026-01-02', end: '2026-05-31' })
     const dates = combined.transactions.map(x => x.date)
     expect(dates).toEqual(dates.toSorted())
   })

@@ -2,7 +2,7 @@
 // credits − debits = closing. The values can sit in one table or spread over
 // several tables on a page or in a document.
 
-import { parseDate } from '../cells'
+import { isDateCell } from '../cells'
 import type { Table } from '../types'
 
 import { buildGrid, cell, formatNumber, raw, tolerance } from './grid'
@@ -10,6 +10,8 @@ import type { CellRef, DocCheckResult, DocIssue, DocTick, Issue, PageTables, Tic
 
 type Role = 'subtotal' | 'tax' | 'total' | 'opening' | 'credits' | 'debits' | 'closing'
 
+// "Beginning balance on August 1, 2026", "Ending balance as of 01/14/2026" (Bank of America).
+const ON_DATE = String.raw`(?:\s+(?:on|as\s+of)\s+[A-Za-z0-9,./ -]{3,20})?`
 const RATE = String.raw`(?:\s*\(?\s*@?\s*\d+(?:[.,]\d+)?\s*%\s*\)?)?`
 const ROLES: [Role, RegExp][] = [
   [
@@ -27,10 +29,13 @@ const ROLES: [Role, RegExp][] = [
     'total',
     /^(?:(?:grand\s+|invoice\s+)?total(?:\s+(?:due|amount|payable|incl\.?\s+(?:tax|vat)))?|(?:amount|balance)\s+due|gesamtbetrag|rechnungsbetrag|bruttobetrag|endbetrag|summe\s+brutto)$/i,
   ],
-  ['opening', /^(?:opening|beginning|starting|previous)\s+balance$/i],
+  [
+    'opening',
+    new RegExp(String.raw`^(?:opening|beginning|starting|previous)\s+balance${ON_DATE}$`, 'i'),
+  ],
   ['credits', /^(?:total\s+)?(?:deposits|credits)(?:\s+and\s+(?:other\s+)?credits)?$/i],
   ['debits', /^(?:total\s+)?(?:withdrawals|debits)(?:\s+and\s+(?:other\s+)?debits)?$/i],
-  ['closing', /^(?:closing|ending|new)\s+balance$/i],
+  ['closing', new RegExp(String.raw`^(?:closing|ending|new)\s+balance${ON_DATE}$`, 'i')],
 ]
 
 interface Entry {
@@ -56,8 +61,29 @@ function roleOf(text: string): Role | null {
 function entries(t: Table, page: number): Entry[] {
   const g = buildGrid(t)
   const out: Entry[] = []
+  const first = t.headerRows
   t.rows.forEach((r, row) => {
-    if (row < t.headerRows) return
+    if (row < t.headerRows) {
+      // A summary printed across: labels in the header, values on the row
+      // below ("Beginning balance | Deposits and other additions | … | Ending balance", PNC).
+      r.forEach((text, col) => {
+        const role = roleOf(text)
+        const value = role && t.rows.length > first ? cell(g, first, col) : null
+        if (!role || value === null) return
+        out.push({
+          role,
+          value,
+          dec: g.dec[first]?.[col] ?? 0,
+          locale: g.locale[col] ?? 'dot',
+          page,
+          table: t,
+          row: first,
+          col,
+          label: text.trim().replace(/\s*:$/, ''),
+        })
+      })
+      return
+    }
     r.forEach((text, lc) => {
       const role = roleOf(text)
       if (!role) return
@@ -264,8 +290,7 @@ export interface StatementSummary {
 export function statementSummary(doc: PageTables[]): StatementSummary {
   // Summary lines only: included tables, and no dated row (a transaction
   // described as "New balance" is not the statement's closing balance).
-  const dated = (c: string) =>
-    /^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s*$/.test(c) || parseDate(c) !== null
+  const dated = isDateCell
   const es = doc.flatMap(({ page, tables }) =>
     tables
       .filter(t => t.include)

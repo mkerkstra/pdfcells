@@ -8,7 +8,15 @@
 // owed, so a purchase raises it: card mode flips the sign, and a purchase is
 // money out like on any other account.
 
-import { parseDate, type DateOrder } from './cells'
+import {
+  chosenYearAnchor,
+  detectDayMonthOrder,
+  parseDate,
+  parseDayMonth,
+  type DateOrder,
+  type DayMonth,
+  type YearAnchor,
+} from './cells'
 import { balanceLayout, movement, type Mover, type Pair } from './checks/balance'
 import {
   buildGrid,
@@ -42,9 +50,10 @@ export interface Transaction {
   checkNumber?: string
   /** Stable, unique id for importers that de-duplicate (OFX FITID). */
   fitid: string
-  /** Where the row sits in the document (row is the page table's row index). */
+  /** Where the row sits in the document (row is the page table's row index, table its id). */
   page: number
   row: number
+  table: string
 }
 
 export interface StatementColumns {
@@ -59,16 +68,33 @@ export type Gate =
   | { ok: true; basis: 'balance' | 'summary'; label: string }
   | { ok: false; reasons: string[] }
 
+/** Where the year of dates printed without one came from. */
+export interface StatementYear {
+  /**
+   * printed: the statement period or closing date on the page; chosen: the
+   * person picked it; missing: neither, so every export is off.
+   */
+  source: 'printed' | 'chosen' | 'missing'
+  /** The year the statement closes in; absent when missing. */
+  year?: number
+  /** The printed period or closing date it came from. */
+  text?: string
+}
+
 export interface Statement {
   /** Read as a credit-card statement: the balance is what's owed and purchases are money out. */
   creditCard: boolean
   /** What auto-detection said, whatever the person picked. */
   creditCardDetected: boolean
-  /** The transaction table, joined across pages. */
+  /** The transaction table, joined across pages (with sections, the longest section). */
   table: Table
   pages: number[]
-  /** The page tables the transaction table was joined from (a transaction's row is in its page's part). */
+  /** The page tables the transactions were read from (a transaction's row is in the part its table names). */
   parts: { page: number; id: string }[]
+  /** Set when the transactions come from separate sections (deposits, withdrawals), signed by section. */
+  sections?: { title: string; sign: 1 | -1; count: number }[]
+  /** Set when the dates are printed without a year. */
+  year?: StatementYear
   columns: StatementColumns
   dateOrder: DateOrder
   transactions: Transaction[]
@@ -86,6 +112,8 @@ export interface Statement {
 interface Origin {
   page: number
   row: number
+  /** The page table's id. */
+  id: string
 }
 
 interface Joined {
@@ -95,6 +123,8 @@ interface Joined {
   /** The page tables joined, one per page. */
   parts: { page: number; id: string }[]
   lastPage: number
+  /** Position in the document. */
+  seq: number
 }
 
 /** Included tables, with tables continued across consecutive pages joined, remembering where each row came from. */
@@ -105,11 +135,17 @@ export function joinWithOrigins(pages: PageTables[]): Joined[] {
     const tables = p.tables.filter(t => t.include && t.rows.length > 0)
     let last: Joined | null = null
     tables.forEach((t, i) => {
-      if (i === 0 && tail && tail.lastPage === p.page - 1 && continues(tail.table, t)) {
+      if (
+        i === 0 &&
+        tail &&
+        tail.lastPage === p.page - 1 &&
+        continues(tail.table, t) &&
+        !newSection(tail.table, t)
+      ) {
         const joined = appendTable(tail.table, t)
         const added = joined.rows.length - tail.table.rows.length
         for (let r = t.rows.length - added; r < t.rows.length; r++)
-          tail.origin.push({ page: p.page, row: r })
+          tail.origin.push({ page: p.page, row: r, id: t.id })
         tail.table = joined
         tail.lastPage = p.page
         tail.pages.push(p.page)
@@ -119,16 +155,55 @@ export function joinWithOrigins(pages: PageTables[]): Joined[] {
       }
       last = {
         table: t,
-        origin: t.rows.map((_, row) => ({ page: p.page, row })),
+        origin: t.rows.map((_, row) => ({ page: p.page, row, id: t.id })),
         pages: [p.page],
         parts: [{ page: p.page, id: t.id }],
         lastPage: p.page,
+        seq: out.length,
       }
       out.push(last)
     })
     tail = last
   }
   return out
+}
+
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim()
+
+/**
+ * A table on the next page with the same columns starts a new section, not a
+ * continuation, when its own title names another section ("Withdrawals and
+ * other subtractions" after "Deposits and other additions").
+ */
+function newSection(a: Table, b: Table): boolean {
+  if (!b.title.trim() || /\bcontinued\b/i.test(b.title)) return false
+  if (sectionSign(b.title, false) === null && sectionSign(b.title, true) === null) return false
+  return norm(a.title) !== norm(b.title)
+}
+
+// Section titles, when deposits and withdrawals are printed as separate tables.
+const SECTION = {
+  bank: {
+    in: /\b(?:deposits?|credits?|additions?|money\s+in|paid\s+in|receipts?|incoming)\b/i,
+    out: /\b(?:withdrawals?|debits?|subtractions?|deductions?|checks?|cheques?|purchases?|fees?|charges?|money\s+out|paid\s+out|outgoing|payments?)\b/i,
+  },
+  card: {
+    in: /\b(?:payments?|credits?|refunds?|returns?|adjustments?)\b/i,
+    out: /\b(?:purchases?|charges?|fees?|interest|cash\s+advances?|balance\s+transfers?|transactions|debits?)\b/i,
+  },
+}
+
+/** +1 for a money-in section title, -1 for money out, null when it names neither (or both). */
+export function sectionSign(title: string, card: boolean): 1 | -1 | null {
+  const t = title.replace(/[-–—]\s*continued\b.*$/i, '')
+  const words = card ? SECTION.card : SECTION.bank
+  const inn = words.in.test(t)
+  const out = words.out.test(t)
+  return inn === out ? null : inn ? 1 : -1
 }
 
 const HEAD = {
@@ -159,6 +234,17 @@ function header(t: Table, c: number): string {
 interface Layout {
   columns: StatementColumns
   pairs: Pair[] | null
+  /** The date column prints month and day only ("01/05", "Aug 6"). */
+  yearless: boolean
+}
+
+/** A text column whose dates are printed without a year: at least 80% of its filled cells. */
+function yearlessColumn(g: Grid, c: number): boolean {
+  const filled = g.body.map(r => raw(g.table, r, c)).filter(v => v !== '')
+  if (filled.length === 0) return false
+  const dm = (v: string) => parseDayMonth(v, 'mdy') ?? parseDayMonth(v, 'dmy')
+  const ok = filled.filter(v => dm(v) !== null || parseDate(v) !== null).length
+  return ok >= filled.length * 0.8 && filled.some(v => dm(v) !== null)
 }
 
 /**
@@ -169,7 +255,12 @@ interface Layout {
 function layout(g: Grid, card = false): Layout | null {
   const t = g.table
   const types = columnTypes(t)
-  const date = types.findIndex(ct => ct.kind === 'date')
+  let date = types.findIndex(ct => ct.kind === 'date')
+  let yearless = false
+  if (date < 0) {
+    date = types.findIndex((ct, c) => ct.kind === 'text' && yearlessColumn(g, c))
+    yearless = date >= 0
+  }
   if (date < 0) return null
   const numeric = g.numericCol.flatMap((ok, c) => (ok && c !== date ? [c] : []))
   const found = balanceLayout(g)
@@ -207,6 +298,9 @@ function layout(g: Grid, card = false): Layout | null {
   // The description is the text column with the most to say.
   let description = -1
   let most = 0
+  // A second date column printed without a year (a post date) is no description.
+  for (const [c, ct] of types.entries())
+    if (!used.has(c) && ct.kind === 'text' && yearlessColumn(g, c)) used.add(c)
   const texts = types.flatMap((ct, c) =>
     !used.has(c) && ct.kind === 'text' && !ADDED.always.test(header(t, c)) ? [c] : [],
   )
@@ -217,10 +311,13 @@ function layout(g: Grid, card = false): Layout | null {
     const len = g.body.reduce((n, r) => n + raw(t, r, c).length, 0)
     if (len > most) [description, most] = [c, len]
   })
+  // A checks section prints only a check number (Bank of America's Date | Check # | Amount).
+  if (description < 0 && check >= 0) description = check
   if (description < 0) return null
   return {
     columns: { date, description, movers, balance, ...(check >= 0 ? { check } : {}) },
     pairs: found?.ps ?? null,
+    yearless,
   }
 }
 
@@ -270,20 +367,74 @@ export function assignFitids<T extends { date: string; amount: number; descripti
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 
-/** "statement period 03/01/2026 to 03/31/2026" in a table title. */
-export function titlePeriod(
-  titles: string[],
-  order: DateOrder,
-): { start: string; end: string } | null {
-  for (const s of titles) {
-    const m = /period\s*:?\s*(.+?)\s+(?:to|through|thru|-|–)\s+(.+?)\s*$/i.exec(s)
-    if (!m) continue
-    const a = parseDate(m[1] ?? '', order)
-    const b = parseDate(m[2] ?? '', order)
-    if (a && b && a <= b) return { start: iso(a), end: iso(b) }
+// A full date as statements print it: 01/14/2026, 01/14/26, 2026-01-14, Jan 14, 2026, 14 Jan 2026.
+const FULL = String.raw`(?:\d{1,2}[/.-]\d{1,2}[/.-](?:\d{4}|\d{2})|\d{4}-\d{1,2}-\d{1,2}|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4})(?!\d)`
+const RANGE = new RegExp(String.raw`(${FULL})\s*(?:-|–|—|to|through|thru|until)\s*(${FULL})`, 'gi')
+const PERIOD_WORDS = /\b(?:period|cycle|statement|opening|closing|billing|dates?)\b/i
+const CLOSING_AT = new RegExp(
+  String.raw`\b(?:(?:statement\s+)?closing\s+date|statement\s+(?:end(?:ing)?\s+)?date|statement\s+(?:ending|through)|period\s+ending|(?:ending|closing|new)\s+balance\s+(?:on|as\s+of))\s*:?\s*(${FULL})`,
+  'i',
+)
+const OPENING_AT = new RegExp(
+  String.raw`\b(?:beginning|opening|previous)\s+balance\s+(?:on|as\s+of)\s*:?\s*(${FULL})`,
+  'i',
+)
+
+/** Every line of text the statement prints: page text, table titles and notes, and each row. */
+function statementText(pages: PageTables[]): string[] {
+  const out: string[] = []
+  for (const p of pages) {
+    out.push(...(p.text ?? '').split('\n'))
+    // Excluded tables count too: the header block with the period is often left out.
+    for (const t of p.tables) out.push(t.title, t.notes, ...t.rows.map(r => r.join(' ')))
   }
-  return null
+  return out.map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
 }
+
+const spanDays = (a: Date, b: Date) => (b.getTime() - a.getTime()) / 86_400_000
+
+/**
+ * The statement period, or just its closing date, as printed: a labelled
+ * range ("Statement period 12/15/2025 - 01/14/2026", "Opening/Closing Date
+ * 12/29/16 - 01/28/17"), then a dated opening and closing balance ("Beginning
+ * balance on August 1, 2026"), then a labelled closing date ("Closing Date
+ * 01/14/26"), then a bare range of a statement's length ("January 1, 2016 -
+ * January 31, 2016"). Null when none is printed.
+ */
+export function findPeriod(pages: PageTables[], order: DateOrder): YearAnchor | null {
+  const lines = statementText(pages)
+  const ranges = (labelled: boolean, min: number, max: number): YearAnchor | null => {
+    for (const l of lines) {
+      if (labelled !== PERIOD_WORDS.test(l)) continue
+      for (const m of l.matchAll(RANGE)) {
+        const start = parseDate(m[1] ?? '', order)
+        const end = parseDate(m[2] ?? '', order)
+        if (!start || !end) continue
+        const span = spanDays(start, end)
+        if (span >= min && span <= max) return { start, end, text: l }
+      }
+    }
+    return null
+  }
+  const at = (re: RegExp) => {
+    for (const l of lines) {
+      const d = parseDate(re.exec(l)?.[1] ?? '', order)
+      if (d) return { d, text: l }
+    }
+    return null
+  }
+  const labelled = ranges(true, 1, 400)
+  if (labelled) return labelled
+  const close = at(CLOSING_AT)
+  const open = at(OPENING_AT)
+  if (close && open && open.d <= close.d && spanDays(open.d, close.d) <= 400)
+    return { start: open.d, end: close.d, text: `${open.text}; ${close.text}` }
+  if (close) return { end: close.d, text: close.text }
+  return ranges(false, 6, 100)
+}
+
+/** How to date a table whose dates have no year. */
+type YearFor = (order: DateOrder, dates: DayMonth[]) => { anchor: YearAnchor; year: StatementYear }
 
 interface Candidate {
   joined: Joined
@@ -295,19 +446,32 @@ interface Candidate {
   problems: string[]
   /** A "balance forward" row before the first transaction. */
   forward?: number
+  /** The amount on the table's last total line ("Total deposits and other additions"). */
+  total?: number
+  /** Set when the dates have no year. */
+  year?: StatementYear
 }
 
 function where(o: Origin | undefined): string {
   return o ? `page ${o.page}, row ${o.row + 1}` : 'an unknown row'
 }
 
-function read(joined: Joined, card: boolean): Candidate | null {
+function read(joined: Joined, card: boolean, yearFor: YearFor): Candidate | null {
   const t = joined.table
   const g = buildGrid(t)
   const lay = layout(g, card)
   if (!lay) return null
   const { columns: c } = lay
-  const order = columnTypes(t)[c.date]?.dateOrder ?? 'mdy'
+  let order = columnTypes(t)[c.date]?.dateOrder ?? 'mdy'
+  let anchor: YearAnchor | undefined
+  let year: StatementYear | undefined
+  if (lay.yearless) {
+    const values = g.body.map(r => raw(t, r, c.date))
+    order = detectDayMonthOrder(values)
+    const dates = values.flatMap(v => parseDayMonth(v, order) ?? [])
+    ;({ anchor, year } = yearFor(order, dates))
+  }
+  let total: number | undefined
   const txns: Candidate['txns'] = []
   const problems: string[] = []
   let forward: number | undefined
@@ -315,13 +479,18 @@ function read(joined: Joined, card: boolean): Candidate | null {
   for (const r of g.body) {
     const o = joined.origin[r]
     const dateText = raw(t, r, c.date)
-    const parsed = dateText ? parseDate(dateText, order) : null
+    const parsed = dateText ? parseDate(dateText, order, anchor) : null
     // A "Total…" row without a date is a summary line; with a date it's a real
     // transaction whose payee happens to start with "Total" (Total Wine).
-    if (g.totalRow[r] && !parsed) continue
+    if (g.totalRow[r] && !parsed) {
+      const v = c.movers.map(m => g.num[r]?.[m.col]).find(x => x !== null && x !== undefined)
+      if (v !== undefined) total = Math.abs(v)
+      continue
+    }
     const moversBlank = c.movers.every(m => isBlank(g, r, m.col))
     const mv = movement(g, r, c.movers)
-    const desc = raw(t, r, c.description)
+    const printed = raw(t, r, c.description)
+    const desc = c.description === c.check && printed ? `Check ${printed}` : printed
     const bal = c.balance === undefined ? null : (g.num[r]?.[c.balance] ?? null)
     if (moversBlank) {
       // A wrapped description line carries on the previous transaction.
@@ -340,7 +509,11 @@ function read(joined: Joined, card: boolean): Candidate | null {
       continue
     }
     if (dateText && !parsed) {
-      problems.push(`The date on ${where(o)} isn’t a date`)
+      problems.push(
+        anchor && parseDayMonth(dateText, order)
+          ? `The date on ${where(o)} isn’t in the statement period (${anchor.text})`
+          : `The date on ${where(o)} isn’t a date`,
+      )
       continue
     }
     const date: string | null = parsed ? iso(parsed) : lastDate
@@ -359,15 +532,27 @@ function read(joined: Joined, card: boolean): Candidate | null {
       ...(check ? { checkNumber: check } : {}),
       page: o?.page ?? 0,
       row: o?.row ?? r,
+      table: o?.id ?? t.id,
     })
   }
-  return { joined, g, lay, order, txns, problems, forward }
+  return { joined, g, lay, order, txns, problems, forward, total, year }
 }
 
 export interface ReadOptions {
   /** Read as a credit-card statement; undefined detects it from the document. */
   creditCard?: boolean
+  /**
+   * The year the statement closes in, for dates printed without one. Wins
+   * over the printed period; undefined reads it from the page.
+   */
+  year?: number
 }
+
+/** A leap year, so a provisional Feb 29 reads; never exported (the gate is off while the year is missing). */
+const PROVISIONAL_YEAR = 2000
+
+const MISSING_YEAR =
+  'The dates have no year and the statement period isn’t on the page: pick the year the statement closes in'
 
 /**
  * Whether to read the document as a credit card when the person hasn't said.
@@ -384,8 +569,26 @@ export function detectCreditCard(pages: PageTables[]): boolean {
 export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Statement | null {
   const detected = detectCreditCard(pages)
   const card = opts.creditCard ?? detected
+  const periods = new Map<DateOrder, YearAnchor | null>()
+  const periodFor = (order: DateOrder) => {
+    if (!periods.has(order)) periods.set(order, findPeriod(pages, order))
+    return periods.get(order) ?? null
+  }
+  const yearFor: YearFor = (order, dates) => {
+    if (opts.year !== undefined) {
+      const anchor = chosenYearAnchor(opts.year, dates)
+      return { anchor, year: { source: 'chosen', year: opts.year } }
+    }
+    const printed = periodFor(order)
+    if (printed)
+      return {
+        anchor: printed,
+        year: { source: 'printed', year: printed.end.getUTCFullYear(), text: printed.text },
+      }
+    return { anchor: chosenYearAnchor(PROVISIONAL_YEAR, dates), year: { source: 'missing' } }
+  }
   const cands = joinWithOrigins(pages)
-    .map(j => read(j, card))
+    .map(j => read(j, card, yearFor))
     .filter((x): x is Candidate => x !== null && x.txns.length > 0)
   // Prefer the table the balance check recognised, then the longest.
   cands.sort(
@@ -394,23 +597,18 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
   )
   const best = cands[0]
   if (!best) return null
+  const summary = statementSummary(pages)
+  const cardSum = card ? cardSummary(pages) : null
+  const sections = sectionCandidates(cands, card)
+  if (sections) return readSections(sections, best, card, detected, summary, cardSum, periodFor)
   const { joined, g, lay, txns } = best
   const c = lay.columns
-  const summary = statementSummary(pages)
   const decimals = Math.max(2, ...c.movers.map(m => g.colDecimals[m.col] ?? 0))
-
-  const dates = txns.map(x => x.date).toSorted()
-  const titles = pages.flatMap(p => p.tables.map(t => t.title))
-  const period = titlePeriod(titles, best.order)
-  const first = dates[0] ?? ''
-  const last = dates.at(-1) ?? ''
-  const usePeriod = period && period.start <= first && period.end >= last
 
   // Opening: a balance-forward row, else the first printed balance less the
   // movement up to it, else the summary. On a card, money out raises the
   // balance (what's owed), so amounts move it the other way.
   const dir = card ? -1 : 1
-  const cardSum = card ? cardSummary(pages) : null
   let opening = best.forward
   if (opening === undefined) {
     let moved = 0
@@ -431,7 +629,7 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
     summary.closing ??
     (opening === undefined ? undefined : round2(opening + total))
 
-  const gate = cardSum
+  const decided = cardSum
     ? decideCard(best, cardSum, summary, opening, closing, decimals)
     : decide(best, summary, opening, closing, decimals)
   return {
@@ -443,13 +641,183 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
     columns: c,
     dateOrder: best.order,
     transactions: assignFitids(txns),
-    period: usePeriod ? period : { start: first, end: last },
+    period: periodOf(txns, periodFor(best.order)),
+    ...(best.year ? { year: best.year } : {}),
     opening,
     closing,
     decimals,
     summary,
-    gate,
+    gate: withYear(decided, best.year),
   }
+}
+
+/** The printed period when it covers every transaction, else the first and last dates. */
+function periodOf(
+  txns: { date: string }[],
+  printed: YearAnchor | null,
+): { start: string; end: string } {
+  const dates = txns.map(x => x.date).toSorted()
+  const first = dates[0] ?? ''
+  const last = dates.at(-1) ?? ''
+  if (printed?.start) {
+    const start = iso(printed.start)
+    const end = iso(printed.end)
+    if (start <= first && end >= last) return { start, end }
+  }
+  return { start: first, end: last }
+}
+
+/** The gate is off while dates have no year to export with. */
+function withYear(gate: Gate, year: StatementYear | undefined): Gate {
+  if (year?.source !== 'missing') return gate
+  return { ok: false, reasons: [MISSING_YEAR, ...(gate.ok ? [] : gate.reasons)] }
+}
+
+interface Section {
+  cand: Candidate
+  sign: 1 | -1
+}
+
+/**
+ * Deposits and withdrawals printed as separate tables, each with a section
+ * title and one amount column and no running balance: Bank of America,
+ * Chase business checking, PNC, and card statements with Payments and
+ * Purchases sections. Only when no table has a running balance and the
+ * longest table is itself a section, so a statement with one transaction
+ * table and a small titled extra (fees) keeps reading as before.
+ */
+function sectionCandidates(cands: Candidate[], card: boolean): Section[] | null {
+  const plain = (x: Candidate) => x.lay.columns.balance === undefined && x.lay.pairs === null
+  if (!cands.every(plain)) return null
+  const titled = (x: Candidate) =>
+    x.lay.columns.movers.length === 1 ? sectionSign(x.joined.table.title, card) : null
+  const best = cands[0]
+  if (!best || titled(best) === null) return null
+  const out: Section[] = []
+  for (const cand of cands) {
+    const sign = titled(cand)
+    if (sign !== null) out.push({ cand, sign })
+  }
+  return out.toSorted((a, b) => a.cand.joined.seq - b.cand.joined.seq)
+}
+
+/**
+ * A section's amounts signed by the section: a withdrawals section printed
+ * unsigned is money out. When every amount already has the section's sign
+ * (Bank of America prints withdrawals as -800.00) or the signs are mixed (a
+ * refund among purchases), they stay as printed.
+ */
+function signed(sec: Section): Candidate['txns'] {
+  const moved = sec.cand.txns.filter(x => x.amount !== 0)
+  const against = moved.length > 0 && moved.every(x => Math.sign(x.amount) === -sec.sign)
+  return against ? sec.cand.txns.map(x => ({ ...x, amount: -x.amount })) : sec.cand.txns
+}
+
+function readSections(
+  sections: Section[],
+  best: Candidate,
+  card: boolean,
+  detected: boolean,
+  summary: StatementSummary,
+  cardSum: CardSummary | null,
+  periodFor: (order: DateOrder) => YearAnchor | null,
+): Statement {
+  const read = sections.map(sec => ({ sec, txns: signed(sec) }))
+  // Stable by date: sections keep their order within a day.
+  const txns = read.flatMap(r => r.txns).toSorted((a, b) => a.date.localeCompare(b.date))
+  const decimals = Math.max(
+    2,
+    ...sections.flatMap(({ cand }) =>
+      cand.lay.columns.movers.map(m => cand.g.colDecimals[m.col] ?? 0),
+    ),
+  )
+  const opening = cardSum?.opening ?? summary.opening
+  const closing = cardSum?.closing ?? summary.closing
+  const year = sections.find(s => s.cand.year)?.cand.year
+  const gate = decideSections(read, card, summary, cardSum, opening, closing, decimals, best)
+  return {
+    creditCard: card,
+    creditCardDetected: detected,
+    table: best.joined.table,
+    pages: [...new Set(sections.flatMap(s => s.cand.joined.pages))].toSorted((a, b) => a - b),
+    parts: sections.flatMap(s => s.cand.joined.parts),
+    sections: read.map(r => ({
+      title: r.sec.cand.joined.table.title,
+      sign: r.sec.sign,
+      count: r.txns.length,
+    })),
+    columns: best.lay.columns,
+    dateOrder: best.order,
+    transactions: assignFitids(txns),
+    period: periodOf(txns, periodFor(best.order)),
+    ...(year ? { year } : {}),
+    opening,
+    closing,
+    decimals,
+    summary,
+    gate: withYear(gate, year),
+  }
+}
+
+/**
+ * The gate for sections. There is no running balance, so the printed
+ * summary has to hold the transactions: opening + money in − money out =
+ * closing (on a card, previous balance − payments + charges = new balance),
+ * each section has to add up to its printed total line, and the summary's
+ * credits and debits (or payments and charges), when printed, to the
+ * sections'.
+ */
+function decideSections(
+  read: { sec: Section; txns: Candidate['txns'] }[],
+  card: boolean,
+  summary: StatementSummary,
+  cardSum: CardSummary | null,
+  opening: number | undefined,
+  closing: number | undefined,
+  decimals: number,
+  best: Candidate,
+): Gate {
+  const fmt = (v: number) =>
+    formatNumber(v, decimals, best.g.locale[best.lay.columns.movers[0]?.col ?? 0])
+  const dec = Math.max(decimals, summary.dec, cardSum?.dec ?? 0)
+  const near = (a: number, b: number, terms: number) => Math.abs(a - b) <= tolerance(dec, terms, a)
+  const reasons = read.flatMap(r => r.sec.cand.problems)
+  const all = read.flatMap(r => r.txns)
+  for (const { sec, txns } of read) {
+    const printed = sec.cand.total
+    if (printed === undefined) continue
+    const sum = round2(Math.abs(txns.reduce((n, x) => n + x.amount, 0)))
+    if (!near(sum, printed, txns.length + 1))
+      reasons.push(
+        `The ${sec.cand.joined.table.title.trim()} section adds up to ${fmt(sum)}, but its total line says ${fmt(printed)}`,
+      )
+  }
+  if (opening === undefined || closing === undefined) {
+    reasons.push(
+      card
+        ? 'The sections have no running balance, and there’s no previous balance and new balance to check them against'
+        : 'The sections have no running balance, and there’s no opening and closing balance to check them against',
+    )
+    return { ok: false, reasons }
+  }
+  const inSum = round2(all.filter(x => x.amount > 0).reduce((n, x) => n + x.amount, 0))
+  const outSum = round2(-all.filter(x => x.amount < 0).reduce((n, x) => n + x.amount, 0))
+  const expected = card ? round2(opening - inSum + outSum) : round2(opening + inSum - outSum)
+  if (!near(expected, closing, all.length + 2))
+    reasons.push(
+      card
+        ? `Previous balance ${fmt(opening)} − payments ${fmt(inSum)} + charges ${fmt(outSum)} is ${fmt(expected)}, but the new balance is ${fmt(closing)}`
+        : `Opening balance ${fmt(opening)} + money in ${fmt(inSum)} − money out ${fmt(outSum)} is ${fmt(expected)}, but the closing balance is ${fmt(closing)}`,
+    )
+  const credits = card ? cardSum?.credits : summary.credits
+  const debits = card ? cardSum?.charges : summary.debits
+  if (credits !== undefined && !near(inSum, credits, all.length + 1))
+    reasons.push(`Money in adds up to ${fmt(inSum)}, but the summary says ${fmt(credits)}`)
+  if (debits !== undefined && !near(outSum, debits, all.length + 1))
+    reasons.push(`Money out adds up to ${fmt(outSum)}, but the summary says ${fmt(debits)}`)
+  return reasons.length
+    ? { ok: false, reasons }
+    : { ok: true, basis: 'summary', label: 'summary ties' }
 }
 
 function decide(

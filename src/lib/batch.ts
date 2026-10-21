@@ -5,8 +5,9 @@
 import type { PageTables } from './checks/model'
 import { sniff, SNIFF_BYTES } from './filetype'
 import { headerCells, words } from './fingerprint'
+import { linesToText } from './layout'
 import { joinWithOrigins, readStatement, type Statement, type Transaction } from './statement'
-import type { Table } from './types'
+import type { Table, Word } from './types'
 import { columnTypes, reviewDocument } from './validate'
 
 export const MAX_FILES = 200
@@ -40,11 +41,24 @@ export interface BatchPage {
   status: string
   error?: string
   tables: Table[]
+  /** The page's PDF text (empty on saved batch pages). */
+  triage?: { textHint: string }
+  /** OCR words of the whole page, when still at hand. */
+  ocrWords?: Word[]
 }
 
-/** Pages that were read (or deliberately not skipped), as the exporters take them. */
+/**
+ * Pages that were read (or deliberately not skipped), as the exporters take
+ * them, with the page's text so a statement period printed outside any
+ * table can date year-less transactions. The text stays in the browser.
+ */
 export function readTables(pages: readonly BatchPage[]): PageTables[] {
-  return pages.filter(p => p.engine !== 'skip' || p.run).map(p => ({ page: p.n, tables: p.tables }))
+  return pages
+    .filter(p => p.engine !== 'skip' || p.run)
+    .map(p => {
+      const text = p.triage?.textHint || (p.ocrWords?.length ? linesToText(p.ocrWords) : '')
+      return { page: p.n, tables: p.tables, ...(text ? { text } : {}) }
+    })
 }
 
 export interface Assessment {

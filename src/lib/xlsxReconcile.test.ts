@@ -188,6 +188,7 @@ describe('Reconciliation sheet', () => {
       fitid,
       page: 1,
       row: 0,
+      table: 't',
     })
     const base = {
       period: { start: '2026-03-01', end: '2026-03-31' },

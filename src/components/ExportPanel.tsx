@@ -1,6 +1,7 @@
 import { Download } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { readTables } from '@/lib/batch'
 import { buildCsvExport } from '@/lib/plaintext'
 import { buildWorkbook, download, type SheetLayout, type SourceInfo } from '@/lib/xlsx'
 import { engineLabel, originalTables } from '@/lib/xlsxAudit'
@@ -30,22 +31,14 @@ export function ExportPanel({ doc }: { doc: DocState }) {
   const count = doc.pages
     .filter(p => p.engine !== 'skip' || p.run)
     .reduce((n, p) => n + p.tables.filter(t => t.include).length, 0)
-  const statementPages = useMemo(
-    () =>
-      doc.pages
-        .filter(p => p.engine !== 'skip' || p.run)
-        .map(p => ({ page: p.n, tables: p.tables })),
-    [doc.pages],
-  )
+  const statementPages = useMemo(() => readTables(doc.pages), [doc.pages])
   const transactions = useTransactions(statementPages)
 
   const run = async () => {
     setBusy(true)
     setError('')
     try {
-      const pages = doc.pages
-        .filter(p => p.engine !== 'skip' || p.run)
-        .map(p => ({ page: p.n, tables: p.tables }))
+      const pages = statementPages
       const base = doc.fileName || 'tables'
       if (format === 'csv') {
         const { blob, ext } = buildCsvExport(pages, { typed, joinPages })
