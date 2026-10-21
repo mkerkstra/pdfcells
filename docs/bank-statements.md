@@ -159,8 +159,8 @@ Every transaction gets a category, worked out in the browser in this order:
 
 ## Known limitations
 
-- Card statements that print dates without a year (03/02) aren't read as statements yet.
+- Dates without a year (03/02) need a printed statement period or a picked year; a batch statement with neither can't be exported (see [Dates without a year](#dates-without-a-year)).
 - Detection reads table cells and titles, not page prose. A card statement whose card terms are only in running text needs the switch.
-- One account per export. A statement with several accounts exports the longest transaction table.
+- One account per export. A statement with several accounts exports the longest transaction table, or its titled sections combined (see [Sections](#sections)).
 - OFX/QBO declare a checking account for bank statements and a credit card account for card statements. Savings and money market accounts aren't distinguished.
 - A row labelled "Total…" or "Sum…" is treated as a total line and skipped only when it has no date; a dated row such as a "Total Wine" purchase is a normal transaction.
