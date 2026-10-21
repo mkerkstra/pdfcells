@@ -165,9 +165,27 @@ export function reviewDocument(doc: PageTables[]): DocumentReview {
  * previous total. A total after subtotals (Subtotal, Tax, Total) may instead
  * equal the earlier totals plus the rows since. Percentages never sum.
  */
-function foot(g: Grid, types: ColumnType[]): CheckResult {
+/** A printed total that footed, and the rows it adds up (absolute indexes). */
+export interface Footing {
+  row: number
+  col: number
+  rows: number[]
+}
+
+/**
+ * The totals behind the Footed tick, with the rows each one adds up, so the
+ * workbook can write them as SUM formulas over the same cells. Empty unless
+ * every total in the table footed.
+ */
+export function footings(t: Table): Footing[] {
+  const res = foot(buildGrid(t), columnTypes(t))
+  return res.ticks.length ? res.footed : []
+}
+
+function foot(g: Grid, types: ColumnType[]): CheckResult & { footed: Footing[] } {
   const t = g.table
   const issues: Issue[] = []
+  const footed: Footing[] = []
   let tied = 0
   let start = t.headerRows
   let totals = 0
@@ -189,11 +207,13 @@ function foot(g: Grid, types: ColumnType[]): CheckResult {
         x.terms > 0 && Math.abs(x.sum - stated) <= tolerance(dec, x.terms + 1, stated)
       if (ties(strict)) {
         tied++
+        footed.push({ row: i, col: c, rows: range(start, i) })
         earlier.set(c, [...before, i])
         return
       }
       if (ties(chain)) {
         tied++
+        footed.push({ row: i, col: c, rows: [...before, ...range(start, i)] })
         earlier.set(c, [i])
         return
       }
@@ -221,7 +241,7 @@ function foot(g: Grid, types: ColumnType[]): CheckResult {
     tied > 0 && issues.length === 0
       ? [{ kind: 'total', label: 'Footed', cols: [], rows: totals }]
       : []
-  return { issues, ticks }
+  return { issues, ticks, footed }
 }
 
 function range(from: number, to: number): number[] {
