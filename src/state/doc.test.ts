@@ -166,6 +166,16 @@ describe('preset action', () => {
     expect(s2.pages[0]).toMatchObject({ engine: 'ai', autoSkip: false })
   })
 
+  it('undo brings back pages under the preset chosen now', () => {
+    const s1 = reducer(doc([page(1, [txns, summary])]), {
+      type: 'regions',
+      pages: [{ index: 0, regions: [area], tables: [txns] }],
+    })
+    const s2 = reducer(s1, { type: 'preset', preset: 'transactions' })
+    const s3 = reducer(s2, { type: 'undo' })
+    expect(s3.pages[0]?.tables.map(t => t.include)).toEqual([true, false])
+  })
+
   it('applies to tables that arrive later', () => {
     const s1 = reducer(doc([page(1, [])]), { type: 'preset', preset: 'transactions' })
     const s2 = reducer(s1, {

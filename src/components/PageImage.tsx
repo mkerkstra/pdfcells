@@ -80,6 +80,7 @@ export function PageImage({
   activeId,
   onPick,
   regions = [],
+  hide,
   areas,
 }: {
   source: DocSource
@@ -88,6 +89,8 @@ export function PageImage({
   activeId: string | null
   onPick: (id: string) => void
   regions?: UserRegion[]
+  /** Tables to leave without an outline (numbering still counts them). */
+  hide?: (t: Table) => boolean
   areas?: {
     /** Keyboard and touch drawing: the person pressed "Mark area". */
     marking: boolean
@@ -359,7 +362,7 @@ export function PageImage({
       {size &&
         tables.map((t, i) => {
           const box = resizing?.id === t.id ? resizing.box : t.bbox
-          if (!box) return null
+          if (!box || hide?.(t)) return null
           return (
             <button
               key={t.id}

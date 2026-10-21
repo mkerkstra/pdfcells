@@ -113,6 +113,14 @@ function autoSkip(p: PageState): PageState {
   return p
 }
 
+/** Pages from history under the preset chosen now (it may have changed since). */
+function withPreset(pages: PageState[], preset: Preset): PageState[] {
+  return pages.map(p => {
+    const tables = applyPreset(p.tables, preset)
+    return tables === p.tables ? p : { ...p, tables }
+  })
+}
+
 /** Push the current pages onto the undo stack (user-visible table changes only). */
 function commit(s: DocState, pages: PageState[]): DocState {
   return { ...s, pages, past: [...s.past.slice(-HISTORY + 1), s.pages], future: [] }
@@ -235,12 +243,24 @@ export function reducer(s: DocState, a: Action): DocState {
     case 'undo': {
       const prev = s.past.at(-1)
       return prev
-        ? { ...s, pages: prev, past: s.past.slice(0, -1), future: [s.pages, ...s.future] }
+        ? {
+            ...s,
+            pages: withPreset(prev, s.preset),
+            past: s.past.slice(0, -1),
+            future: [s.pages, ...s.future],
+          }
         : s
     }
     case 'redo': {
       const next = s.future[0]
-      return next ? { ...s, pages: next, past: [...s.past, s.pages], future: s.future.slice(1) } : s
+      return next
+        ? {
+            ...s,
+            pages: withPreset(next, s.preset),
+            past: [...s.past, s.pages],
+            future: s.future.slice(1),
+          }
+        : s
     }
   }
 }

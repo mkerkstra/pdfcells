@@ -626,11 +626,14 @@ function CostLine({
       : est.paid === 0
         ? 'free with your free AI pages, or free with OCR'
         : `about ${formatUsd(est.cost)} with AI (${TIER_LABEL[account.tier]}), or free with OCR`
-  const free = `${plural(textPages, 'text page')} ${textPages === 1 ? 'is' : 'are'} free.`
+  const free = textPages
+    ? `${plural(textPages, 'text page')} ${textPages === 1 ? 'is' : 'are'} free. `
+    : ''
   return (
     <span>
       <span className='font-semibold'>
-        {free} {what.charAt(0).toUpperCase() + what.slice(1)}: {ai || 'free with OCR'}.
+        {free}
+        {what.charAt(0).toUpperCase() + what.slice(1)}: {ai || 'free with OCR'}.
       </span>
       {scanned !== needing && (
         <span className='block text-xs text-muted'>

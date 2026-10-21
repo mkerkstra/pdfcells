@@ -57,7 +57,7 @@ export function ReviewView({
   const [activeTable, setActiveTable] = useState<string | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const [marking, setMarking] = useState(false)
-  const areas = useAreas(doc, dispatch, source, onRun, page)
+  const areas = useAreas(doc, dispatch, source, onRun, page, account.aiPossible)
   if (!page) return null
   const busy = page.status === 'running' || page.status === 'queued' || areas.working
   const select = (i: number) => {
@@ -69,11 +69,10 @@ export function ReviewView({
   const tables = areas.preview ?? page.tables
   const hidden = tables.filter(isHidden)
   const shown = tables.filter(t => !isHidden(t))
-  const outlined = showHidden ? page.tables : page.tables.filter(t => !isHidden(t))
   const notes = [...page.warnings, ...(page.areaNotes ?? [])]
   const reread = instantEngine(page)
     ? ''
-    : page.run?.engine === 'ai' || (!page.run && page.engine === 'ai')
+    : account.aiPossible && (page.run?.engine === 'ai' || (!page.run && page.engine === 'ai'))
       ? `This page is read again with AI (${TIER_LABEL[account.tier]}), sending only this area.`
       : 'This page is read again with OCR.'
   const readOcr = () => void onRun([{ ...page, engine: 'ocr' }])
@@ -261,7 +260,8 @@ export function ReviewView({
               <PageImage
                 source={source}
                 n={page.n}
-                tables={outlined}
+                tables={page.tables}
+                hide={showHidden ? undefined : isHidden}
                 activeId={activeTable}
                 onPick={setActiveTable}
                 regions={page.regions}
@@ -456,6 +456,7 @@ function useAreas(
   source: DocSource,
   onRun: RunFn,
   page: PageState | undefined,
+  aiPossible: boolean,
 ) {
   const [loaded, setLoaded] = useState<{ page: PageState; words: Word[] } | null>(null)
   const [preview, setPreview] = useState<{ n: number; tables: Table[] } | null>(null)
@@ -519,7 +520,8 @@ function useAreas(
       dispatch({ type: 'regions', pages: done })
       if (again) {
         const e = again.run?.engine ?? again.engine
-        await onRun([{ ...again, engine: e === 'skip' || e === 'text' ? 'ocr' : e }])
+        // AI only when it can be used; otherwise OCR, which is free and local.
+        await onRun([{ ...again, engine: e === 'ai' && aiPossible ? 'ai' : 'ocr' }])
       }
     } finally {
       setWorking(false)
