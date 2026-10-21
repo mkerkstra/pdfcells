@@ -28,6 +28,22 @@ describe('reconcile performance with repeated amounts', () => {
     expect(ms).toBeLessThan(750)
   })
 
+  it('pairs 2,000 identical entries on each side without building every pair (third review)', () => {
+    const { out, ms } = timed(() => reconcile(many('s', 2000, -5), many('l', 2000, -5)))
+    expect(out.matches).toHaveLength(2000)
+    expect(out.matches.filter(m => m.review)).toEqual([])
+    expect(ms).toBeLessThan(1000)
+  })
+
+  it('pairs 2,000 coffees a day apart, each line keeping only its nearest candidates', () => {
+    const { out, ms } = timed(() =>
+      reconcile(many('s', 2000, -5, '2026-03-10'), many('l', 2000, -5, '2026-03-11')),
+    )
+    expect(out.matches).toHaveLength(2000)
+    expect(out.matches.every(m => m.kind === 'window')).toBe(true)
+    expect(ms).toBeLessThan(1000)
+  })
+
   it('splits 300 lines into 600 halves quickly', () => {
     const { out, ms } = timed(() => reconcile(many('s', 300, -10), many('l', 600, -5)))
     expect(out.matches).toHaveLength(300)

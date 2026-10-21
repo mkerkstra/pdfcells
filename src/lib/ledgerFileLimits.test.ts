@@ -110,4 +110,19 @@ describe('readLedgerFile: resource limits', () => {
     expect(() => parseCsv('a\nb\nc\nd\ne\n', small)).toThrow(/too large/)
     expect(() => parseCsv('1,2,3,4,5,6,7,8,9,10,11\n', small)).toThrow(/too large/)
   })
+
+  it('budgets the dense grid, not just the cells written (third review)', async () => {
+    // 100 rows with one cell each in column GS: 100 cells written, 20,100 once densified.
+    const rows = Array.from(
+      { length: 100 },
+      (_, i) => `<row r="${i + 1}"><c r="GS${i + 1}"><v>1</v></c></row>`,
+    ).join('')
+    const limits = { ...LEDGER_LIMITS, cells: 10_000 }
+    await expect(readLedgerFile('wide.xlsx', zipOf(book(rows)), limits)).rejects.toThrow(
+      /too large/,
+    )
+    await expect(
+      readLedgerFile('wide.xlsx', zipOf(book(rows)), { ...limits, cells: 30_000 }),
+    ).resolves.toMatchObject({ kind: 'xlsx' })
+  })
 })

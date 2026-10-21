@@ -112,16 +112,33 @@ function prepare(items: RecItem[], payee: PayeeNormaliser): Prepared[] {
 /** A strong payee match counts before a nearer date; a weak one only after it. */
 const STRONG = 0.5
 
+/**
+ * Ledger entries that can't be told apart (same amount, date and payee key)
+ * form one group, matched in file order. Grouping keeps the candidate edges
+ * per statement line to the distinct ledger entries in reach, so 2,000
+ * identical coffees on each side make 2,000 edges, not 4,000,000.
+ */
+interface Group {
+  members: Prepared[]
+  /** Next member to hand out. */
+  next: number
+  units: number
+  day: number
+  key: string
+  description: string
+  first: number
+}
+
 interface Edge {
   s: Prepared
-  l: Prepared
+  g: Group
   days: number
   sim: number
   strong: boolean
 }
 
-const sameItem = (a: Prepared, b: Prepared) =>
-  a.units === b.units && a.day === b.day && a.key === b.key
+/** Most ledger groups kept per statement line (the best-ranked ones). */
+const PER_LINE = 64
 
 function exactPass(
   st: Prepared[],
@@ -130,74 +147,109 @@ function exactPass(
   rejected: Set<string>,
   used: { s: Set<string>; l: Set<string> },
 ): Match[] {
-  const byUnits = new Map<number, Prepared[]>()
+  // Groups by amount, then by what makes entries interchangeable.
+  const byUnits = new Map<number, Group[]>()
+  const groupOf = new Map<string, Group>()
   for (const l of lg) {
     if (used.l.has(l.item.id)) continue
-    const list = byUnits.get(l.units) ?? []
-    list.push(l)
-    byUnits.set(l.units, list)
+    const k = `${l.units}|${l.day}|${l.key}`
+    let g = groupOf.get(k)
+    if (!g) {
+      g = {
+        members: [],
+        next: 0,
+        units: l.units,
+        day: l.day,
+        key: l.key,
+        description: l.item.description,
+        first: l.index,
+      }
+      groupOf.set(k, g)
+      const list = byUnits.get(l.units) ?? []
+      list.push(g)
+      byUnits.set(l.units, list)
+    }
+    g.members.push(l)
   }
-  const edges: Edge[] = []
-  // Repeated payees (400 coffees) score once per pair of descriptions.
+  // Repeated payees score once per pair of descriptions.
   const simCache = new Map<string, number>()
-  const similarity = (a: string, b: string) => {
-    const k = `${a}\u0000${b}`
+  const similarity = (x: string, y: string) => {
+    const k = `${x}\u0000${y}`
     let v = simCache.get(k)
     if (v === undefined) {
-      v = o.payee.similarity(a, b)
+      v = o.payee.similarity(x, y)
       simCache.set(k, v)
     }
     return v
   }
+  const rank = (x: Edge, y: Edge) =>
+    Number(y.strong) - Number(x.strong) ||
+    x.days - y.days ||
+    y.sim - x.sim ||
+    x.s.index - y.s.index ||
+    x.g.first - y.g.first
+  const edges: Edge[] = []
   for (const s of st) {
     if (used.s.has(s.item.id) || s.units === 0) continue
-    for (const l of byUnits.get(s.units) ?? []) {
-      const days = Math.abs(s.day - l.day)
+    const mine: Edge[] = []
+    for (const g of byUnits.get(s.units) ?? []) {
+      const days = Math.abs(s.day - g.day)
       if (days > o.windowDays) continue
-      if (rejected.size && rejected.has(matchKey([s.item.id], [l.item.id]))) continue
-      const sim = similarity(s.item.description, l.item.description)
-      edges.push({ s, l, days, sim, strong: sim >= STRONG })
+      const sim = similarity(s.item.description, g.description)
+      mine.push({ s, g, days, sim, strong: sim >= STRONG })
     }
+    if (mine.length > PER_LINE) mine.sort(rank).length = PER_LINE
+    edges.push(...mine)
   }
-  const rank = (a: Edge, b: Edge) =>
-    Number(b.strong) - Number(a.strong) ||
-    a.days - b.days ||
-    b.sim - a.sim ||
-    a.s.index - b.s.index ||
-    a.l.index - b.l.index
   edges.sort(rank)
-  const out: Match[] = []
-  const chosen: Edge[] = []
+  const chosen: { e: Edge; l: Prepared }[] = []
   for (const e of edges) {
-    if (used.s.has(e.s.item.id) || used.l.has(e.l.item.id)) continue
-    used.s.add(e.s.item.id)
-    used.l.add(e.l.item.id)
-    chosen.push(e)
-  }
-  // A pick is a guess when a different-looking candidate ranked the same.
-  // Edges are indexed by each end, so this looks only at the item's own
-  // candidates: linear in the edges overall, not edges times matches.
-  const tied = (a: Edge, b: Edge) =>
-    a.strong === b.strong && a.days === b.days && Math.abs(a.sim - b.sim) < 0.05
-  const bySide = (side: 's' | 'l') => {
-    const m = new Map<Prepared, Edge[]>()
-    for (const e of edges) {
-      const list = m.get(e[side]) ?? []
-      list.push(e)
-      m.set(e[side], list)
+    if (used.s.has(e.s.item.id)) continue
+    // The group's next free member that this pairing wasn't rejected for.
+    let l: Prepared | undefined
+    for (let i = e.g.next; i < e.g.members.length; i++) {
+      const m = e.g.members[i]
+      if (!m || used.l.has(m.item.id)) continue
+      if (rejected.size && rejected.has(matchKey([e.s.item.id], [m.item.id]))) continue
+      l = m
+      break
     }
-    return m
+    if (!l) continue
+    while (e.g.next < e.g.members.length && used.l.has(e.g.members[e.g.next]?.item.id ?? ''))
+      e.g.next++
+    used.s.add(e.s.item.id)
+    used.l.add(l.item.id)
+    while (e.g.next < e.g.members.length && used.l.has(e.g.members[e.g.next]?.item.id ?? ''))
+      e.g.next++
+    chosen.push({ e, l })
   }
-  const ofS = bySide('s')
-  const ofL = bySide('l')
-  for (const e of chosen) {
-    const rivalL = (ofS.get(e.s) ?? []).some(x => x.l !== e.l && tied(x, e) && !sameItem(x.l, e.l))
-    const rivalS = (ofL.get(e.l) ?? []).some(x => x.s !== e.s && tied(x, e) && !sameItem(x.s, e.s))
-    out.push({
-      key: matchKey([e.s.item.id], [e.l.item.id]),
+  // A pick is a guess when a different-looking candidate ranked the same:
+  // another group for this line, or a different-looking line for this group.
+  const tieClass = (e: Edge) => `${Number(e.strong)}|${e.days}|${Math.round(e.sim * 20)}`
+  const ofS = new Map<Prepared, Edge[]>()
+  const looks = new Map<Group, Map<string, Set<string>>>()
+  for (const e of edges) {
+    const list = ofS.get(e.s) ?? []
+    list.push(e)
+    ofS.set(e.s, list)
+    const byClass = looks.get(e.g) ?? new Map<string, Set<string>>()
+    looks.set(e.g, byClass)
+    const sigs = byClass.get(tieClass(e)) ?? new Set<string>()
+    byClass.set(tieClass(e), sigs)
+    // Two distinct looks are enough to know there's a rival.
+    if (sigs.size < 2) sigs.add(`${e.s.units}|${e.s.day}|${e.s.key}`)
+  }
+  const tied = (x: Edge, y: Edge) =>
+    x.strong === y.strong && x.days === y.days && Math.abs(x.sim - y.sim) < 0.05
+  return chosen.map(({ e, l }) => {
+    const rivalL = (ofS.get(e.s) ?? []).some(x => x.g !== e.g && tied(x, e))
+    const sigs = looks.get(e.g)?.get(tieClass(e))
+    const rivalS = (sigs?.size ?? 0) > 1
+    return {
+      key: matchKey([e.s.item.id], [l.item.id]),
       statement: [e.s.item.id],
-      ledger: [e.l.item.id],
-      kind: e.days === 0 ? 'exact' : 'window',
+      ledger: [l.item.id],
+      kind: e.days === 0 ? ('exact' as const) : ('window' as const),
       days: e.days,
       ...(rivalL || rivalS
         ? {
@@ -206,9 +258,8 @@ function exactPass(
               : 'Another statement line has the same amount and fits as well',
           }
         : {}),
-    })
-  }
-  return out
+    }
+  })
 }
 
 /** Candidates for the many side, nearest first, capped so the search stays small. */

@@ -43,6 +43,15 @@ export function printedPeriod(s: Statement, pages: PageTables[]): Period | null 
   return dates.every(d => d >= p.start && d <= p.end) ? p : null
 }
 
+/**
+ * The confirmed period, while it still covers every transaction; null once
+ * an edited date falls outside it, so the person is asked again.
+ */
+export function stillCovers(s: Statement, p: Period | null): Period | null {
+  if (!p) return null
+  return s.transactions.every(t => t.date >= p.start && t.date <= p.end) ? p : null
+}
+
 const SEP = '\u001f'
 
 /**
@@ -130,8 +139,11 @@ export function runReconciliation(
 ): Run {
   const { lines, groups } = statementLines(s)
   const window = options.windowDays ?? DEFAULT_MATCH.windowDays
-  // Signs are chosen from the entries matching can use: nothing after the period.
-  const eligible = readLedger(choice.rows, choice.map).entries.filter(e => e.date <= period.end)
+  // Signs are chosen from entries inside the period: earlier history and
+  // later entries can't outvote what the statement covers.
+  const eligible = readLedger(choice.rows, choice.map).entries.filter(
+    e => e.date >= period.start && e.date <= period.end,
+  )
   const flip = choice.flip ?? chooseFlip(lines, eligible, window)
   const ledger = readLedger(choice.rows, choice.map, flip)
   const valid = overrides ? validOverrides(overrides, groups) : undefined

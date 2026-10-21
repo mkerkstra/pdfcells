@@ -5,7 +5,14 @@ import { formatNumber } from '@/lib/checks/grid'
 import { guessColumns, ledgerSource, type ColumnMap } from '@/lib/ledgerColumns'
 import { LEDGER_ACCEPT, LEDGER_LIMITS, readLedgerFile } from '@/lib/ledgerFile'
 import { NO_OVERRIDES, type Overrides } from '@/lib/reconcile'
-import { printedPeriod, runReconciliation, totals, type Period, type Run } from '@/lib/reconcileRun'
+import {
+  printedPeriod,
+  runReconciliation,
+  stillCovers,
+  totals,
+  type Period,
+  type Run,
+} from '@/lib/reconcileRun'
 import { readStatement } from '@/lib/statement'
 import { buildWorkbook, download, type SourceInfo } from '@/lib/xlsx'
 import { engineLabel, originalTables } from '@/lib/xlsxAudit'
@@ -45,7 +52,7 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
     [statement, pages],
   )
   const [confirmed, setConfirmed] = useState<Period | null>(null)
-  const period = printed ?? confirmed
+  const period = printed ?? (statement ? stillCovers(statement, confirmed) : null)
   const [mapping, setMapping] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -192,7 +199,7 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
         <PeriodPicker
           key={`${statement.period.start}:${statement.period.end}`}
           guess={statement.period}
-          confirmed={confirmed}
+          confirmed={stillCovers(statement, confirmed)}
           onConfirm={setConfirmed}
         />
       )}

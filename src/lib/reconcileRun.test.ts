@@ -11,6 +11,7 @@ import {
   runReconciliation,
   seenFor,
   statementLines,
+  stillCovers,
   totals,
   type Period,
 } from './reconcileRun'
@@ -226,5 +227,53 @@ describe('P2-8: unequal manual matches never pass as reconciled', () => {
     expect(t.matchedDifference).toBe(0)
     expect(t.unequalMatches).toBe(2)
     expect(t.reconciled).toBe(false)
+  })
+})
+
+describe('third review', () => {
+  it('signs ignore history from before the period too', () => {
+    const { s } = statementOf([
+      ['Date', 'Description', 'Amount'],
+      ['03/01/2026', 'Card a', '-10.00'],
+      ['03/01/2026', 'Card b', '-20.00'],
+      ['03/01/2026', 'Card c', '-30.00'],
+    ])
+    const r = run(
+      s,
+      'Date,Description,Amount\n2026-02-28,Refund a,10\n2026-02-28,Refund b,20\n2026-02-28,Refund c,30\n2026-03-01,Card a,-10\n',
+    )
+    expect(r.flip).toBe(false)
+    expect(r.sheet.result.matches.map(m => m.ledger)).toEqual([['l5']])
+  })
+
+  it('a confirmed period stops counting once an edited date leaves it', () => {
+    const rows = (last: string) => [
+      ['Date', 'Description', 'Amount'],
+      ['03/30/2026', 'Deposit', '1,000.00'],
+      [last, 'Cheque', '-100.00'],
+    ]
+    expect(stillCovers(statementOf(rows('03/31/2026')).s, MARCH)).toEqual(MARCH)
+    expect(stillCovers(statementOf(rows('04/20/2026')).s, MARCH)).toBeNull()
+    expect(stillCovers(statementOf(rows('03/31/2026')).s, null)).toBeNull()
+  })
+
+  it('an entry from before the period can still be matched by hand, and then leaves that group', () => {
+    const { s } = statementOf([
+      ['Date', 'Description', 'Amount'],
+      ['03/05/2026', 'Deposit', '100.00'],
+      ['03/20/2026', 'Cheque 1001', '-250.00'],
+    ])
+    const ledger = 'Date,Description,Amount\n2026-02-01,Cheque 1001,-250\n2026-03-05,Deposit,100\n'
+    const auto = run(s, ledger)
+    expect(auto.sheet.before).toEqual(['l2'])
+    const cheque = statementLines(s).lines[1]?.id ?? ''
+    const r = run(s, ledger, {
+      still: ['l2'],
+      overrides: { manual: [{ statement: [cheque], ledger: ['l2'] }], rejected: [] },
+    })
+    expect(r.sheet.result.matches.find(m => m.kind === 'manual')?.ledger).toEqual(['l2'])
+    expect(r.sheet.before).toEqual([])
+    expect(r.sheet.stillOutstanding).toEqual([])
+    expect(totals(r.sheet).outstanding).toBe(0)
   })
 })

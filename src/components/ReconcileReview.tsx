@@ -219,13 +219,18 @@ export function ReconcileReview({
                 <Picker
                   title='Only in the ledger'
                   empty='Every ledger entry is matched.'
-                  ids={ledgerOnly}
+                  ids={[...ledgerOnly, ...(sheet.before ?? [])]}
                   picked={pickL}
                   onPick={id => toggle(pickL, id, setPickL)}
                   locked={id => (lById.get(id)?.date ?? '') > sheet.period.end}
                   render={id => {
                     const l = lById.get(id)
-                    const after = l && l.date > sheet.period.end ? 'after the statement' : undefined
+                    const after =
+                      l && l.date > sheet.period.end
+                        ? 'after the statement'
+                        : l && l.date < sheet.period.start
+                          ? 'before the statement'
+                          : undefined
                     return line(l, [l ? `row ${l.row}` : '', after].filter(Boolean).join(', '))
                   }}
                 />

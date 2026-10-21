@@ -343,6 +343,12 @@ export async function readXlsx(
       cells.set(col, text.trim())
     }
   }
+  // The dense grid fills each row out to its last cell: budget that, not
+  // just the cells written (200,000 rows with one cell in column IV would
+  // otherwise expand to 51 million).
+  let dense = 0
+  for (const cells of rows.values()) if (cells.size) dense += Math.max(...cells.keys()) + 1
+  if (dense > limits.cells) throw new Error(TOO_BIG)
   // Missing rows stay empty, so a row's index is its row number in Excel.
   return Array.from({ length: lastRow + 1 }, (_, i) => {
     const cells = rows.get(i)
