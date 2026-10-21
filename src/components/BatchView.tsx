@@ -2,9 +2,11 @@ import { FilePlus2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import { formatUsd } from '@/lib/api'
+import { recordRegions } from '@/lib/areas'
 import { assess, readTables, type Assessment } from '@/lib/batch'
 import type { DocSource } from '@/lib/document'
 import { ACCEPT, openDocument } from '@/lib/open'
+import type { Preset } from '@/lib/preset'
 import { buildRecipe, recipeSummary } from '@/lib/recipe'
 import { useAccount } from '@/state/account'
 import {
@@ -32,7 +34,7 @@ import { runPages, type RunHooks } from '@/state/runner'
 import { BatchExport } from './BatchExport'
 import { ReviewView } from './ReviewView'
 import { TIER_LABEL, TierPicker } from './TierPicker'
-import { kindLabel, useAiEstimate } from './TriageView'
+import { kindLabel, PresetPicker, useAiEstimate } from './TriageView'
 import { Badge, Button, Card, cn, FIELD, Spinner, Tick } from './ui'
 import type { RunFn } from './Workspace'
 
@@ -306,6 +308,22 @@ export function BatchView({
       readTables(first.read ?? first.doc.pages),
       readTables(first.doc.pages),
       enginesOf(first.doc.pages),
+      {
+        preset: first.doc.preset,
+        regions: recordRegions(
+          first.doc.pages.flatMap(p =>
+            p.triage
+              ? [
+                  {
+                    page: p.n,
+                    size: { width: p.triage.width, height: p.triage.height },
+                    regions: p.regions,
+                  },
+                ]
+              : [],
+          ),
+        ),
+      },
     )
     // Applied to nobody yet: the effect below takes it to every other member.
     dispatch({ type: 'group', id: g.id, patch: { recipe, applied: [] } })
@@ -387,6 +405,9 @@ export function BatchView({
               group={g}
               first={current}
               items={items}
+              onPreset={preset =>
+                dispatch({ type: 'doc', id: current.id, action: { type: 'preset', preset } })
+              }
               onApply={() => saveSetup(g, current)}
               onBack={closeReview}
             />
@@ -590,19 +611,26 @@ function CostLine({
         {plural(textPages, 'text page')} read from the PDF text, free.
       </span>
     )
-  const what = scanned === needing ? plural(needing, 'scanned page') : plural(needing, 'page')
+  const irregular = needing - scanned
+  const what = [
+    scanned > 0 && plural(scanned, 'scanned page'),
+    irregular > 0 &&
+      `${plural(irregular, 'page')} with ${irregular === 1 ? 'an irregular table' : 'irregular tables'}`,
+  ]
+    .filter(Boolean)
+    .join(' and ')
   const ai = !account.aiPossible
     ? ''
     : est.byok
-      ? ', billed to your API key on AI, or free with OCR'
+      ? 'billed to your API key with AI, or free with OCR'
       : est.paid === 0
-        ? ', free with your free AI pages, or free with OCR'
-        : `, about ${formatUsd(est.cost)} on AI ${TIER_LABEL[account.tier]}, or free with OCR`
+        ? 'free with your free AI pages, or free with OCR'
+        : `about ${formatUsd(est.cost)} with AI (${TIER_LABEL[account.tier]}), or free with OCR`
+  const free = `${plural(textPages, 'text page')} ${textPages === 1 ? 'is' : 'are'} free.`
   return (
     <span>
       <span className='font-semibold'>
-        {plural(textPages, 'text page')} free, {what}
-        {ai || ', free with OCR'}
+        {free} {what.charAt(0).toUpperCase() + what.slice(1)}: {ai || 'free with OCR'}.
       </span>
       {scanned !== needing && (
         <span className='block text-xs text-muted'>
@@ -686,8 +714,7 @@ function ItemRow({
         {it.status === 'error' && <p className='mt-0.5 text-xs text-bad'>{it.error}</p>}
         {verdict === 'look' && a && a.reasons[0] && (
           <p className='mt-0.5 truncate text-xs text-muted' title={a.reasons.join('\n')}>
-            {a.reasons[0]}
-            {a.reasons.length > 1 && `, and ${plural(a.reasons.length - 1, 'more thing')}`}
+            {lookReasons(a.reasons)}
           </p>
         )}
       </td>
@@ -716,6 +743,19 @@ function ItemRow({
       </td>
     </tr>
   )
+}
+
+const lower = (s: string) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s)
+
+/** The first two reasons by name, then how many more: "1 cell to check, and balance doesn't tie". */
+export function lookReasons(reasons: string[]): string {
+  const [first, second] = reasons
+  if (!first) return ''
+  if (!second) return first
+  const rest = reasons.length - 2
+  return rest > 0
+    ? `${first}, ${lower(second)}, and ${plural(rest, 'more thing')}`
+    : `${first}, and ${lower(second)}`
 }
 
 function Checks({ a }: { a: Assessment }) {
@@ -898,12 +938,14 @@ function SetupBar({
   group: g,
   first,
   items,
+  onPreset,
   onApply,
   onBack,
 }: {
   group: BatchGroup
   first: BatchItem
   items: BatchItem[]
+  onPreset: (p: Preset) => void
   onApply: () => void
   onBack: () => void
 }) {
@@ -919,8 +961,9 @@ function SetupBar({
   const reading = first.doc.pages.some(p => p.status === 'running' || p.status === 'queued')
   return (
     <div className={BAR}>
+      <PresetPicker value={first.doc.preset} onChange={onPreset} className='w-full' />
       <p className='min-w-0 flex-1 text-muted'>
-        Changes to columns, headers, table names and Include go to the other{' '}
+        Changes to columns, headers, table names, Include and marked areas go to the other{' '}
         {plural(others, 'file')}. Cell edits stay in this file.
         {again.length > 0 &&
           ` ${plural(again.length, 'page')} in them will be read again with ${ai ? 'AI' : 'OCR'}, as here${ai && !est.byok && est.paid > 0 ? `, about ${formatUsd(est.cost)}` : ''}.`}
