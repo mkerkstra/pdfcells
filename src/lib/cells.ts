@@ -146,7 +146,13 @@ export function parseDate(raw: string, order: DateOrder = 'mdy', anchor?: YearAn
 
 /** A cell that reads as a date, with or without a year (a transaction row, not a summary line). */
 export function isDateCell(raw: string): boolean {
-  return parseDate(raw) !== null || parseDayMonth(raw) !== null
+  // Either order: 31/01/2026 and 31/01 are dates too.
+  return (
+    parseDate(raw) !== null ||
+    parseDate(raw, 'dmy') !== null ||
+    parseDayMonth(raw) !== null ||
+    parseDayMonth(raw, 'dmy') !== null
+  )
 }
 
 /** A month and day printed without a year; month is 0-based. */

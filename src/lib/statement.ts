@@ -14,7 +14,6 @@ import {
   parseDate,
   parseDayMonth,
   type DateOrder,
-  type DayMonth,
   type YearAnchor,
 } from './cells'
 import { balanceLayout, movement, type Mover, type Pair } from './checks/balance'
@@ -128,7 +127,7 @@ interface Joined {
 }
 
 /** Included tables, with tables continued across consecutive pages joined, remembering where each row came from. */
-export function joinWithOrigins(pages: PageTables[]): Joined[] {
+export function joinWithOrigins(pages: PageTables[], card = false): Joined[] {
   const out: Joined[] = []
   let tail: Joined | null = null
   for (const p of pages) {
@@ -140,7 +139,7 @@ export function joinWithOrigins(pages: PageTables[]): Joined[] {
         tail &&
         tail.lastPage === p.page - 1 &&
         continues(tail.table, t) &&
-        !newSection(tail.table, t)
+        !newSection(tail.table, t, card)
       ) {
         const joined = appendTable(tail.table, t)
         const added = joined.rows.length - tail.table.rows.length
@@ -176,12 +175,13 @@ const norm = (s: string) =>
 
 /**
  * A table on the next page with the same columns starts a new section, not a
- * continuation, when its own title names another section ("Withdrawals and
+ * continuation, when both titles name sections and its own names another ("Withdrawals and
  * other subtractions" after "Deposits and other additions").
  */
-function newSection(a: Table, b: Table): boolean {
-  if (!b.title.trim() || /\bcontinued\b/i.test(b.title)) return false
-  if (sectionSign(b.title, false) === null && sectionSign(b.title, true) === null) return false
+function newSection(a: Table, b: Table, card: boolean): boolean {
+  if (/\bcontinued\b/i.test(b.title)) return false
+  // Both have to be sections: a page retitled "Transactions" still continues "Account activity".
+  if (sectionSign(a.title, card) === null || sectionSign(b.title, card) === null) return false
   return norm(a.title) !== norm(b.title)
 }
 
@@ -371,6 +371,11 @@ const iso = (d: Date) => d.toISOString().slice(0, 10)
 const FULL = String.raw`(?:\d{1,2}[/.-]\d{1,2}[/.-](?:\d{4}|\d{2})|\d{4}-\d{1,2}-\d{1,2}|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4})(?!\d)`
 const RANGE = new RegExp(String.raw`(${FULL})\s*(?:-|–|—|to|through|thru|until)\s*(${FULL})`, 'gi')
 const PERIOD_WORDS = /\b(?:period|cycle|statement|opening|closing|billing|dates?)\b/i
+// Labels that name the statement's own period, ahead of any other dated range.
+const STATEMENT_PERIOD =
+  /\b(?:statement\s+(?:period|dates?)|billing\s+(?:period|cycle)|opening\s*\/\s*closing\s+dates?|for\s+the\s+period|period\s+covered)\b/i
+// Ranges that aren't the statement's: promotional rates, introductory APRs, offers.
+const NOT_PERIOD = /\b(?:promo(?:tional)?|introductory|intro|apr|rate|offer|expires?|deferred)\b/i
 const CLOSING_AT = new RegExp(
   String.raw`\b(?:(?:statement\s+)?closing\s+date|statement\s+(?:end(?:ing)?\s+)?date|statement\s+(?:ending|through)|period\s+ending|(?:ending|closing|new)\s+balance\s+(?:on|as\s+of))\s*:?\s*(${FULL})`,
   'i',
@@ -403,9 +408,10 @@ const spanDays = (a: Date, b: Date) => (b.getTime() - a.getTime()) / 86_400_000
  */
 export function findPeriod(pages: PageTables[], order: DateOrder): YearAnchor | null {
   const lines = statementText(pages)
-  const ranges = (labelled: boolean, min: number, max: number): YearAnchor | null => {
+  const ranges = (label: RegExp | null, min: number, max: number): YearAnchor | null => {
     for (const l of lines) {
-      if (labelled !== PERIOD_WORDS.test(l)) continue
+      if (NOT_PERIOD.test(l)) continue
+      if (label ? !label.test(l) : PERIOD_WORDS.test(l)) continue
       for (const m of l.matchAll(RANGE)) {
         const start = parseDate(m[1] ?? '', order)
         const end = parseDate(m[2] ?? '', order)
@@ -423,18 +429,22 @@ export function findPeriod(pages: PageTables[], order: DateOrder): YearAnchor | 
     }
     return null
   }
-  const labelled = ranges(true, 1, 100)
+  const labelled = ranges(STATEMENT_PERIOD, 1, 100) ?? ranges(PERIOD_WORDS, 1, 100)
   if (labelled) return labelled
   const close = at(CLOSING_AT)
   const open = at(OPENING_AT)
   if (close && open && open.d <= close.d && spanDays(open.d, close.d) <= 100)
     return { start: open.d, end: close.d, text: `${open.text}; ${close.text}` }
   if (close) return { end: close.d, text: close.text }
-  return ranges(false, 6, 100)
+  return ranges(null, 6, 100)
 }
 
 /** How to date a table whose dates have no year. */
-type YearFor = (order: DateOrder, dates: DayMonth[]) => { anchor: YearAnchor; year: StatementYear }
+type YearFor = (values: string[]) => {
+  order: DateOrder
+  anchor: YearAnchor
+  year: StatementYear
+}
 
 interface Candidate {
   joined: Joined
@@ -466,10 +476,7 @@ function read(joined: Joined, card: boolean, yearFor: YearFor): Candidate | null
   let anchor: YearAnchor | undefined
   let year: StatementYear | undefined
   if (lay.yearless) {
-    const values = g.body.map(r => raw(t, r, c.date))
-    order = detectDayMonthOrder(values)
-    const dates = values.flatMap(v => parseDayMonth(v, order) ?? [])
-    ;({ anchor, year } = yearFor(order, dates))
+    ;({ order, anchor, year } = yearFor(g.body.map(r => raw(t, r, c.date))))
   }
   let total: number | undefined
   const txns: Candidate['txns'] = []
@@ -574,32 +581,38 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
     if (!periods.has(order)) periods.set(order, findPeriod(pages, order))
     return periods.get(order) ?? null
   }
-  const tables = joinWithOrigins(pages)
-  // A picked (or provisional) year closes in the month the whole statement's
-  // dates end in, not each section's: a deposits section with only December
-  // dates on a January statement still belongs to the year before.
-  const everyDate: DayMonth[] = []
+  const tables = joinWithOrigins(pages, card)
+  // Year-less dates are read the same way in every section: one M/D or D/M
+  // order from all of them, and a picked (or provisional) year closing in the
+  // month the whole statement ends in, so a deposits section with only
+  // December dates on a January statement still belongs to the year before.
+  const everyValue: string[] = []
   for (const j of tables)
-    read(j, card, (_order, dates) => {
-      everyDate.push(...dates)
-      return { anchor: chosenYearAnchor(PROVISIONAL_YEAR, dates), year: { source: 'missing' } }
+    read(j, card, values => {
+      everyValue.push(...values)
+      return {
+        order: 'mdy',
+        anchor: chosenYearAnchor(PROVISIONAL_YEAR, []),
+        year: { source: 'missing' },
+      }
     })
-  const yearFor: YearFor = order => {
-    if (opts.year !== undefined) {
-      const anchor = chosenYearAnchor(opts.year, everyDate)
-      return { anchor, year: { source: 'chosen', year: opts.year } }
-    }
+  const order = detectDayMonthOrder(everyValue)
+  const everyDate = everyValue.flatMap(v => parseDayMonth(v, order) ?? [])
+  const yearFor: YearFor = () => {
+    const at = (anchor: YearAnchor, year: StatementYear) => ({ order, anchor, year })
+    if (opts.year !== undefined)
+      return at(chosenYearAnchor(opts.year, everyDate), { source: 'chosen', year: opts.year })
     const printed = periodFor(order)
     if (printed)
-      return {
-        anchor: printed,
-        year: { source: 'printed', year: printed.end.getUTCFullYear(), text: printed.text },
-      }
-    return { anchor: chosenYearAnchor(PROVISIONAL_YEAR, everyDate), year: { source: 'missing' } }
+      return at(printed, {
+        source: 'printed',
+        year: printed.end.getUTCFullYear(),
+        text: printed.text,
+      })
+    return at(chosenYearAnchor(PROVISIONAL_YEAR, everyDate), { source: 'missing' })
   }
-  const cands = tables
-    .map(j => read(j, card, yearFor))
-    .filter((x): x is Candidate => x !== null && x.txns.length > 0)
+  const all = tables.map(j => read(j, card, yearFor)).filter(x => x !== null)
+  const cands = all.filter(x => x.txns.length > 0)
   // Prefer the table the balance check recognised, then the longest.
   cands.sort(
     (a, b) =>
@@ -609,7 +622,7 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
   if (!best) return null
   const summary = statementSummary(pages)
   const cardSum = card ? cardSummary(pages) : null
-  const sections = sectionCandidates(cands, card)
+  const sections = sectionCandidates(cands, all, card)
   if (sections) return readSections(sections, best, card, detected, summary, cardSum, periodFor)
   const { joined, g, lay, txns } = best
   const c = lay.columns
@@ -697,7 +710,7 @@ interface Section {
  * table and a small titled extra (fees) keeps reading as before; and when
  * there are two sections or more, or the one there is needs its signs turned.
  */
-function sectionCandidates(cands: Candidate[], card: boolean): Section[] | null {
+function sectionCandidates(cands: Candidate[], all: Candidate[], card: boolean): Section[] | null {
   const plain = (x: Candidate) => x.lay.columns.balance === undefined && x.lay.pairs === null
   if (!cands.every(plain)) return null
   const titled = (x: Candidate) =>
@@ -705,8 +718,9 @@ function sectionCandidates(cands: Candidate[], card: boolean): Section[] | null 
   const best = cands[0]
   if (!best || titled(best) === null) return null
   const out: Section[] = []
-  for (const cand of cands) {
-    const sign = titled(cand)
+  // A section none of whose rows could be read still counts: its problems block the export.
+  for (const cand of all) {
+    const sign = plain(cand) ? titled(cand) : null
     if (sign !== null) out.push({ cand, sign })
   }
   // One titled table alone ("Transactions" on a card) reads as before, unless
@@ -747,7 +761,8 @@ function readSections(
   )
   const opening = cardSum?.opening ?? summary.opening
   const closing = cardSum?.closing ?? summary.closing
-  const year = sections.find(s => s.cand.year)?.cand.year
+  const years = sections.flatMap(s => s.cand.year ?? [])
+  const year = years.find(y => y.source === 'missing') ?? years[0]
   const gate = decideSections(read, card, summary, cardSum, opening, closing, decimals, best)
   return {
     creditCard: card,

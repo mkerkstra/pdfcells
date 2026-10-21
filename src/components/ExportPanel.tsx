@@ -99,7 +99,7 @@ export function ExportPanel({ doc }: { doc: DocState }) {
       {format === 'statement' ? (
         <StatementExport transactions={transactions} fileName={doc.fileName} lead={fileType} />
       ) : format === 'reconcile' ? (
-        <ReconcileExport doc={doc} lead={fileType} />
+        <ReconcileExport doc={doc} lead={fileType} year={transactions.year} />
       ) : (
         tableExport()
       )}

@@ -606,3 +606,107 @@ describe('sections stay out of the way of ordinary statements', () => {
     expect(s?.transactions.map(t => t.amount)).toEqual([-10, 25, -5.5])
   })
 })
+
+describe('review findings', () => {
+  const head = ['Date', 'Description', 'Amount']
+  const sum = (open: string, close: string) =>
+    summary('s', [
+      ['Beginning balance', open],
+      ['Ending balance', close],
+    ])
+
+  it('every section reads year-less dates in one order, so none falls back to a guessed year', () => {
+    const s = readStatement([
+      page(
+        1,
+        [
+          sum('100.00', '150.00'),
+          table([head, ['20/12', 'Salary', '100.00']], { title: 'Deposits', id: 'd' }),
+          table([head, ['05/01', 'Rent', '50.00']], { title: 'Withdrawals', id: 'w' }),
+        ],
+        'Statement period 15/12/2025 - 14/01/2026',
+      ),
+    ])
+    expect(dated(s)).toEqual([
+      ['2025-12-20', 100],
+      ['2026-01-05', -50],
+    ])
+    expect(s?.year?.source).toBe('printed')
+  })
+
+  it('a bank page retitled "Transactions" still continues the table on the page before', () => {
+    const h = ['Date', 'Description', 'Amount', 'Balance']
+    const p1 = table(
+      [h, ...[1, 2, 3, 4].map(d => [`01/0${d}/2026`, 'In', '10.00', `${100 + 10 * d}.00`])],
+      { title: 'Account activity', id: 'a' },
+    )
+    const p2 = table(
+      [h, ...[5, 6, 7, 8].map(d => [`01/0${d}/2026`, 'In', '20.00', `${140 + 20 * (d - 4)}.00`])],
+      { title: 'Transactions', id: 'b' },
+    )
+    const s = readStatement([page(1, [p1]), page(2, [p2])])
+    expect(s?.transactions).toHaveLength(8)
+    expect(s?.closing).toBe(220)
+  })
+
+  it('the statement period wins over a promotional period printed above it', () => {
+    const s = readStatement([
+      page(
+        1,
+        [
+          sum('100.00', '150.00'),
+          table([head, ['12/20', 'Salary', '100.00']], { title: 'Deposits', id: 'd' }),
+          table([head, ['01/05', 'Rent', '50.00']], { title: 'Withdrawals', id: 'w' }),
+        ],
+        'Promotional period 12/01/2026 - 01/31/2027\nStatement period 12/15/2025 - 01/14/2026',
+      ),
+    ])
+    expect(s?.transactions.map(t => t.date)).toEqual(['2025-12-20', '2026-01-05'])
+  })
+
+  it('a section none of whose dates fit the period blocks export instead of vanishing', () => {
+    const s = readStatement([
+      page(
+        1,
+        [
+          sum('100.00', '110.00'),
+          table([head, ['08/03', 'Salary', '20.00']], { title: 'Deposits', id: 'd' }),
+          table([head, ['08/09', 'Shop', '10.00']], { title: 'Withdrawals', id: 'w' }),
+          table(
+            [
+              head,
+              ['06/01', 'Fee', '100.00'],
+              ['06/02', 'Reversal', '-100.00'],
+              ['', 'Total fees', '0.00'],
+            ],
+            { title: 'Fees', id: 'f' },
+          ),
+        ],
+        'Statement period 08/01/2026 - 08/31/2026',
+      ),
+    ])
+    expect(s?.gate.ok).toBe(false)
+    expect(s?.gate.ok === false && s.gate.reasons.join('\n')).toMatch(
+      /The date on page 1, row 2 isn’t in the statement period/,
+    )
+  })
+
+  it('a D/M dated "Interest charged" row is a transaction, not a card summary line', () => {
+    const s = readStatement(
+      [
+        page(1, [
+          summary('s', [
+            ['Previous balance', '0.00'],
+            ['New balance', '110.00'],
+          ]),
+          table(
+            [head, ['30/01/2026', 'Shop', '100.00'], ['31/01/2026', 'Interest charged', '10.00']],
+            { title: 'Transactions', id: 't' },
+          ),
+        ]),
+      ],
+      { creditCard: true },
+    )
+    expect(s?.gate).toEqual({ ok: true, basis: 'summary', label: 'summary ties' })
+  })
+})

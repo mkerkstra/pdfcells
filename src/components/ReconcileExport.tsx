@@ -31,9 +31,21 @@ interface Ledger {
 
 const WINDOWS = [3, 7, 14, 30]
 
-export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode }) {
+export function ReconcileExport({
+  doc,
+  lead,
+  year,
+}: {
+  doc: DocState
+  lead: ReactNode
+  /** The statement year picked in the bank statement export, for dates printed without one. */
+  year?: number
+}) {
   const pages = useMemo(() => readTables(doc.pages), [doc.pages])
-  const statement = useMemo(() => readStatement(pages), [pages])
+  const read = useMemo(() => readStatement(pages, { year }), [pages, year])
+  // Dates without a year are only provisional: never reconcile or export them.
+  const undated = read?.year?.source === 'missing'
+  const statement = undated ? null : read
   const [ledger, setLedger] = useState<Ledger | null>(null)
   const [flip, setFlip] = useState<boolean | undefined>(undefined)
   const [balance, setBalance] = useState('')
@@ -211,6 +223,7 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
       <Status
         error={error}
         hasStatement={statement !== null}
+        undated={undated}
         ledger={ledger}
         needsPeriod={period === null}
         run={run}
@@ -286,6 +299,7 @@ function PeriodPicker({
 function Status({
   error,
   hasStatement,
+  undated,
   ledger,
   needsPeriod,
   run,
@@ -293,12 +307,20 @@ function Status({
 }: {
   error: string
   hasStatement: boolean
+  undated: boolean
   ledger: Ledger | null
   needsPeriod: boolean
   run: Run | null
   decimals: number
 }) {
   if (error) return <p className='text-bad'>{error}</p>
+  if (undated)
+    return (
+      <p className='text-bad'>
+        The dates have no year and the statement period isn’t on the page. Pick the year the
+        statement closes in under Bank statement, then come back.
+      </p>
+    )
   if (!hasStatement)
     return (
       <p className='text-muted'>
