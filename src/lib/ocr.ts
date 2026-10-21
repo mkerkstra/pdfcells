@@ -3,7 +3,7 @@
 // All three come from our own origin (see tesseractAssets in vite.config.ts), not
 // tesseract.js's jsDelivr defaults, so OCR works under a 'self'-only CSP.
 
-import type { Worker } from 'tesseract.js'
+import type { Block, Worker } from 'tesseract.js'
 
 import type { Word } from './types'
 
@@ -44,8 +44,13 @@ export async function ocrWords(
   onProgress = progress
   const w = await getWorker()
   const { data } = await w.recognize(canvas, { rotateAuto: true }, { blocks: true, text: false })
+  return wordsFromBlocks(data.blocks, scale)
+}
+
+/** tesseract.js blocks → words in page space (pixel boxes divided by the render scale). Pure. */
+export function wordsFromBlocks(blocks: Block[] | null, scale: number): Word[] {
   const words: Word[] = []
-  for (const block of data.blocks ?? []) {
+  for (const block of blocks ?? []) {
     for (const para of block.paragraphs) {
       for (const line of para.lines) {
         for (const word of line.words) {
