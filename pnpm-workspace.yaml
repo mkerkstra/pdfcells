@@ -4,3 +4,4 @@ minimumReleaseAgeStrict: true
 allowBuilds:
   esbuild: true
   tesseract.js: false
+  protobufjs: false
