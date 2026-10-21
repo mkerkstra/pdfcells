@@ -126,11 +126,25 @@ function candidates(words: Word[], page: number, size: PageSize | undefined): Ca
     if (fromEdge >= EDGE_LINES) return
     // The neighbour towards the body: a running header sits above whitespace,
     // a column header sits right on top of its first row.
-    const next = band === 'top' ? lines[i + 1] : lines[i - 1]
+    const step = band === 'top' ? 1 : -1
+    const next = lines[i + step]
     const near = next !== undefined && Math.abs(next.yc - line.yc) <= pitch * 1.8
     const text = lineText(line)
     const numeric = isPageNumberLine(text) || isNumericCell(text)
-    const attached = near && (numeric || runs(next) >= 2)
+    // Walk the stack of tightly spaced lines towards the body (a multi-line
+    // column header: "Item  Amount" over "(USD)" over the rows).
+    let columns = false
+    for (let k = i, n = 0; n < EDGE_LINES + 2; n++) {
+      const a = lines[k]
+      const b = lines[k + step]
+      if (!a || !b || Math.abs(b.yc - a.yc) > pitch * 1.8) break
+      if (runs(b) >= 2) {
+        columns = true
+        break
+      }
+      k += step
+    }
+    const attached = near && (numeric || columns)
     out.push({ page, line, ny, key: normalizeText(text), band, attached })
   })
   return out
@@ -221,6 +235,8 @@ export interface BlockStats {
   pageRefShare: number
   /** The page references never decrease down the block. */
   pageRefsAscend: boolean
+  /** No header row, or one that talks about pages/contents (a price list's "Price" header doesn't). */
+  tocHeader: boolean
   /** Every non-empty cell, header included, is a number. */
   allNumeric: boolean
   /** A row of ≥4 numbers in arithmetic progression (x-axis ticks: 0, 10, 20, 30). */
@@ -302,6 +318,11 @@ export function blockStats(table: LocalTable, words: Word[] = []): BlockStats {
     leaderShare: Math.min(1, leaderShare),
     pageRefShare: body.length ? refs.length / body.length : 0,
     pageRefsAscend: refs.every((n, i) => i === 0 || n >= (refs[i - 1] ?? 0)),
+    tocHeader:
+      table.headerRows === 0 ||
+      /\b(?:page|pages|pg|contents|seite|chapter|section)\b/i.test(
+        table.rows.slice(0, table.headerRows).flat().join(' '),
+      ),
     allNumeric: allCells.length > 0 && allCells.every(c => toNumber(c) !== null),
     evenRow: numRows.some(r => r.length >= 4 && progression(r)),
     allRowsEven: numRows.filter(r => r.length >= 3).every(progression),
@@ -314,7 +335,9 @@ export function blockStats(table: LocalTable, words: Word[] = []): BlockStats {
  * table has to fail several tests at once to be called noise:
  *
  * - toc:   ≥3 body rows; dot leaders on ≥50% of rows; the last cell is a
- *          1–3 digit page number on ≥60% of rows and those never decrease.
+ *          1–3 digit page number on ≥60% of rows and those never decrease;
+ *          and no header row, or one mentioning pages/contents/chapters (so
+ *          a "Service | Price" list with leaders and whole-number prices stays data).
  * - axis:  every cell (header included) is a number, so there are no row
  *          labels; ≤3 rows; one row of ≥4 evenly spaced ticks; and every row
  *          with ≥3 numbers is evenly spaced (ticks over year labels). One
@@ -332,7 +355,13 @@ export function classifyBlock(table: LocalTable, words: Word[] = []): BlockKind 
 }
 
 export function classifyStats(s: BlockStats): BlockKind {
-  if (s.bodyRows >= 3 && s.leaderShare >= 0.5 && s.pageRefShare >= 0.6 && s.pageRefsAscend)
+  if (
+    s.bodyRows >= 3 &&
+    s.leaderShare >= 0.5 &&
+    s.pageRefShare >= 0.6 &&
+    s.pageRefsAscend &&
+    s.tocHeader
+  )
     return 'toc'
   if (s.allNumeric && s.rows <= 3 && s.evenRow && s.allRowsEven) return 'axis'
   if (

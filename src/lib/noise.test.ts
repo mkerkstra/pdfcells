@@ -54,6 +54,23 @@ describe('cleanWords', () => {
     expect(r.pages).toEqual(pages)
   })
 
+  it('keeps a two-line column header stacked on its rows', () => {
+    const page = () =>
+      grid(
+        [
+          ['Item', 'Amount'],
+          ['', '(USD)'],
+          ['Paper', '10.00'],
+          ['Toner', '45.50'],
+          ['Staples', '4.50'],
+        ],
+        [50, 300],
+        { top: 40 },
+      )
+    const pages = [page(), page()]
+    expect(cleanWords(pages, { sizes: sizes(2) }).removed).toEqual([])
+  })
+
   it('needs the line on at least 60% of pages', () => {
     const footer = line('Draft - not for distribution', 50, 760)
     const pages = [[...body(), ...footer], [...body(), ...footer], body(), body()]
@@ -134,6 +151,22 @@ describe('classifyBlock', () => {
     const [t] = buildTables(words)
     expect(t).toBeDefined()
     expect(t && classifyBlock(t, words)).toBe('toc')
+  })
+
+  it('a priced list with dot leaders and a Price header stays data', () => {
+    const words = grid(
+      [
+        ['Service', '', 'Price'],
+        ['Printing', '. . . . . . . . . . . .', '3'],
+        ['Binding', '. . . . . . . . . . . .', '7'],
+        ['Delivery', '. . . . . . . . . . . .', '12'],
+        ['Express', '. . . . . . . . . . . .', '18'],
+      ],
+      [50, 250, 420],
+    )
+    const [t] = buildTables(words)
+    expect(t?.headerRows).toBe(1)
+    expect(t && classifyBlock(t, words)).toBe('data')
   })
 
   it('two-column prose is prose', () => {
