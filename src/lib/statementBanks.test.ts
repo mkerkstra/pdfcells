@@ -74,6 +74,12 @@ describe('Chase checking: MM/DD dates, period printed outside the table', () => 
     expect(picked?.gate.ok).toBe(true)
   })
 
+  it('a year-long promotional range printed first doesn’t pass for the statement period', () => {
+    const promo = `Promotional statement rate 01/01/2026 - 12/31/2026\n${text}`
+    const s = readStatement([page(1, [detail], promo)])
+    expect(s?.transactions[0]?.date).toBe('2025-12-16')
+  })
+
   it('a picked year wins over the printed period', () => {
     const s = readStatement([page(1, [detail], text)], { year: 2027 })
     expect(s?.transactions[0]?.date).toBe('2026-12-16')

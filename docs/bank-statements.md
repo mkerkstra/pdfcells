@@ -35,7 +35,7 @@ The statement period is the printed one (see below) when it covers every transac
 
 Chase, Wells Fargo, Citi, Capital One and PNC print transaction dates as month and day only (`01/05`, `2/29`, `Aug 6`). A date column is read as one when at least 80% of its cells are dates with or without a year. The year comes from the statement period, found in the page's text (outside the tables too), table titles and notes, and every row of every table, included or not (`findPeriod` in `src/lib/statement.ts`), in this order:
 
-1. A range of two full dates on a line with a period word (period, cycle, statement, opening, closing, billing, date): "Statement period 12/15/2025 - 01/14/2026", "Opening/Closing Date 12/29/16 - 01/28/17", "Billing Period: 12/23/14-01/22/15", "For the period 09/25/2025 to 10/24/2025".
+1. A range of two full dates, at most 100 days apart (a year-long promotional rate range is not a period), on a line with a period word (period, cycle, statement, opening, closing, billing, date): "Statement period 12/15/2025 - 01/14/2026", "Opening/Closing Date 12/29/16 - 01/28/17", "Billing Period: 12/23/14-01/22/15", "For the period 09/25/2025 to 10/24/2025".
 2. A dated opening and closing balance: "Beginning balance on August 1, 2026" with "Ending balance on August 31, 2026".
 3. A labelled closing date alone: "Closing Date 01/14/26", "Statement date", "Statement ending".
 4. A bare range of 6 to 100 days: "January 1, 2016 - January 31, 2016", "December 15, 2025 through January 14, 2026".

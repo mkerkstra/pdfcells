@@ -423,11 +423,11 @@ export function findPeriod(pages: PageTables[], order: DateOrder): YearAnchor | 
     }
     return null
   }
-  const labelled = ranges(true, 1, 400)
+  const labelled = ranges(true, 1, 100)
   if (labelled) return labelled
   const close = at(CLOSING_AT)
   const open = at(OPENING_AT)
-  if (close && open && open.d <= close.d && spanDays(open.d, close.d) <= 400)
+  if (close && open && open.d <= close.d && spanDays(open.d, close.d) <= 100)
     return { start: open.d, end: close.d, text: `${open.text}; ${close.text}` }
   if (close) return { end: close.d, text: close.text }
   return ranges(false, 6, 100)
