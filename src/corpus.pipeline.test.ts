@@ -85,12 +85,12 @@ describe('extractDocument on the golden corpus', () => {
       expect(page?.tables.map(shape)).toEqual(g.localTables.map(shape))
       for (const t of page?.tables ?? []) {
         const at = `${f} p${i + 1} "${t.title}"`
-        expect({ at, include: t.include, why: t.hiddenReason }).toEqual({
+        expect({
           at,
-          include: true,
-          why: '',
-        })
-        expect(t.score, at).toBeGreaterThanOrEqual(SCORE_FLOOR)
+          include: t.include,
+          why: t.hiddenReason,
+          clearsFloor: t.score >= SCORE_FLOOR,
+        }).toEqual({ at, include: true, why: '', clearsFloor: true })
       }
     })
   })
