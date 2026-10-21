@@ -110,6 +110,8 @@ describe('parseDate', () => {
     const close = { end: utc('2026-01-14'), text: '' }
     expect(iso(parseDate('01/14', 'mdy', close))).toBe('2026-01-14')
     expect(iso(parseDate('12/29', 'mdy', close))).toBe('2025-12-29')
+    // More than a year back from the closing date: no year fits, not even with slack.
+    expect(parseDate('2/29', 'mdy', { end: utc('2025-03-31'), text: '' })).toBeNull()
   })
   it('a picked year is the closing year: December dates on a January statement get the year before', () => {
     const dates = ['12/20', '12/31', '01/05'].flatMap(v => parseDayMonth(v) ?? [])

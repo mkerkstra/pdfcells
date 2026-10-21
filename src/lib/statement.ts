@@ -574,9 +574,19 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
     if (!periods.has(order)) periods.set(order, findPeriod(pages, order))
     return periods.get(order) ?? null
   }
-  const yearFor: YearFor = (order, dates) => {
+  const tables = joinWithOrigins(pages)
+  // A picked (or provisional) year closes in the month the whole statement's
+  // dates end in, not each section's: a deposits section with only December
+  // dates on a January statement still belongs to the year before.
+  const everyDate: DayMonth[] = []
+  for (const j of tables)
+    read(j, card, (_order, dates) => {
+      everyDate.push(...dates)
+      return { anchor: chosenYearAnchor(PROVISIONAL_YEAR, dates), year: { source: 'missing' } }
+    })
+  const yearFor: YearFor = order => {
     if (opts.year !== undefined) {
-      const anchor = chosenYearAnchor(opts.year, dates)
+      const anchor = chosenYearAnchor(opts.year, everyDate)
       return { anchor, year: { source: 'chosen', year: opts.year } }
     }
     const printed = periodFor(order)
@@ -585,9 +595,9 @@ export function readStatement(pages: PageTables[], opts: ReadOptions = {}): Stat
         anchor: printed,
         year: { source: 'printed', year: printed.end.getUTCFullYear(), text: printed.text },
       }
-    return { anchor: chosenYearAnchor(PROVISIONAL_YEAR, dates), year: { source: 'missing' } }
+    return { anchor: chosenYearAnchor(PROVISIONAL_YEAR, everyDate), year: { source: 'missing' } }
   }
-  const cands = joinWithOrigins(pages)
+  const cands = tables
     .map(j => read(j, card, yearFor))
     .filter((x): x is Candidate => x !== null && x.txns.length > 0)
   // Prefer the table the balance check recognised, then the longest.

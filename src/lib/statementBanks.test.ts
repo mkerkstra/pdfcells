@@ -480,6 +480,27 @@ describe('Bank of America: deposits, withdrawals, checks and fees in separate se
     expect(s?.gate).toEqual({ ok: true, basis: 'summary', label: 'summary ties' })
   })
 
+  it('a picked year closes in the month the whole statement ends in, not each section’s', () => {
+    const head = ['Date', 'Description', 'Amount']
+    const s = readStatement(
+      [
+        page(1, [
+          summary('s', [
+            ['Beginning balance', '100.00'],
+            ['Ending balance', '150.00'],
+          ]),
+          table([head, ['12/20', 'Salary', '100.00']], { title: 'Deposits', id: 'd' }),
+          table([head, ['01/05', 'Rent', '50.00']], { title: 'Withdrawals', id: 'w' }),
+        ]),
+      ],
+      { year: 2026 },
+    )
+    expect(dated(s)).toEqual([
+      ['2025-12-20', 100],
+      ['2026-01-05', -50],
+    ])
+  })
+
   it('a missing section doesn’t tie, so export stays off', () => {
     const s = readStatement(doc([continued, checks]))
     expect(s?.gate).toEqual({

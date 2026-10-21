@@ -220,6 +220,8 @@ export function placeDate(dm: DayMonth, anchor: YearAnchor): Date | null {
     const d = utc(year, dm.month, dm.day)
     if (!d) continue
     const t = d.getTime()
+    // With a closing date only, the year up to it is the whole window: no slack before it.
+    if (!anchor.start && t <= start) continue
     const dist = t < start ? start - t : t > end ? t - end : 0
     if (dist < bestDist) [best, bestDist] = [d, dist]
   }
