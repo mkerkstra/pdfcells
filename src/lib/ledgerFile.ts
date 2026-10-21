@@ -14,21 +14,61 @@ export interface LedgerGrid {
   kind: 'csv' | 'xlsx'
 }
 
+/**
+ * Budgets checked before anything big is allocated, so a small hostile file
+ * (a zip bomb, a cell at row 1,000,000,000) can't exhaust the tab. A real
+ * ledger export is far inside all of them.
+ */
+export interface LedgerLimits {
+  /** Bytes of the file itself. */
+  fileBytes: number
+  /** Bytes one part of an .xlsx may inflate to. */
+  partBytes: number
+  /** Bytes all parts read may inflate to together. */
+  totalBytes: number
+  rows: number
+  columns: number
+  cells: number
+}
+
+export const LEDGER_LIMITS: LedgerLimits = {
+  fileBytes: 20 * 1024 * 1024,
+  partBytes: 64 * 1024 * 1024,
+  totalBytes: 128 * 1024 * 1024,
+  rows: 200_000,
+  columns: 256,
+  cells: 2_000_000,
+}
+
+const TOO_BIG =
+  'This file is too large to reconcile here. Export a shorter date range and try again.'
+
 export const LEDGER_ACCEPT =
   '.csv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
-export async function readLedgerFile(name: string, bytes: Uint8Array): Promise<LedgerGrid> {
+export async function readLedgerFile(
+  name: string,
+  bytes: Uint8Array,
+  limits: LedgerLimits = LEDGER_LIMITS,
+): Promise<LedgerGrid> {
+  if (bytes.length > limits.fileBytes) throw new Error(TOO_BIG)
   const zip = bytes[0] === 0x50 && bytes[1] === 0x4b
-  if (zip) return { rows: await readXlsx(bytes), kind: 'xlsx' }
+  if (zip) return { rows: await readXlsx(bytes, limits), kind: 'xlsx' }
   if (/\.xls$/i.test(name) || (bytes[0] === 0xd0 && bytes[1] === 0xcf))
     throw new Error('Old .xls files can’t be read. Save it as .xlsx or CSV and try again.')
-  return { rows: parseCsv(new TextDecoder().decode(bytes)), kind: 'csv' }
+  return { rows: parseCsv(new TextDecoder().decode(bytes), limits), kind: 'csv' }
 }
 
 // ---- CSV
 
 /** RFC 4180 CSV: quoted fields, doubled quotes, newlines inside quotes; delimiter sniffed. */
-export function parseCsv(text: string): string[][] {
+export function parseCsv(text: string, limits: LedgerLimits = LEDGER_LIMITS): string[][] {
+  if (text.length > limits.fileBytes) throw new Error(TOO_BIG)
+  let cells = 0
+  const push = (r: string[], f: string) => {
+    if (r.length >= limits.columns || ++cells > limits.cells) throw new Error(TOO_BIG)
+    r.push(f)
+  }
   const s = text.replace(/^﻿/, '')
   const delim = sniff(s)
   const rows: string[][] = []
@@ -48,18 +88,19 @@ export function parseCsv(text: string): string[][] {
       quoted = true
       field = ''
     } else if (ch === delim) {
-      row.push(field)
+      push(row, field)
       field = ''
     } else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && s[i + 1] === '\n') i++
-      row.push(field)
+      push(row, field)
       rows.push(row)
+      if (rows.length > limits.rows) throw new Error(TOO_BIG)
       row = []
       field = ''
     } else field += ch
   }
   if (field !== '' || row.length) {
-    row.push(field)
+    push(row, field)
     rows.push(row)
   }
   // Blank lines stay, so a row's index is its row number in a spreadsheet.
@@ -100,15 +141,40 @@ function outsideQuotes(line: string, d: string): number {
 
 // ---- XLSX
 
-async function inflate(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data as Uint8Array<ArrayBuffer>])
+/** Inflate, stopping as soon as the output passes `max` bytes. */
+async function inflate(data: Uint8Array, max: number): Promise<Uint8Array> {
+  const reader = new Blob([data as Uint8Array<ArrayBuffer>])
     .stream()
     .pipeThrough(new DecompressionStream('deflate-raw'))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
+    .getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.length
+    if (size > max) {
+      await reader.cancel()
+      throw new Error(TOO_BIG)
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const c of chunks) {
+    out.set(c, at)
+    at += c.length
+  }
+  return out
 }
 
 /** Files in a ZIP by name, read lazily (stored or deflated entries). */
-async function unzipText(bytes: Uint8Array, wanted: (name: string) => boolean) {
+async function unzipText(
+  bytes: Uint8Array,
+  wanted: (name: string) => boolean,
+  limits: LedgerLimits,
+  budget: { left: number },
+) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let end = bytes.length - 22
   while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) end--
@@ -121,6 +187,7 @@ async function unzipText(bytes: Uint8Array, wanted: (name: string) => boolean) {
     if (view.getUint32(at, true) !== 0x02014b50) break
     const method = view.getUint16(at + 10, true)
     const size = view.getUint32(at + 20, true)
+    const declared = view.getUint32(at + 24, true)
     const nameLen = view.getUint16(at + 28, true)
     const extra = view.getUint16(at + 30, true)
     const comment = view.getUint16(at + 32, true)
@@ -131,7 +198,12 @@ async function unzipText(bytes: Uint8Array, wanted: (name: string) => boolean) {
       const data = bytes.subarray(start, start + size)
       if (method !== 0 && method !== 8)
         throw new Error('This .xlsx file uses a compression PDFCells can’t read.')
-      out.set(name, dec.decode(method === 8 ? await inflate(data) : data))
+      const max = Math.min(limits.partBytes, budget.left)
+      // The declared size is only a hint; the stream is cut at the budget either way.
+      if (declared > max || (method === 0 && data.length > max)) throw new Error(TOO_BIG)
+      const raw = method === 8 ? await inflate(data, max) : data
+      budget.left -= raw.length
+      out.set(name, dec.decode(raw))
     }
     at += 46 + nameLen + extra + comment
   }
@@ -191,6 +263,7 @@ export function serialDate(serial: number, date1904 = false): string {
 
 function columnIndex(ref: string): number {
   const letters = /^[A-Z]+/i.exec(ref)?.[0].toUpperCase() ?? 'A'
+  if (letters.length > 3) return Number.MAX_SAFE_INTEGER
   let n = 0
   for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64)
   return n - 1
@@ -203,14 +276,22 @@ function plainNumber(v: string): string {
   return String(Number(n.toPrecision(15)))
 }
 
-export async function readXlsx(bytes: Uint8Array): Promise<string[][]> {
-  const meta = await unzipText(bytes, n =>
-    [
-      'xl/workbook.xml',
-      'xl/_rels/workbook.xml.rels',
-      'xl/sharedStrings.xml',
-      'xl/styles.xml',
-    ].includes(n),
+export async function readXlsx(
+  bytes: Uint8Array,
+  limits: LedgerLimits = LEDGER_LIMITS,
+): Promise<string[][]> {
+  const budget = { left: limits.totalBytes }
+  const meta = await unzipText(
+    bytes,
+    n =>
+      [
+        'xl/workbook.xml',
+        'xl/_rels/workbook.xml.rels',
+        'xl/sharedStrings.xml',
+        'xl/styles.xml',
+      ].includes(n),
+    limits,
+    budget,
   )
   const workbook = meta.get('xl/workbook.xml')
   if (!workbook) throw new Error('This file isn’t an Excel workbook.')
@@ -221,7 +302,7 @@ export async function readXlsx(bytes: Uint8Array): Promise<string[][]> {
   const rel = [...rels.matchAll(/<Relationship\b[^>]*>/g)].find(m => attr(m[0], 'Id') === rid)?.[0]
   let target = (rel && attr(rel, 'Target')) ?? 'worksheets/sheet1.xml'
   target = target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`
-  const sheet = (await unzipText(bytes, n => n === target)).get(target)
+  const sheet = (await unzipText(bytes, n => n === target, limits, budget)).get(target)
   if (!sheet) throw new Error('The first sheet of this workbook couldn’t be read.')
 
   const shared = [
@@ -229,16 +310,23 @@ export async function readXlsx(bytes: Uint8Array): Promise<string[][]> {
   ].map(m => textOf(m[1] ?? ''))
   const isDate = dateStyles(meta.get('xl/styles.xml') ?? '')
 
-  const rows: string[][] = []
+  // Sparse until the coordinates are known to be inside the limits.
+  const rows = new Map<number, Map<number, string>>()
+  let lastRow = -1
+  let cellCount = 0
   for (const r of sheet.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
-    const at = Number(attr(r[1] ?? '', 'r') ?? rows.length + 1) - 1
-    const cells: string[] = []
+    const at = Number(attr(r[1] ?? '', 'r') ?? lastRow + 2) - 1
+    if (!Number.isInteger(at) || at < 0 || at >= limits.rows) throw new Error(TOO_BIG)
+    lastRow = Math.max(lastRow, at)
+    const cells = rows.get(at) ?? new Map<number, string>()
+    rows.set(at, cells)
     let next = 0
     for (const c of (r[2] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
       const a = c[1] ?? ''
       const body = c[2] ?? ''
       const ref = attr(a, 'r')
       const col = ref ? columnIndex(ref) : next
+      if (col < 0 || col >= limits.columns || ++cellCount > limits.cells) throw new Error(TOO_BIG)
       next = col + 1
       const t = attr(a, 't') ?? 'n'
       const v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? '')
@@ -252,10 +340,14 @@ export async function readXlsx(bytes: Uint8Array): Promise<string[][]> {
         const style = Number(attr(a, 's') ?? 0)
         text = isDate[style] ? serialDate(Number(v), date1904) : plainNumber(v)
       }
-      cells[col] = text.trim()
+      cells.set(col, text.trim())
     }
-    rows[at] = Array.from(cells, x => x ?? '')
   }
   // Missing rows stay empty, so a row's index is its row number in Excel.
-  return Array.from(rows, r => r ?? [])
+  return Array.from({ length: lastRow + 1 }, (_, i) => {
+    const cells = rows.get(i)
+    if (!cells?.size) return []
+    const width = Math.max(...cells.keys()) + 1
+    return Array.from({ length: width }, (_, c) => cells.get(c) ?? '')
+  })
 }

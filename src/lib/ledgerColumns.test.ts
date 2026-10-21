@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { guessColumns, ledgerBalanceAt, ledgerSource, readLedger } from './ledgerColumns'
+import {
+  guessColumns,
+  ledgerBalanceAt,
+  ledgerOrder,
+  ledgerSource,
+  readLedger,
+} from './ledgerColumns'
 import { parseCsv } from './ledgerFile'
 
 const read = (csv: string, flip = false) => {
@@ -124,11 +130,29 @@ describe('ledgerBalanceAt', () => {
     const r = read(
       'Date,Description,Amount,Balance\n2026-03-30,a,1,101\n2026-03-31,b,2,103\n2026-03-31,c,3,106\n2026-04-02,d,4,110\n',
     )
-    expect(ledgerBalanceAt(r.entries, '2026-03-31')).toBe(106)
+    expect(ledgerBalanceAt(r.entries, '2026-03-31')).toEqual({ value: 106 })
     const desc = read(
       'Date,Description,Amount,Balance\n2026-04-02,d,4,110\n2026-03-31,c,3,106\n2026-03-31,b,2,103\n2026-03-30,a,1,101\n',
     )
-    expect(ledgerBalanceAt(desc.entries, '2026-03-31')).toBe(106)
-    expect(ledgerBalanceAt(r.entries, '2026-01-01')).toBeUndefined()
+    expect(ledgerBalanceAt(desc.entries, '2026-03-31')).toEqual({ value: 106 })
+    expect(ledgerBalanceAt(r.entries, '2026-01-01')).toEqual({})
+  })
+
+  it('reads a newest-first single-day ledger from the balance arithmetic (P2-6)', () => {
+    const r = read(
+      'Date,Description,Amount,Balance\n2026-03-31,B,-100,800\n2026-03-31,A,-100,900\n',
+    )
+    expect(ledgerOrder(r.entries)).toBe('descending')
+    expect(ledgerBalanceAt(r.entries, '2026-03-31')).toEqual({ value: 800 })
+    const up = read(
+      'Date,Description,Amount,Balance\n2026-03-31,A,-100,900\n2026-03-31,B,-100,800\n',
+    )
+    expect(ledgerBalanceAt(up.entries, '2026-03-31')).toEqual({ value: 800 })
+  })
+
+  it('says ambiguous rather than guess when neither arithmetic nor dates tell the order', () => {
+    const r = read('Date,Description,Amount,Balance\n2026-03-31,A,-5,700\n2026-03-31,B,-7,650\n')
+    expect(ledgerOrder(r.entries)).toBeNull()
+    expect(ledgerBalanceAt(r.entries, '2026-03-31')).toEqual({ ambiguous: true })
   })
 })

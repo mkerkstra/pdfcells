@@ -3,9 +3,9 @@ import { useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { formatNumber } from '@/lib/checks/grid'
 import { guessColumns, ledgerSource, type ColumnMap } from '@/lib/ledgerColumns'
-import { LEDGER_ACCEPT, readLedgerFile } from '@/lib/ledgerFile'
+import { LEDGER_ACCEPT, LEDGER_LIMITS, readLedgerFile } from '@/lib/ledgerFile'
 import { NO_OVERRIDES, type Overrides } from '@/lib/reconcile'
-import { runReconciliation, totals, type Run } from '@/lib/reconcileRun'
+import { printedPeriod, runReconciliation, totals, type Period, type Run } from '@/lib/reconcileRun'
 import { readStatement } from '@/lib/statement'
 import { buildWorkbook, download, type SourceInfo } from '@/lib/xlsx'
 import { engineLabel, originalTables } from '@/lib/xlsxAudit'
@@ -37,6 +37,15 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
   const [balance, setBalance] = useState('')
   const [windowDays, setWindowDays] = useState(7)
   const [overrides, setOverrides] = useState<Overrides>(NO_OVERRIDES)
+  const [stillOutstanding, setStillOutstanding] = useState<string[]>([])
+  // The cutoff and the ledger balance date come from the statement period:
+  // printed on the statement, or confirmed by the person.
+  const printed = useMemo(
+    () => (statement ? printedPeriod(statement, pages) : null),
+    [statement, pages],
+  )
+  const [confirmed, setConfirmed] = useState<Period | null>(null)
+  const period = printed ?? confirmed
   const [mapping, setMapping] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -45,29 +54,37 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
 
   const typed = balance.trim() === '' ? undefined : Number(balance.replace(/[,\s]/g, ''))
   const run: Run | null = useMemo(() => {
-    if (!statement || !ledger?.map) return null
+    if (!statement || !ledger?.map || !period) return null
     return runReconciliation(
       statement,
+      period,
       {
         name: ledger.name,
         rows: ledger.rows,
         map: ledger.map,
         flip,
         balance: typed !== undefined && Number.isFinite(typed) ? typed : undefined,
+        stillOutstanding,
       },
       { windowDays, splitWindowDays: windowDays },
       overrides,
     )
-  }, [statement, ledger, flip, typed, windowDays, overrides])
+  }, [statement, period, ledger, flip, typed, windowDays, overrides, stillOutstanding])
 
   const open = async (file: File) => {
     setError('')
     try {
+      // Refuse before reading a byte of an oversized file.
+      if (file.size > LEDGER_LIMITS.fileBytes)
+        throw new Error(
+          'This file is too large to reconcile here. Export a shorter date range and try again.',
+        )
       const grid = await readLedgerFile(file.name, new Uint8Array(await file.arrayBuffer()))
       const map = guessColumns(grid.rows)
       setLedger({ name: file.name, rows: grid.rows, map })
       setFlip(undefined)
       setOverrides(NO_OVERRIDES)
+      setStillOutstanding([])
       setMapping(map === null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That file couldn’t be read.')
@@ -171,6 +188,14 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
           </Button>
         </div>
       </div>
+      {statement && ledger && !printed && (
+        <PeriodPicker
+          key={`${statement.period.start}:${statement.period.end}`}
+          guess={statement.period}
+          confirmed={confirmed}
+          onConfirm={setConfirmed}
+        />
+      )}
       {mapping && ledger && (
         <ColumnPicker
           rows={ledger.rows}
@@ -185,6 +210,7 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
         error={error}
         hasStatement={statement !== null}
         ledger={ledger}
+        needsPeriod={period === null}
         run={run}
         decimals={statement?.decimals ?? 2}
       />
@@ -196,9 +222,61 @@ export function ReconcileExport({ doc, lead }: { doc: DocState; lead: ReactNode 
           onBalance={setBalance}
           overrides={overrides}
           onOverrides={setOverrides}
+          stillOutstanding={stillOutstanding}
+          onStillOutstanding={setStillOutstanding}
           onClose={() => setReviewing(false)}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * The statement doesn't print its period, so the first and last transaction
+ * dates are only a guess: a cheque written on the 30th after a last
+ * transaction on the 20th would be left out. The person confirms the dates.
+ */
+function PeriodPicker({
+  guess,
+  confirmed,
+  onConfirm,
+}: {
+  guess: Period
+  confirmed: Period | null
+  onConfirm: (p: Period | null) => void
+}) {
+  const [start, setStart] = useState(confirmed?.start ?? guess.start)
+  const [end, setEnd] = useState(confirmed?.end ?? guess.end)
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end) && start <= end
+  const same = confirmed?.start === start && confirmed.end === end
+  return (
+    <div className='flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-card px-3 py-2'>
+      <span>
+        {confirmed ? 'Statement period' : 'The statement doesn’t print its period. Confirm it:'}
+      </span>
+      <input
+        type='date'
+        value={start}
+        onChange={e => setStart(e.target.value)}
+        className={cn(FIELD, 'h-8 px-2 text-sm')}
+        aria-label='Statement start date'
+      />
+      <span>to</span>
+      <input
+        type='date'
+        value={end}
+        onChange={e => setEnd(e.target.value)}
+        className={cn(FIELD, 'h-8 px-2 text-sm')}
+        aria-label='Statement end date'
+      />
+      <Button
+        size='sm'
+        variant='primary'
+        disabled={!valid || same}
+        onClick={() => onConfirm({ start, end })}
+      >
+        {confirmed ? 'Update period' : 'Confirm period'}
+      </Button>
     </div>
   )
 }
@@ -207,12 +285,14 @@ function Status({
   error,
   hasStatement,
   ledger,
+  needsPeriod,
   run,
   decimals,
 }: {
   error: string
   hasStatement: boolean
   ledger: Ledger | null
+  needsPeriod: boolean
   run: Run | null
   decimals: number
 }) {
@@ -229,6 +309,13 @@ function Status({
       <p className='text-muted'>
         Add a CSV or .xlsx export of this account from your books. Matching runs on this device;
         nothing is uploaded.
+      </p>
+    )
+  if (needsPeriod)
+    return (
+      <p className='text-warn'>
+        Confirm the statement period first: entries after its end date are left out, and the ledger
+        balance is taken on that date.
       </p>
     )
   if (!run)
@@ -259,15 +346,25 @@ function Status({
           {check} {check === 1 ? 'match' : 'matches'} to check.
         </span>
       )}
+      {t.unequalMatches > 0 && (
+        <span className='text-bad'>
+          {t.unequalMatches} {t.unequalMatches === 1 ? 'match is' : 'matches are'} for different
+          amounts on each side.
+        </span>
+      )}
       {t.difference === undefined ? (
-        <span>Add your ledger balance in Review matches to finish the reconciliation.</span>
-      ) : t.difference === 0 ? (
+        <span>
+          {run.balanceFrom === 'ambiguous'
+            ? 'Several ledger entries share the last day and their order isn’t clear, so type your ledger balance in Review matches.'
+            : 'Add your ledger balance in Review matches to finish the reconciliation.'}
+        </span>
+      ) : t.reconciled ? (
         <span className='inline-flex items-center gap-1 font-semibold text-tick'>
           Reconciled <Tick />
         </span>
-      ) : (
+      ) : t.difference !== 0 ? (
         <span className='text-bad'>Difference {formatNumber(t.difference, decimals)}.</span>
-      )}
+      ) : null}
     </p>
   )
 }

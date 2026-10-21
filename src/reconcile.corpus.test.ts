@@ -15,7 +15,7 @@ import writeXlsxFile from 'write-excel-file/browser'
 import { guessColumns, ledgerSource } from './lib/ledgerColumns'
 import { readLedgerFile } from './lib/ledgerFile'
 import { pageFacts } from './lib/pagefacts'
-import { runReconciliation } from './lib/reconcileRun'
+import { printedPeriod, runReconciliation, statementLines, totals } from './lib/reconcileRun'
 import { readStatement, type Statement } from './lib/statement'
 import { triage } from './lib/triage'
 import type { Table } from './lib/types'
@@ -72,7 +72,15 @@ function plantLedger(s: Statement): Planted {
   const split = txns.findIndex(t => t.amount > 100)
   const shifted = txns.findIndex((t, i) => i !== split && t.amount < 0)
   const missing = txns.findLastIndex((t, i) => i !== split && i !== shifted && t.amount < 0)
-  const entries: { date: string; text: string; ref?: string; amount: number }[] = []
+  // A cheque cleared on February's statement: history, not outstanding.
+  const entries: { date: string; text: string; ref?: string; amount: number }[] = [
+    {
+      date: shift(s.period.start, -20),
+      text: 'Cheque cleared in February',
+      ref: '0999',
+      amount: -100,
+    },
+  ]
   txns.forEach((t, i) => {
     if (i === missing) return
     if (i === split) {
@@ -96,7 +104,7 @@ function plantLedger(s: Statement): Planted {
     amount: -250,
   })
   entries.push({ date: shift(s.period.end, 5), text: 'Rent next month', amount: -900 })
-  let running = s.opening ?? 0
+  let running = (s.opening ?? 0) + 100
   let balance = running
   const rows = [
     ['Date', 'Source', 'Description', 'Reference', 'Debit', 'Credit', 'Running Balance'],
@@ -162,12 +170,16 @@ describe('statement.pdf reconciled against a Xero ledger', () => {
       if (!map) return
       expect(ledgerSource(grid.rows, map)).toBe('Xero')
 
-      const run = runReconciliation(s, { name: `ledger.${kind}`, rows: grid.rows, map })
+      const period = printedPeriod(s, pages)
+      expect(period).toEqual({ start: '2026-03-01', end: '2026-03-31' })
+      if (!period) return
+      const run = runReconciliation(s, period, { name: `ledger.${kind}`, rows: grid.rows, map })
       expect(run.flip).toBe(false)
       expect(run.balanceFrom).toBe('ledger')
       expect(run.sheet.ledgerBalance).toBe(planted.balance)
       const { result } = run.sheet
-      const sid = (i: number) => `s:${s.transactions[i]?.fitid ?? ''}`
+      const ids = statementLines(s).lines.map(x => x.id)
+      const sid = (i: number) => ids[i] ?? ''
       const byStatement = new Map(result.matches.flatMap(m => m.statement.map(id => [id, m])))
       expect(byStatement.get(sid(planted.shifted))?.kind).toBe('window')
       const split = byStatement.get(sid(planted.split))
@@ -177,6 +189,15 @@ describe('statement.pdf reconciled against a Xero ledger', () => {
       const only = result.ledgerOnly.map(id => run.sheet.ledger.find(e => e.id === id)?.description)
       expect(only).toEqual(['Cheque to Acme Supplies', 'Rent next month'])
       expect(result.matches.filter(m => m.review)).toEqual([])
+      const before = run.sheet.before?.map(
+        id => run.sheet.ledger.find(e => e.id === id)?.description,
+      )
+      expect(before).toEqual(['Cheque cleared in February'])
+      expect(totals(run.sheet)).toMatchObject({
+        difference: 0,
+        unequalMatches: 0,
+        reconciled: true,
+      })
 
       // The reconciliation ties: adjusted statement balance = adjusted ledger balance.
       const closing = s.closing ?? 0
@@ -214,12 +235,12 @@ describe('statement.pdf reconciled against a Xero ledger', () => {
       const names = [...wb.matchAll(/<sheet [^>]*name="([^"]+)"/g)].map(m => m[1])
       expect(names.slice(-2)).toEqual(['Reconciliation', 'Audit'])
       const sheet = files.get(`xl/worksheets/sheet${names.indexOf('Reconciliation') + 1}.xml`) ?? ''
-      // Summary (8) + checks (2) + one Match difference per matched row.
+      // Summary (7) + checks (3) + one Match difference per matched row.
       const rows = result.matches.reduce(
         (n, m) => n + Math.max(m.statement.length, m.ledger.length),
         0,
       )
-      expect(formulas(sheet)).toHaveLength(9 + rows)
+      expect(formulas(sheet)).toHaveLength(10 + rows)
       const types = files.get('[Content_Types].xml') ?? ''
       for (const k of [...files.keys()].filter(x => x.startsWith('xl/tables/')))
         expect(types).toContain(`PartName="/${k}"`)

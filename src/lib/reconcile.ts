@@ -63,6 +63,12 @@ export interface Overrides {
   manual: { statement: string[]; ledger: string[] }[]
   /** Keys of automatic pairings the person rejected. */
   rejected: string[]
+  /**
+   * By match key: how many statement lines shared each member's content when
+   * the override was made. A change means a look-alike was added or removed,
+   * so the override can no longer say which line it meant (see reconcileRun).
+   */
+  seen?: Record<string, Record<string, number>>
 }
 
 export const NO_OVERRIDES: Overrides = { manual: [], rejected: [] }
@@ -132,13 +138,24 @@ function exactPass(
     byUnits.set(l.units, list)
   }
   const edges: Edge[] = []
+  // Repeated payees (400 coffees) score once per pair of descriptions.
+  const simCache = new Map<string, number>()
+  const similarity = (a: string, b: string) => {
+    const k = `${a}\u0000${b}`
+    let v = simCache.get(k)
+    if (v === undefined) {
+      v = o.payee.similarity(a, b)
+      simCache.set(k, v)
+    }
+    return v
+  }
   for (const s of st) {
     if (used.s.has(s.item.id) || s.units === 0) continue
     for (const l of byUnits.get(s.units) ?? []) {
       const days = Math.abs(s.day - l.day)
       if (days > o.windowDays) continue
-      if (rejected.has(matchKey([s.item.id], [l.item.id]))) continue
-      const sim = o.payee.similarity(s.item.description, l.item.description)
+      if (rejected.size && rejected.has(matchKey([s.item.id], [l.item.id]))) continue
+      const sim = similarity(s.item.description, l.item.description)
       edges.push({ s, l, days, sim, strong: sim >= STRONG })
     }
   }
@@ -158,11 +175,24 @@ function exactPass(
     chosen.push(e)
   }
   // A pick is a guess when a different-looking candidate ranked the same.
+  // Edges are indexed by each end, so this looks only at the item's own
+  // candidates: linear in the edges overall, not edges times matches.
   const tied = (a: Edge, b: Edge) =>
     a.strong === b.strong && a.days === b.days && Math.abs(a.sim - b.sim) < 0.05
+  const bySide = (side: 's' | 'l') => {
+    const m = new Map<Prepared, Edge[]>()
+    for (const e of edges) {
+      const list = m.get(e[side]) ?? []
+      list.push(e)
+      m.set(e[side], list)
+    }
+    return m
+  }
+  const ofS = bySide('s')
+  const ofL = bySide('l')
   for (const e of chosen) {
-    const rivalL = edges.some(x => x.s === e.s && x.l !== e.l && tied(x, e) && !sameItem(x.l, e.l))
-    const rivalS = edges.some(x => x.l === e.l && x.s !== e.s && tied(x, e) && !sameItem(x.s, e.s))
+    const rivalL = (ofS.get(e.s) ?? []).some(x => x.l !== e.l && tied(x, e) && !sameItem(x.l, e.l))
+    const rivalS = (ofL.get(e.l) ?? []).some(x => x.s !== e.s && tied(x, e) && !sameItem(x.s, e.s))
     out.push({
       key: matchKey([e.s.item.id], [e.l.item.id]),
       statement: [e.s.item.id],
@@ -339,7 +369,10 @@ export function reconcile(
   for (const m of overrides.manual) {
     const s = m.statement.filter(id => sIds.has(id) && !used.s.has(id))
     const l = m.ledger.filter(id => lIds.has(id) && !used.l.has(id))
+    // All or nothing: when a member was edited or deleted, the person matched
+    // something that no longer exists, so the whole match goes.
     if (s.length === 0 || l.length === 0) continue
+    if (s.length !== m.statement.length || l.length !== m.ledger.length) continue
     for (const id of s) used.s.add(id)
     for (const id of l) used.l.add(id)
     const gaps = s.flatMap(a => l.map(b => Math.abs((sDay.get(a) ?? 0) - (lDay.get(b) ?? 0))))

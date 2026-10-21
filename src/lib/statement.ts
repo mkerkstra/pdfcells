@@ -271,7 +271,10 @@ export function assignFitids<T extends { date: string; amount: number; descripti
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 
 /** "statement period 03/01/2026 to 03/31/2026" in a table title. */
-function titlePeriod(titles: string[], order: DateOrder): { start: string; end: string } | null {
+export function titlePeriod(
+  titles: string[],
+  order: DateOrder,
+): { start: string; end: string } | null {
   for (const s of titles) {
     const m = /period\s*:?\s*(.+?)\s+(?:to|through|thru|-|–)\s+(.+?)\s*$/i.exec(s)
     if (!m) continue

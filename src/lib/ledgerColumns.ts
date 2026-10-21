@@ -262,16 +262,51 @@ export function chooseFlip(statement: RecItem[], entries: RecItem[], windowDays:
   return flipped > asIs
 }
 
+export interface LedgerBalance {
+  value?: number
+  /** Several entries on the last day and the file order can't be told: ask the person. */
+  ambiguous?: boolean
+}
+
 /**
- * The ledger balance on `end` (ISO), from its Balance column: the balance on
- * the last entry dated on or before that day, in the file's own order.
+ * Whether the file lists entries oldest first, from the Balance column: in an
+ * oldest-first file each balance is the one above plus its own amount; newest
+ * first, the one above is this balance plus the amount above. Amounts are
+ * signed money in positive, which raises a bank account's balance. Null when
+ * the arithmetic doesn't decide it.
  */
-export function ledgerBalanceAt(entries: LedgerEntry[], end: string): number | undefined {
+export function ledgerOrder(entries: LedgerEntry[]): 'ascending' | 'descending' | null {
+  let up = 0
+  let down = 0
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.005
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1]
+    const cur = entries[i]
+    if (prev?.balance === undefined || cur?.balance === undefined) continue
+    if (near(cur.balance, prev.balance + cur.amount)) up++
+    if (near(prev.balance, cur.balance + prev.amount)) down++
+  }
+  if (up > down) return 'ascending'
+  if (down > up) return 'descending'
+  return null
+}
+
+/**
+ * The ledger balance on `end` (ISO), from its Balance column: the balance
+ * after the last entry dated on or before that day. When several entries
+ * share that day, the file order decides which came last, read from the
+ * balance arithmetic, else from the dates; if neither tells, it's ambiguous.
+ */
+export function ledgerBalanceAt(entries: LedgerEntry[], end: string): LedgerBalance {
   const dated = entries.filter(e => e.balance !== undefined && e.date <= end)
-  if (dated.length === 0) return undefined
+  if (dated.length === 0) return {}
   const last = dated.reduce((a, b) => (b.date > a.date ? b : a)).date
   const sameDay = dated.filter(e => e.date === last)
-  // Newest-first exports list the day's last entry first.
-  const ascending = entries.length < 2 || (entries[0]?.date ?? '') <= (entries.at(-1)?.date ?? '')
-  return (ascending ? sameDay.at(-1) : sameDay[0])?.balance
+  if (sameDay.length === 1) return { value: sameDay[0]?.balance }
+  const first = entries[0]?.date ?? ''
+  const final = entries.at(-1)?.date ?? ''
+  const order =
+    ledgerOrder(entries) ?? (first < final ? 'ascending' : first > final ? 'descending' : null)
+  if (!order) return { ambiguous: true }
+  return { value: (order === 'ascending' ? sameDay.at(-1) : sameDay[0])?.balance }
 }

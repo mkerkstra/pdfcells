@@ -108,18 +108,21 @@ describe('Reconciliation sheet', () => {
     const xml = sheetNamed(await files(input()), 'Reconciliation')
     const fs = formulas(xml)
     expect(fs).toContain(
-      'SUMIFS(Rec_Ledger_only[Amount],Rec_Ledger_only[Amount],">0",Rec_Ledger_only[[Before statement end]],"Yes")',
+      'SUMIFS(Rec_Ledger_only[Amount],Rec_Ledger_only[Amount],">0",Rec_Ledger_only[[In reconciliation]],"Yes")+SUMIFS(Rec_Before_statement[Amount],Rec_Before_statement[Amount],">0",Rec_Before_statement[[Still outstanding]],"Yes")',
     )
     expect(fs).toContain('SUMIFS(Rec_Statement_only[Amount],Rec_Statement_only[Amount],"<0")')
+    // P2-8: unequal matches are counted one by one, not netted.
+    expect(fs).toContain('COUNTIFS(Rec_Matched[[Match difference]],"<>0",Rec_Matched[Match],"<>")')
     expect(fs).toContain(
       'ROUND(SUM(Rec_Matched[[Statement amount]])-SUM(Rec_Matched[[Ledger amount]]),2)',
     )
     expect(fs.filter(x => x.includes('[#This Row],[Match]'))).toHaveLength(3)
     // Every structured reference names a real column of its Table.
     const cols: Record<string, string[]> = {
-      Rec_Matched: ['Match', 'Statement amount', 'Ledger amount'],
+      Rec_Matched: ['Match', 'Statement amount', 'Ledger amount', 'Match difference'],
       Rec_Statement_only: ['Amount'],
-      Rec_Ledger_only: ['Amount', 'Before statement end'],
+      Rec_Ledger_only: ['Amount', 'In reconciliation'],
+      Rec_Before_statement: ['Amount', 'Still outstanding'],
     }
     const plain = fs.join(' ').replaceAll('[[#This Row],[Match]]', '[Match]')
     for (const m of plain.matchAll(/(Rec_\w+)\[\[?([^\]]+)\]/g))
@@ -193,8 +196,8 @@ describe('Reconciliation sheet', () => {
     const a = statementLines({
       ...base,
       transactions: [txn('2026-03-02', -1, 'a', 'A'), txn('2026-03-03', -2, 'b', 'B')],
-    })
-    const b = statementLines({ ...base, transactions: [txn('2026-03-03', -2, 'b', 'B')] })
+    }).lines
+    const b = statementLines({ ...base, transactions: [txn('2026-03-03', -2, 'b', 'B')] }).lines
     expect(a[1]?.id).toBe(b[0]?.id)
   })
 })

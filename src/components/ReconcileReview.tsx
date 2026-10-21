@@ -3,8 +3,8 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 
 import type { DateOrder } from '@/lib/cells'
 import { formatNumber } from '@/lib/checks/grid'
-import { units, type Match, type Overrides, type RecItem } from '@/lib/reconcile'
-import { totals, type Run } from '@/lib/reconcileRun'
+import { matchKey, units, type Match, type Overrides, type RecItem } from '@/lib/reconcile'
+import { seenFor, totals, type Run } from '@/lib/reconcileRun'
 import { matchRule } from '@/lib/xlsxReconcile'
 
 import { Badge, Button, cn, FIELD, Tick } from './ui'
@@ -22,6 +22,8 @@ export function ReconcileReview({
   onBalance,
   overrides,
   onOverrides,
+  stillOutstanding,
+  onStillOutstanding,
   onClose,
 }: {
   run: Run
@@ -30,6 +32,8 @@ export function ReconcileReview({
   onBalance: (v: string) => void
   overrides: Overrides
   onOverrides: (o: Overrides) => void
+  stillOutstanding: string[]
+  onStillOutstanding: (ids: string[]) => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -63,7 +67,11 @@ export function ReconcileReview({
                 ),
             ),
           }
-        : { ...overrides, rejected: [...overrides.rejected, m.key] },
+        : {
+            ...overrides,
+            rejected: [...overrides.rejected, m.key],
+            seen: { ...overrides.seen, [m.key]: seenFor([...m.statement], run.groups) },
+          },
     )
 
   const sumOf = (ids: Set<string>, by: Map<string, RecItem>) =>
@@ -71,9 +79,12 @@ export function ReconcileReview({
   const selS = sumOf(pickS, sById)
   const selL = sumOf(pickL, lById)
   const pair = () => {
+    const statement = [...pickS]
+    const ledger = [...pickL]
     onOverrides({
       ...overrides,
-      manual: [...overrides.manual, { statement: [...pickS], ledger: [...pickL] }],
+      manual: [...overrides.manual, { statement, ledger }],
+      seen: { ...overrides.seen, [matchKey(statement, ledger)]: seenFor(statement, run.groups) },
     })
     setPickS(new Set())
     setPickL(new Set())
@@ -235,6 +246,21 @@ export function ReconcileReview({
                   Match selected
                 </Button>
               </div>
+              <Before
+                ids={sheet.before ?? []}
+                still={new Set(stillOutstanding)}
+                onToggle={id =>
+                  onStillOutstanding(
+                    stillOutstanding.includes(id)
+                      ? stillOutstanding.filter(x => x !== id)
+                      : [...stillOutstanding, id],
+                  )
+                }
+                render={id => {
+                  const l = lById.get(id)
+                  return line(l, l ? `row ${l.row}` : undefined)
+                }}
+              />
             </>
           )}
         </div>
@@ -265,17 +291,24 @@ export function ReconcileReview({
           {row('Adjusted ledger balance', t.adjustedLedger, true)}
           <div className='border-t border-line pt-2'>
             {t.difference === undefined ? (
-              <p className='text-muted'>Type the ledger balance to see the difference.</p>
-            ) : t.difference === 0 ? (
+              <p className='text-muted'>
+                {run.balanceFrom === 'ambiguous'
+                  ? 'Several ledger entries share the last day and their order isn’t clear. Type the ledger balance.'
+                  : 'Type the ledger balance to see the difference.'}
+              </p>
+            ) : t.reconciled ? (
               <p className='inline-flex items-center gap-1 font-semibold text-tick'>
                 Difference 0.00, reconciled <Tick />
               </p>
             ) : (
-              <p className='font-semibold text-bad'>Difference {money(t.difference)}</p>
+              <p className={cn('font-semibold', t.difference === 0 ? 'text-ink' : 'text-bad')}>
+                Difference {money(t.difference)}
+              </p>
             )}
-            {t.matchedDifference !== 0 && (
-              <p className='mt-1 text-warn'>
-                Matches you made differ by {money(t.matchedDifference)} in total.
+            {t.unequalMatches > 0 && (
+              <p className='mt-1 text-bad'>
+                {t.unequalMatches} {t.unequalMatches === 1 ? 'match is' : 'matches are'} for
+                different amounts on each side, so this isn’t reconciled yet.
               </p>
             )}
           </div>
@@ -330,6 +363,40 @@ function Picker({
                 onChange={() => onPick(id)}
               />
               <div className='min-w-0 flex-1'>{render(id)}</div>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** Unmatched ledger entries from before the statement period, left out unless still outstanding. */
+function Before({
+  ids,
+  still,
+  onToggle,
+  render,
+}: {
+  ids: string[]
+  still: Set<string>
+  onToggle: (id: string) => void
+  render: (id: string) => ReactNode
+}) {
+  if (ids.length === 0) return null
+  return (
+    <section className='min-w-0'>
+      <h3 className='mb-1 font-semibold'>Before this statement ({ids.length})</h3>
+      <p className='mb-1 text-muted'>
+        Usually cleared on an earlier statement, so left out. Tick one that still hasn’t cleared.
+      </p>
+      <ul className='max-h-[30dvh] divide-y divide-line overflow-y-auto rounded-md border border-line'>
+        {ids.map(id => (
+          <li key={id}>
+            <label className='flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent-soft'>
+              <div className='min-w-0 flex-1'>{render(id)}</div>
+              <input type='checkbox' checked={still.has(id)} onChange={() => onToggle(id)} />
+              <span className='text-xs text-muted'>Still outstanding</span>
             </label>
           </li>
         ))}

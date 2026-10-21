@@ -31,6 +31,10 @@ export interface ReconcileSheetInput {
   statement: StatementLine[]
   ledger: LedgerEntry[]
   result: Reconciliation
+  /** Unmatched ledger entries dated before the period: history unless still outstanding. */
+  before?: string[]
+  /** Of `before`, the ones the person says are still outstanding. */
+  stillOutstanding?: string[]
 }
 
 const GREY = '#666666'
@@ -118,11 +122,20 @@ export function reconciliationSheet(
     headerRow: 0,
     lastRow: 0,
     firstCol: 0,
-    columns: ['Date', 'Description', 'Reference', 'Amount', 'Ledger row', 'Before statement end'],
+    columns: ['Date', 'Description', 'Reference', 'Amount', 'Ledger row', 'In reconciliation'],
+  }
+  const earlier: TableSpec = {
+    id: 0,
+    name: tableName('Rec_Before_statement', names),
+    headerRow: 0,
+    lastRow: 0,
+    firstCol: 0,
+    columns: ['Date', 'Description', 'Reference', 'Amount', 'Ledger row', 'Still outstanding'],
   }
   const M = (c: string) => columnRef(matched, matched.columns.indexOf(c))
   const S = (c: string) => columnRef(onStatement, onStatement.columns.indexOf(c))
   const L = (c: string) => columnRef(inLedger, inLedger.columns.indexOf(c))
+  const B = (c: string) => columnRef(earlier, earlier.columns.indexOf(c))
 
   const data: Row[] = []
   const at = () => data.length
@@ -147,8 +160,12 @@ export function reconciliationSheet(
     x.closing === undefined ? { value: '', type: String, backgroundColor: INPUT } : num(x.closing),
     x.closing === undefined ? note('Type the closing balance from the statement') : null,
   ])
-  const ledgerIn = `SUMIFS(${L('Amount')},${L('Amount')},">0",${L('Before statement end')},"Yes")`
-  const ledgerOut = `SUMIFS(${L('Amount')},${L('Amount')},"<0",${L('Before statement end')},"Yes")`
+  // Entries from before the period count only when marked still outstanding.
+  const open = (sign: string) =>
+    `SUMIFS(${L('Amount')},${L('Amount')},"${sign}0",${L('In reconciliation')},"Yes")` +
+    `+SUMIFS(${B('Amount')},${B('Amount')},"${sign}0",${B('Still outstanding')},"Yes")`
+  const ledgerIn = open('>')
+  const ledgerOut = open('<')
   const rDit = at()
   data.push([text('Add: deposits in the ledger, not yet on the statement'), formula(ledgerIn)])
   const rOut = at()
@@ -209,7 +226,17 @@ export function reconciliationSheet(
     formula(`ROUND(SUM(${M('Statement amount')})-SUM(${M('Ledger amount')}),${dec})`, {
       textColor: GREY,
     }),
-    note('0.00 means every match is for the same amount'),
+    note('0.00 means the matched amounts add up the same on both sides'),
+  ])
+  data.push([
+    text('Matches whose two sides differ'),
+    {
+      value: `COUNTIFS(${M('Match difference')},"<>0",${M('Match')},"<>")`,
+      type: 'Formula',
+      format: '0',
+      textColor: GREY,
+    },
+    note('0 means every match is for the same amount on both sides'),
   ])
   if (x.opening !== undefined) {
     const rOpen = at()
@@ -305,7 +332,7 @@ export function reconciliationSheet(
   placeTable(
     inLedger,
     'Only in the ledger',
-    'Entries not on the statement yet: deposits in transit and payments that haven’t cleared. Entries dated after the statement end are left out of the reconciliation.',
+    'Entries not on the statement yet: deposits in transit and payments that haven’t cleared. Entries dated after the statement end say No under In reconciliation and are left out.',
     x.result.ledgerOnly.flatMap(id => {
       const l = lById.get(id)
       return l
@@ -324,11 +351,34 @@ export function reconciliationSheet(
     'Every ledger entry is matched',
   )
 
+  const still = new Set(x.stillOutstanding ?? [])
+  placeTable(
+    earlier,
+    'Before this statement',
+    'Unmatched entries dated before the statement period, usually cleared on an earlier statement, so left out. Type Yes under Still outstanding for one that hasn’t cleared yet.',
+    (x.before ?? []).flatMap(id => {
+      const l = lById.get(id)
+      return l
+        ? [
+            [
+              date(l.date),
+              text(l.description),
+              text(l.reference),
+              num(l.amount),
+              { value: l.row, type: Number, format: '0' },
+              text(still.has(id) ? 'Yes' : 'No'),
+            ] as Row,
+          ]
+        : []
+    }),
+    'No earlier entries',
+  )
+
   return {
     data,
     sheet,
     parts: {
-      tables: [matched, onStatement, inLedger],
+      tables: [matched, onStatement, inLedger, earlier],
       comments: [],
       activeCell: { row: rClosing, col: 1 },
     },
