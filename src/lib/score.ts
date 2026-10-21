@@ -9,7 +9,7 @@
 // well above the threshold, and it takes a non-data block kind (prose, a table
 // of contents, chart ticks) or several weak signals at once to fall below it.
 
-import type { LocalTable } from './layout'
+import { isNumericCell, type LocalTable } from './layout'
 import { blockStats, classifyStats, type BlockKind } from './noise'
 import type { Table, Word } from './types'
 import { review } from './validate'
@@ -21,7 +21,7 @@ export interface TableFeatures {
   typedColumns: number
   /** Within typed columns, share of filled cells that fit the type. */
   typeConsistency: number
-  /** 1 when the table has a header row of text over a typed body. */
+  /** 1 when the table has a header row with ≥2 labels and no numbers. */
   header: number
   /** Body rows, saturating at 5. */
   rows: number
@@ -120,7 +120,12 @@ export function tableFeatures(
       numericDensity: s.numericShare,
       typedColumns: width ? s.typedCols / width : 0,
       typeConsistency: filledTyped ? 1 - outliers / filledTyped : 0,
-      header: t.headerRows > 0 && head.some(c => c.trim() !== '') && s.typedCols > 0 ? 1 : 0,
+      header:
+        t.headerRows > 0 &&
+        head.filter(c => c.trim() !== '').length >= 2 &&
+        !head.some(isNumericCell)
+          ? 1
+          : 0,
       rows: clamp01(body.length / 5),
       cols: clamp01((width - 2) / 3),
       fill: total ? t.rows.flat().filter(c => c.trim() !== '').length / total : 0,
