@@ -147,7 +147,7 @@ export function reconciliationSheet(
   ])
   data.push([
     note(
-      'Every figure below is a formula over the three tables further down. Move a row between tables, or correct an amount, and the reconciliation updates.',
+      'Every figure below is a formula over the tables further down. Move a row between tables, or correct an amount, and the reconciliation updates.',
     ),
   ])
   data.push([])
