@@ -37,9 +37,9 @@ function sitePages(): Plugin {
       server.middlewares.use((req, res, next) => {
         const path = (req.url ?? '').split('?')[0]?.slice(1) ?? ''
         const all = files()
-        const name = all[`${path}.html`] !== undefined ? `${path}.html` : path
-        const body = all[name]
-        if (!path || body === undefined) return next()
+        const name = Object.hasOwn(all, `${path}.html`) ? `${path}.html` : path
+        if (!path || !Object.hasOwn(all, name)) return next()
+        const body = all[name] ?? ''
         res.setHeader('Content-Type', types[name.split('.').pop() ?? ''] ?? 'text/plain')
         res.end(body)
       })

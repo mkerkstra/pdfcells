@@ -180,7 +180,7 @@ const bofa = page({
       '<strong>Dates</strong> are full dates, so they become real Excel dates.',
       '<strong>Signs</strong> are printed, so withdrawals and fees stay negative and a sum of all sections gives the net change.',
       '<strong>Section totals:</strong> “Total deposits and other additions” and “Total withdrawals and other subtractions” are checked against the rows above them, and the table is marked Footed when they match.',
-      '<strong>Checks section:</strong> side-by-side blocks are the hardest layout for any table extractor, PDFCells included. Compare it with the page before you rely on it.',
+      '<strong>Checks section:</strong> side-by-side tables are the weakest layout in PDFCells’ own tests. Compare it with the page before you rely on it.',
       '<strong>Statement formats:</strong> PDFCells’ OFX/QBO export reads one transaction table, and Bank of America splits deposits and withdrawals into separate sections, so the statement can’t be tied and those formats stay off. Excel and table CSV work.',
     ]),
   ].join(''),
@@ -241,7 +241,7 @@ const wellsFargo = page({
     h2('Converting it with PDFCells'),
     steps('Wells Fargo', 'Statements & Documents'),
     ul([
-      '<strong>Balance check:</strong> because Wells Fargo prints a balance only at the end of each day, rows without one carry their amounts into the next printed balance. Every printed daily balance is checked, and a misread amount is pinned to its row.',
+      '<strong>Balance check:</strong> because Wells Fargo prints a balance only at the end of each day, rows without one carry their amounts into the next printed balance. Once the balances tie over a run of rows, each printed daily balance is checked and a misread amount is pinned to its row.',
       '<strong>Signs:</strong> Deposits/Credits and Withdrawals/Debits are separate columns, so keep them separate in Excel or compute <code>Deposits − Withdrawals</code>.',
       '<strong>Summary of checks written</strong> repeats the checks already in Transaction history. Untick that table so checks aren’t counted twice.',
       '<strong>Statement formats:</strong> the M/D dates have no year, so OFX, QBO and the Xero CSV aren’t offered for these statements yet.',

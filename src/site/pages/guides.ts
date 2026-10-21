@@ -11,11 +11,11 @@ const bankStatementToExcel: Page = {
   parent: 'convert',
   title: 'Convert a bank statement PDF to Excel, free',
   description:
-    'Turn a PDF bank statement into an Excel sheet with real numbers and a running-balance check on every row. Free, in your browser, no upload.',
+    'Turn a PDF bank statement into an Excel sheet with real numbers and its running balance checked. Free, in your browser, no upload.',
   h1: 'Convert a bank statement PDF to Excel',
   label: 'Bank statement to Excel',
   answer:
-    'Open the statement in PDFCells, check the transaction table against the page, and download an .xlsx file. Amounts become real Excel numbers, and when the statement prints a running balance, every row is checked against it before you download.',
+    'Open the statement in PDFCells, check the transaction table against the page, and download an .xlsx file. Amounts become real Excel numbers, and when PDFCells recognises a running balance column, each printed balance is checked against the rows before it.',
   body: [
     h2('Steps'),
     ol([
@@ -35,7 +35,7 @@ const bankStatementToExcel: Page = {
         ['Line', 'Added when the table has a running balance, so rows can be found after sorting.'],
         [
           'Balance check',
-          'A live formula per row: previous balance plus this row’s amount minus the printed balance. It reads 0 when the row ties. It uses <code>SUMIFS</code> on the Line column, so it stays right after you sort.',
+          'When the running-balance check applies, a live formula per row: previous balance plus this row’s amount minus the printed balance. It reads 0 when the row ties. It uses <code>SUMIFS</code> on the Line column, so it stays right after you sort.',
         ],
         [
           'Payee and Category',
@@ -53,7 +53,7 @@ const bankStatementToExcel: Page = {
     ),
     h2('How the checks work on a statement'),
     ul([
-      '<strong>Balance ties:</strong> each printed balance must equal the previous balance plus that row’s money in minus its money out. A row with an amount but no balance (some banks print one balance per day) carries into the next printed balance. When one cell breaks the pattern, PDFCells names that cell.',
+      '<strong>Balance ties:</strong> each printed balance must equal the previous balance plus that row’s money in minus its money out. A row with an amount but no balance (some banks print one balance per day) carries into the next printed balance. When one cell breaks the pattern, PDFCells names that cell. The check switches on once at least three balances in a row tie and most of the table agrees, so a very short statement may get no balance check, and the first transaction is only checked when an opening balance is printed.',
       '<strong>Opening and closing balances tie:</strong> the summary’s opening balance plus credits minus debits must equal the closing balance.',
       '<strong>Footed:</strong> a row labelled Total must equal the rows above it. A table whose totals all add up is marked Footed.',
     ]),
@@ -195,7 +195,7 @@ const pdfToQbo: Page = {
     ]),
     h2('What is in the file'),
     ul([
-      'An OFX 1.02 bank statement with one transaction per row: type (credit, debit or check), date, signed amount, payee (first 32 characters), the full description as the memo, and the check number when the statement has one.',
+      'An OFX 1.02 bank statement with one transaction per row: type (credit, debit or check), date, signed amount, payee (first 32 characters), the description as the memo (up to 255 characters),and the check number when the statement has one.',
       'The <code>&lt;INTU.BID&gt;3000</code> block QuickBooks looks for. Intuit publishes no generic bank id; 3000 is the value converters commonly use.',
       'A FITID per transaction, built from the date, amount, description and position among identical rows. Exporting the same statement twice gives the same ids, so QuickBooks skips transactions it already has.',
       'The closing balance as of the end of the statement period. Credit card statements use OFX’s credit card message set.',
@@ -234,7 +234,7 @@ const pdfToQbo: Page = {
     },
     {
       q: 'Will importing twice create duplicates?',
-      a: 'No. Each transaction has a stable FITID, and QuickBooks skips ids it has already imported into that account. A statement edited after import keeps the old ids for unchanged rows.',
+      a: 'No. Each transaction has a stable FITID, and QuickBooks skips ids it has already imported into that account. Editing a statement after import changes the ids of edited rows, and of rows identical to an edited one (two same-day coffees), so re-importing after edits can duplicate those.',
     },
     {
       q: 'Why is the QBO export greyed out?',
@@ -285,7 +285,7 @@ const pdfToOfx: Page = {
         ['Column mapping', 'None', 'Once, on Xero’s mapping screen'],
         [
           'Payee',
-          'First 32 characters of the cleaned payee; full description in the memo',
+          'First 32 characters of the cleaned payee; description in the memo, up to 255 characters',
           'Cleaned payee, so Xero bank rules match every visit to the same merchant',
         ],
         ['Duplicates', 'Stable FITID per transaction', 'Handled by Xero’s own duplicate check'],
@@ -404,7 +404,7 @@ const invoice: Page = {
   h1: 'Convert an invoice PDF to Excel',
   label: 'Invoice PDF to Excel',
   answer:
-    'Open the invoice in PDFCells and download the line-item table as Excel. On the way, it checks that quantity × unit price equals the line total on every row and that subtotal plus tax equals the invoice total, and flags any line that doesn’t.',
+    'Open the invoice in PDFCells and download the line-item table as Excel. On the way, it checks that quantity × unit price equals the line total and that subtotal plus tax equals the invoice total, and flags lines that don’t.',
   body: [
     h2('Steps'),
     ol([
@@ -419,7 +419,7 @@ const invoice: Page = {
       [
         [
           'Line totals',
-          'Quantity × unit price = line total, on each row where the columns fit that pattern. A quantity of 1 proves nothing, so it is skipped.',
+          'Quantity × unit price = line total, once most rows of the table fit that pattern. A quantity of 1 proves nothing, so it is skipped.',
         ],
         ['Subtotal and tax tie to total', 'Subtotal + tax (+ other charges) = total.'],
         ['Footed', 'A row labelled Total equals the rows above it.'],
@@ -444,7 +444,7 @@ const invoice: Page = {
   faq: [
     {
       q: 'Can it read scanned or photographed invoices?',
-      a: 'Yes. Scans and photos are read with free OCR in your browser, or with AI for skewed or low-quality pages. The line-total check flags any misread price.',
+      a: 'Yes. Scans and photos are read with free OCR in your browser, or with AI for skewed or low-quality pages. A misread price usually breaks the line-total check, which flags it.',
     },
     {
       q: 'Does it extract the invoice number and vendor?',
@@ -515,7 +515,7 @@ const scanned: Page = {
       ],
     ),
     p(
-      `On our own synthetic test corpus, the default OCR read 94.4% of table cells exactly across 44 pages, and the experimental engine as a retry 96.1%. Scans are the hardest part: ${a('accuracy', 'see the accuracy page')} for the breakdown and what those numbers don’t tell you.`,
+      `On our own synthetic test corpus, the default OCR read 94.4% of table cells exactly across 44 pages; re-reading every page with the experimental engine’s retry gave 96.1%. Scans are the hardest part: ${a('accuracy', 'see the accuracy page')} for the breakdown and what those numbers don’t tell you.`,
     ),
     h2('Tips for better scans'),
     ul([
@@ -538,7 +538,7 @@ const scanned: Page = {
     },
     {
       q: 'What languages does the OCR read?',
-      a: 'The in-browser OCR uses an English model, which also reads numbers and most Latin-script text. For other scripts, use AI for that page.',
+      a: 'The in-browser OCR uses an English model, which reads numbers and English text well. For accented or non-Latin text, use AI for that page.',
     },
   ],
   related: ['accuracy', 'invoice-pdf-to-excel', 'pdf-table-to-excel', 'private-pdf-to-excel'],
@@ -686,7 +686,7 @@ const accuracy: Page = {
   h1: 'How accurate is PDFCells?',
   label: 'Accuracy',
   answer:
-    'On PDFs with a text layer, PDFCells reads characters exactly from the PDF and the risk is table structure; on scans, OCR can misread digits. Either way, every table is checked arithmetically (running balances, totals, line totals) so most errors show up as a failed check you can see and fix before you download.',
+    'On PDFs with a text layer, PDFCells reads characters exactly from the PDF and the risk is table structure; on scans, OCR can misread digits. Either way, tables are checked arithmetically wherever they have something to check (running balances, totals, line totals), so most errors in those tables show up as a failed check you can see and fix before you download.',
   body: [
     h2('The checks'),
     table(
@@ -721,28 +721,25 @@ const accuracy: Page = {
       ],
     ),
     p(
-      'Amounts with two or more decimals must match within 1.1 units of the last decimal place. Rounded whole-number columns get half a unit per term, because printed reports round each figure.',
-    ),
-    p(
-      'When AI reads a page that also has a text layer, every number it returns must appear in that text; a number that doesn’t is flagged. When a page was read both by OCR and by AI, the two are compared cell by cell.',
+      'Amounts with two or more decimals must match within 1.1 units of the last decimal place. Rounded whole-number columns get half a unit per term, because printed reports round each figure. A check only runs once PDFCells recognises the pattern: a running balance needs at least three ties and at least 70% of the table agreeing, and line totals need most rows to fit. A table with nothing to check is simply not marked.',
     ),
     h2('Measured on our test corpus'),
     p(
-      'PDFCells is developed against a harness that scores every engine against exact ground truth. The corpus is <strong>synthetic</strong>: 44 pages generated to isolate known failure modes (wrapped rows, side-by-side tables, decimal commas, skewed photos, fax-quality scans). It shows which engine is better; it does not estimate how often real-world documents fail.',
+      'PDFCells is developed against a harness that scores every engine against exact ground truth. The corpus is <strong>synthetic</strong>: about 30 files and 43 pages generated to isolate known failure modes (wrapped rows, side-by-side tables, decimal commas, skewed photos, fax-quality scans). It shows which engine is better; it does not estimate how often real-world documents fail.',
     ),
     table(
       ['Engine', 'Pages', 'Cells read exactly', 'Numeric cells exact', 'Checks pass'],
       [
         ['PDF text layer, digital pages', '32', '97.5%', '97.6%', '72.2%'],
         ['PDF text layer, bank statement pages', '7', '100%', '100%', '88.9%'],
-        ['OCR (tesseract.js, default), all pages', '44', '94.4%', '95.5%', '78.6%'],
-        ['OCR retry (PP-OCRv6 tiny), all pages', '44', '96.1%', '97.2%', '85.7%'],
+        ['OCR (tesseract.js, the default), all pages', '43', '94.3%', '95.5%', '78.6%'],
+        ['Experimental OCR (PP-OCRv6 tiny), all pages', '43', '95.5%', '97.2%', '85.7%'],
         ['OCR (tesseract.js), scanned pages', '3', '66.7%', '66.7%', '100%'],
       ],
       [1, 2, 3, 4],
     ),
     p(
-      'Checks-pass counts tables whose checks were verified; tables with nothing to check (no totals, no balance) aren’t counted. A missed table counts as every cell wrong. The scan sample is three pages, too small for a rate: one fax-quality page is most of the miss. Sources: the committed reports in the project’s <code>eval/reports</code> directory and its OCR research notes, both in the public repository.',
+      'In a later 44-page experiment that re-read every page with the experimental engine’s retry crop, cells read exactly rose from 94.4% to 96.1%; in the app the retry is only offered on pages that look weak, which that experiment didn’t measure. Checks-pass counts tables whose checks were verified; tables with nothing to check (no totals, no balance) aren’t counted. A missed table counts as every cell wrong. The scan sample is three pages, too small for a rate: one fax-quality page is most of the miss. Sources: the committed reports in the project’s <code>eval/reports</code> directory and its OCR research notes, both in the public repository.',
     ),
     h2('What the numbers don’t cover'),
     ul([
@@ -820,7 +817,7 @@ const privacy: Page = {
       ],
     ),
     p(
-      'If you mark areas on a page, only what is inside them is sent: the image is cropped and the text filtered, and a page whose areas match nothing is not sent at all. Our server does not store pages, text or results. Anthropic’s commercial terms don’t allow training on API data; Anthropic may keep API data for a limited period for safety monitoring. Details are in the ',
+      'If you mark areas on a page, the image is cropped to the rectangle around your “only” areas (plus a small margin), “ignore” areas are painted white, the text sent is limited to words inside your areas, and a page whose areas match nothing is not sent at all. With two areas far apart, whatever lies between them is inside that rectangle, so mark one area per AI read if that matters. Our server does not store pages, text or results. Anthropic’s commercial terms don’t allow training on API data; Anthropic may keep API data for a limited period for safety monitoring. Details are in the ',
     ).replace('</p>', `${a('privacy', 'privacy policy')}.</p>`),
     p(
       'You can check this yourself: open your browser’s developer tools, Network tab, and convert a PDF without AI. No request carries your file.',
