@@ -1,4 +1,4 @@
-import { COMPETITOR_ASOF, FACTS } from '../facts.ts'
+import { COMPETITOR_ASOF, FACTS, REPO } from '../facts.ts'
 import { a, ext, h2, note, p, table, ul } from '../html.ts'
 import { LIMITS } from '../shared.ts'
 import type { Page } from '../types.ts'
@@ -14,7 +14,7 @@ const sources = (links: [string, string][]) =>
   ul(links.map(([href, text]) => ext(href, text)))
 
 const asOf = (s: string) =>
-  `<p class="meta">Competitor details ${COMPETITOR_ASOF}, from their own websites. Prices and features change; check the source links.</p>${s}`
+  `<p class="meta">Competitor details ${COMPETITOR_ASOF}, from their own websites. Prices and features change; check the source links. PDFCells’ own claims can be checked against its <a href="${REPO}">public source code</a> (MIT).</p>${s}`
 
 const PDFCELLS_ROW = {
   price: `Free for PDF text and OCR; AI ${FACTS.freeAiPages} free pages/day signed in, then Anthropic cost + ${FACTS.markupPercent}%`,
@@ -335,6 +335,7 @@ const docuclipper: Page = {
           [
             'Statement limits',
             'Not stated',
+            // STATEMENT-YEARS
             `${LIMITS} Dates without a year aren’t read as statements yet.`,
           ],
         ],
@@ -352,6 +353,7 @@ const docuclipper: Page = {
         'You want to see and fix each table next to the page before exporting.',
       ]),
       note(
+        // STATEMENT-YEARS
         `PDFCells reads statements with one general layout engine; it has no bank-specific templates. Many US banks print dates without the year, and PDFCells can’t make OFX/QBO from those yet (${a('banks', 'bank notes')}).`,
       ),
       sources([
@@ -419,7 +421,7 @@ const properconvert: Page = {
           [
             'Targets named',
             'QuickBooks Desktop and Online, Quicken, Xero, Sage, Wave, FreeAgent, NetSuite, MYOB and more',
-            'QuickBooks Online (Desktop may refuse .qbo), Xero, and software that reads OFX or CSV',
+            'QuickBooks Online (Desktop may refuse a converter’s .qbo, and Desktop imports no OFX or CSV), Xero, and software that reads OFX or CSV',
           ],
           ['Checks', 'Not described', PDFCELLS_ROW.checks],
         ],
@@ -441,7 +443,7 @@ const properconvert: Page = {
   faq: [
     {
       q: 'Which is better for QuickBooks Desktop?',
-      a: 'ProperConvert names QuickBooks Desktop as a target and writes IIF and QBJ too. PDFCells’ .qbo may be refused by QuickBooks Desktop, so there you would import its OFX or CSV.',
+      a: 'ProperConvert names QuickBooks Desktop as a target and writes IIF and QBJ too. QuickBooks Desktop imports bank transactions only as .qbo, and may refuse PDFCells’ .qbo, so for Desktop ProperConvert is the safer choice.',
     },
   ],
   related: ['pdf-to-qbo', 'pdfcells-vs-moneythumb', 'pdf-to-ofx', 'best-pdf-to-excel-converters'],
@@ -631,6 +633,7 @@ const roundup: Page = {
       ul([
         'No direct QuickBooks or Xero connection, no API and no team accounts.',
         'Fewer formats: no IIF, QFX or QIF, and QuickBooks Desktop may refuse its .qbo.',
+        // STATEMENT-YEARS
         'Statements that print dates without a year (common at US banks) can’t be exported as OFX or QBO yet.',
         'No security certification such as SOC 2; the privacy model is that files stay in your browser.',
         'It converts tables; it doesn’t extract named invoice fields such as invoice number or vendor.',

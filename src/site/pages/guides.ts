@@ -1,5 +1,5 @@
-import { FACTS } from '../facts.ts'
-import { a, h2, note, ol, p, table, ul } from '../html.ts'
+import { FACTS, REPO, SOURCE_LD } from '../facts.ts'
+import { a, ext, h2, note, ol, p, repo, table, ul } from '../html.ts'
 import { GATE, LIMITS, PRICE, STEPS_CHECK, STEPS_OPEN, STEPS_REVIEW, YEARLESS } from '../shared.ts'
 import type { Page } from '../types.ts'
 
@@ -61,6 +61,7 @@ const bankStatementToExcel: Page = {
     p(
       'Dates are read month-first or day-first per column: a day above 12 anywhere in the column decides. In the Excel sheet amounts stay as printed in their own columns; the statement formats (CSV, OFX, QBO, Xero) sign every amount so money in is positive and money out is negative.',
     ),
+    // STATEMENT-YEARS
     note(YEARLESS),
     h2('Limits and cost'),
     p(LIMITS, PRICE),
@@ -148,6 +149,7 @@ const bankStatementToCsv: Page = {
       'The file starts with a UTF-8 byte order mark so Excel opens accented text correctly, and a description starting with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> gets a leading apostrophe so it can’t run as a formula.',
       'Wrapped description lines are joined onto their transaction. A row with an amount but no date takes the date above it.',
     ]),
+    // STATEMENT-YEARS
     note(YEARLESS),
     h2('When the numbers don’t tie'),
     p(
@@ -184,14 +186,14 @@ const pdfToQbo: Page = {
   h1: 'Convert a PDF bank statement to a QuickBooks .qbo file',
   label: 'PDF to QBO (QuickBooks)',
   answer:
-    'Open the statement in PDFCells, let it check that the balances tie, then export <strong>QuickBooks (.qbo)</strong> and upload it in QuickBooks Online under Banking › Upload transactions. QuickBooks Online usually accepts the file; QuickBooks Desktop is stricter and may refuse it, in which case import the OFX or CSV instead.',
+    'Open the statement in PDFCells, let it check that the balances tie, then export <strong>QuickBooks (.qbo)</strong> and upload it in QuickBooks Online under Bank transactions › Upload from file. QuickBooks Online usually accepts the file. QuickBooks Desktop imports bank transactions only as Web Connect .qbo files and may refuse one made by a converter; there is no OFX or CSV fallback in Desktop.',
   body: [
     h2('Steps'),
     ol([
       STEPS_OPEN,
       `${STEPS_REVIEW} The .qbo export switches on only when the numbers tie.`,
       'Choose <strong>Bank statement (OFX, QBO, Xero CSV)</strong> in the export bar, pick QuickBooks (.qbo), optionally type the account number, and download.',
-      'In QuickBooks Online: Banking › Upload transactions (or Transactions › Bank transactions › Link account › Upload from file). Choose the file and the account to put the transactions in.',
+      `In QuickBooks Online: Bank transactions › Link account › Upload from file (or “Upload transactions manually” for an account not connected to a bank). Choose the file and the account to put the transactions in. Intuit accepts up to 1,000 transactions and 350 KB per upload (${ext('https://quickbooks.intuit.com/learn-support/en-us/help-article/import-transactions/manually-upload-transactions-quickbooks-online/L0rE9OXBz_US_en_US', 'Intuit help')}).`,
     ]),
     h2('What is in the file'),
     ul([
@@ -207,12 +209,12 @@ const pdfToQbo: Page = {
         [
           '.qbo from PDFCells',
           'Usually fine. It asks which account to use, so the placeholder account number doesn’t matter.',
-          'May refuse a bank id it doesn’t recognise or ask you to pick an account. Versions more than about three years old stop importing .qbo files.',
+          `Web Connect reads only .qbo files, needs a supported Desktop version and sign-in to your Intuit account, and may stop with “QuickBooks is unable to verify the Financial Institution information for this download” (${ext('https://quickbooks.intuit.com/learn-support/en-us/help-article/bank-connectivity/fix-web-connect-import-errors/L8o5eQjO4_US_en_US', 'Intuit help')}).`,
         ],
         [
           'If refused',
-          'Use the bank CSV and map the columns.',
-          'Import the OFX file or the bank CSV instead.',
+          'Upload the bank CSV instead and map its columns (Intuit also accepts OFX and QFX).',
+          'Desktop has no OFX or CSV bank import to fall back on. Use the bank’s own .qbo download for recent periods, or a desktop converter that states Desktop support.',
         ],
       ],
     ),
@@ -221,6 +223,7 @@ const pdfToQbo: Page = {
     ),
     h2('Before you export'),
     p(GATE),
+    // STATEMENT-YEARS
     note(YEARLESS),
     h2('Other ways to get a .qbo file'),
     p(
@@ -230,14 +233,15 @@ const pdfToQbo: Page = {
   faq: [
     {
       q: 'Will QuickBooks import a .qbo made from a PDF?',
-      a: 'QuickBooks Online usually does. QuickBooks Desktop may refuse a .qbo whose bank id it doesn’t recognise, and versions more than about three years old don’t import .qbo files at all; use the OFX or CSV export there.',
+      a: 'QuickBooks Online usually does. QuickBooks Desktop may refuse a .qbo whose bank id it doesn’t recognise, and Web Connect reads only .qbo files, so OFX or CSV aren’t a fallback there. For Desktop, use the bank’s own .qbo download or a converter that states Desktop support.',
     },
     {
       q: 'Will importing twice create duplicates?',
-      a: 'No. Each transaction has a stable FITID, and QuickBooks skips ids it has already imported into that account. Editing a statement after import changes the ids of edited rows, and of rows identical to an edited one (two same-day coffees), so re-importing after edits can duplicate those.',
+      a: 'Not when you import the same export again. Each transaction has a stable FITID,and QuickBooks skips ids it has already imported into that account. Editing a statement after import changes the ids of edited rows, and of rows identical to an edited one (two same-day coffees), so re-importing after edits can duplicate those.',
     },
     {
       q: 'Why is the QBO export greyed out?',
+      // STATEMENT-YEARS
       a: 'The statement’s numbers don’t tie yet, or it isn’t read as a statement. The panel says which page and row to fix. Statements that print dates without a year can’t be exported as QBO yet.',
     },
     {
@@ -298,6 +302,7 @@ const pdfToOfx: Page = {
     ),
     h2('Before you export'),
     p(GATE),
+    // STATEMENT-YEARS
     note(YEARLESS),
     note(
       'OFX files declare a checking account (or a credit card account for card statements). Savings and money market accounts aren’t distinguished. One account per export: with several accounts, PDFCells prefers a table whose running balance it recognises, then the longest; untick tables you don’t want exported.',
@@ -369,6 +374,7 @@ const creditCard: Page = {
     p(
       'Most card statements have no running balance, so the check is the summary: previous balance − payments and credits + purchases, fees and interest = new balance. When the summary prints totals for payments and for charges, the transactions must add up to those too. Only undated summary rows count, so a transaction called “Payment” or “Interest charged” is treated as a transaction.',
     ),
+    // STATEMENT-YEARS
     note(`Card statements often print transaction dates without the year (01/15). ${YEARLESS}`),
   ].join(''),
   faq: [
@@ -742,8 +748,21 @@ const accuracy: Page = {
       [1, 2, 3, 4],
     ),
     p(
-      'In a later 44-page experiment that re-read every page with the experimental engine’s retry crop, cells read exactly rose from 94.4% to 96.1%; in the app the retry is only offered on pages that look weak, which that experiment didn’t measure. Checks-pass counts tables whose checks were verified; tables with nothing to check (no totals, no balance) aren’t counted. A missed table counts as every cell wrong. The scan sample is three pages, too small for a rate: one fax-quality page is most of the miss. Sources: the committed reports in the project’s <code>eval/reports</code> directory and its OCR research notes, both in the public repository.',
+      'In a later 44-page experiment that re-read every page with the experimental engine’s retry crop, cells read exactly rose from 94.4% to 96.1%; in the app the retry is only offered on pages that look weak, which that experiment didn’t measure. Checks-pass counts tables whose checks were verified; tables with nothing to check (no totals, no balance) aren’t counted. A missed table counts as every cell wrong. The scan sample is three pages, too small for a rate: one fax-quality page is most of the miss.',
     ),
+    h2('Reproduce the numbers'),
+    p(
+      `Everything above comes from code and files in the ${ext(REPO, 'public repository')}: the ${repo('eval/README.md', 'eval harness')} (metrics and engines), the ${repo('fixtures', 'test corpus', true)} with its ${repo('fixtures/README.md', 'list of what each file stresses')} and the ${repo('fixtures/make_fixtures.py', 'script that generates it')}, the ${repo('eval/reports', 'committed reports', true)} (${repo('eval/reports/baseline-2026-10-20.md', 'text layer and default OCR')}, ${repo('eval/reports/baseline-2026-10-21-ppocr-retry.md', 'retry experiment')}), and the ${repo('docs/research/ocr-sota-2026.md', 'OCR research notes')}. With Node 24 or later:`,
+    ),
+    '<pre><code>git clone https://github.com/mkerkstra/pdfcells\ncd pdfcells\ncorepack pnpm install\npnpm eval                               # PDF text layer and default OCR, every page\npnpm eval --engine ppocr-v6-tiny        # the experimental OCR engine\npnpm eval --engine ppocr-retry-band48   # the weak-page retry, cropped as the app does\npnpm eval --list                        # every engine</code></pre>',
+    p(
+      'Each run writes a Markdown and JSON report to <code>eval/reports/</code>. Everything runs locally and costs nothing; the Claude engine is off unless you pass your own API key, <code>--hosted</code> and <code>--yes</code>. Timings depend on your machine; the accuracy figures don’t.',
+    ),
+    h2('What the corpus is, and isn’t'),
+    ul([
+      '<strong>It is</strong> about 30 generated files (43–44 pages): bank and card statements, invoices, financial reports, prose and blank pages, scans, photos, screenshots, TIFF and HEIC images. Each targets one way real documents go wrong (wrapped rows, page breaks, decimal commas, skew, fax noise, planted arithmetic errors), and every cell has exact ground truth because the script that drew the page also wrote the answer.',
+      '<strong>It isn’t</strong> a sample of real documents. It holds no real bank’s statements and no customer files, so it can rank engines against each other and catch regressions, but it can’t tell you how often PDFCells is wrong on your documents.',
+    ]),
     h2('What the numbers don’t cover'),
     ul([
       '<strong>AI reading:</strong> we have not published a measured accuracy for the Claude models on this corpus, and found no public benchmark for them on tables. Treat AI as a strong reader whose output still goes through the same checks.',
@@ -773,6 +792,7 @@ const accuracy: Page = {
     'best-pdf-to-excel-converters',
   ],
   updated: UPDATED,
+  ld: [SOURCE_LD],
 }
 
 const privacy: Page = {
@@ -822,8 +842,18 @@ const privacy: Page = {
     p(
       'If you mark areas on a page, the image is cropped to the rectangle around your “only” areas (plus a small margin), “ignore” areas are painted white, the text sent is limited to words inside your areas, and a page whose areas match nothing is not sent at all. With two areas far apart, whatever lies between them is inside that rectangle, so mark one area per AI read if that matters. Our server does not store pages, text or results. Anthropic’s commercial terms don’t allow training on API data; Anthropic may keep API data for a limited period for safety monitoring. Details are in the ',
     ).replace('</p>', `${a('privacy', 'privacy policy')}.</p>`),
+    h2('Check it yourself'),
     p(
-      'You can check this yourself: open your browser’s developer tools, Network tab, and convert a PDF without AI. No request carries your file.',
+      'You don’t have to take this page’s word for it. Your browser can show every request the page makes:',
+    ),
+    ol([
+      'Open pdfcells.com, then your browser’s developer tools (F12, or Cmd+Option+I on a Mac), and select the <strong>Network</strong> tab. Tick “Preserve log”.',
+      'Open a PDF, read it (PDF text or OCR), and download the Excel file. Don’t choose AI.',
+      'Look at the list. Every request is a <code>GET</code> that fetches something: the app’s own code from pdfcells.com (<code>/assets/…</code>, including the PDF reader’s worker), the OCR engine and its English model (<code>/tesseract/…</code>), the experimental OCR models (<code>/ppocr/…</code>, only if a page looks weak), <code>/api/config</code> (settings; carries nothing from your file), fonts from fonts.googleapis.com and fonts.gstatic.com, and the sign-in service at clerk.pdfcells.com (plus <code>/api/me</code>, your balance, when you are signed in). The Excel file is built inside the page, so the download is not a network request at all.',
+      'What you won’t see is a <code>POST</code> to pdfcells.com carrying your file. That only happens when you choose an AI feature: then you’ll see <code>POST /api/extract</code> (or <code>/api/categorize</code>, <code>/api/name-tables</code>, <code>/api/batches</code>) with the page image or text in its payload.',
+    ]),
+    p(
+      `The page’s <code>Content-Security-Policy</code> response header (visible on the first request in that list) backs this up: its <code>connect-src</code> lets the page’s code connect only to pdfcells.com itself and the sign-in service, so the browser blocks connections to any other server. And the code is public: every call that sends data to our server goes through one function, <code>request</code> in ${repo('src/lib/api.ts', 'src/lib/api.ts')}, and the policy is in ${repo('vercel.json', 'vercel.json')}. The whole app is ${ext(REPO, 'open source on GitHub')} under the MIT licence.`,
     ),
     h2('Is it safe to upload bank statements to an online converter?'),
     p(
@@ -863,6 +893,7 @@ const privacy: Page = {
   ],
   related: ['bank-statement-to-excel', 'accuracy', 'compare', 'best-pdf-to-excel-converters'],
   updated: UPDATED,
+  ld: [SOURCE_LD],
 }
 
 export const GUIDES: Page[] = [

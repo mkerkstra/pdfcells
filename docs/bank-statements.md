@@ -85,7 +85,7 @@ The same OFX with the block QuickBooks looks for in the sign-on response:
 `INTU.BID` is the Intuit bank id. Intuit publishes no generic value; QuickBooks checks it against its list of banks that support Web Connect. `3000` is the value converters commonly use (it belongs to a large US bank in Intuit's list). Limitations, honestly:
 
 - **QuickBooks Online** (Banking > Upload transactions, or Transactions > Bank transactions > Link account > Upload from file) is usually fine with this file. It asks which account to put the transactions in, so the placeholder account number doesn't matter.
-- **QuickBooks Desktop** is stricter. It may refuse a file whose bank id it doesn't recognise, or ask you to pick an existing account. Versions that are more than about three years old stop importing .qbo files altogether. If a .qbo is refused, import the OFX or the bank CSV instead.
+- **QuickBooks Desktop** is stricter. It may refuse a file whose bank id it doesn't recognise, or ask you to pick an existing account. Versions that are more than about three years old stop importing .qbo files altogether. Web Connect reads only .qbo files (Intuit, "Fix Web Connect import errors"), so Desktop has no OFX or CSV bank import to fall back on; if it refuses the file, use the bank's own .qbo download or a converter that states Desktop support.
 - QuickBooks skips a transaction whose FITID it has already imported into that account. That's what stops a second import creating duplicates, but it also means a statement edited after an import keeps its old ids for unchanged rows.
 
 ### Xero CSV

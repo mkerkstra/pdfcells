@@ -68,6 +68,7 @@ const banks: Page = {
       'From each bank’s own help pages, checked October 2026. Outside these windows, the monthly PDF statements are the record.',
     ),
     h2('One thing most US statements share'),
+    // STATEMENT-YEARS
     note(YEARLESS),
     p(
       'PDFCells has no bank-specific templates: every statement is read by the same layout engine and checked the same way. The notes on these pages come from statements the banks have published and from public records, so check your own statement against them.',

@@ -29,4 +29,6 @@ export type Page = {
   related: string[]
   /** ISO date the content was last checked; also the sitemap lastmod. */
   updated: string
+  /** Extra JSON-LD nodes, without @context. */
+  ld?: Record<string, unknown>[]
 }

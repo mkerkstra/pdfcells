@@ -62,6 +62,7 @@ export function jsonLd(page: Page, bySlug: Map<string, Page>): unknown[] {
       })),
     })
   }
+  for (const node of page.ld ?? []) blocks.push({ '@context': 'https://schema.org', ...node })
   return blocks
 }
 
@@ -104,6 +105,8 @@ th, td { border: 1px solid var(--line); padding: 0.4rem 0.6rem; text-align: left
 thead th { background: var(--accent-soft); }
 tbody th { font-weight: 600; }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+pre { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem 1rem; font-size: 0.8125rem; line-height: 1.5; }
+pre code { background: none; padding: 0; }
 code { font-size: 0.875em; background: var(--accent-soft); padding: 0.05rem 0.3rem; border-radius: 0.25rem; }
 .note { border-left: 3px solid var(--rule); padding: 0.25rem 0 0.25rem 0.9rem; color: var(--muted); }
 .cta { margin: 2.5rem 0 0; padding: 1.25rem; border: 1px solid var(--line); border-radius: 0.75rem; background: var(--card); }
@@ -227,7 +230,7 @@ ${rows.map(r => `  ${r}`).join('\n')}
 /** Plain-text rendering of HTML for llms-full.txt: tags dropped, block ends become line breaks. */
 export function toText(html: string): string {
   return html
-    .replaceAll(/<\/(p|h2|h3|li|tr|table|ul|ol|div)>/g, '\n')
+    .replaceAll(/<\/(p|h2|h3|li|tr|table|ul|ol|div|pre)>/g, '\n')
     .replaceAll(/<(td|th)[^>]*>/g, ' | ')
     .replaceAll(/<li>/g, '- ')
     .replaceAll(/<h2>/g, '\n## ')

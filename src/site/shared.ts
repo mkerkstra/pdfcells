@@ -16,6 +16,7 @@ export const PRIVACY = `The PDF is opened and converted on your device. Nothing 
  * layout() requires a date column; src/lib/cells.ts parseDate needs a year).
  * Update this, and the bank pages that quote it, when year inference lands.
  */
+// STATEMENT-YEARS
 export const YEARLESS = `Statements that print dates as month and day only (01/15), with the year only in the statement period, convert to Excel with the date column kept as printed text. The statement formats (OFX, QBO, Xero CSV and the bank CSV) need a full date on every transaction, so PDFCells doesn't offer them for those statements yet.`
 
 export const GATE = `OFX, QBO and Xero files are only offered when PDFCells' own checks say the numbers are consistent: with a balance column, every row's balance must equal the previous balance plus that row's amount; without one, the statement's summary must tie (opening + credits − debits = closing) and the transactions must add up to it. When a check fails, the export panel says why, with the page and row where it can.`

@@ -26,6 +26,11 @@ export function table(head: string[], rows: string[][], num: number[] = []): str
   return `<div class="table"><table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`
 }
 
+/** A link into the public repository on main: a file, or a directory with `dir`. */
+export function repo(path: string, text: string, dir = false): string {
+  return `<a href="https://github.com/mkerkstra/pdfcells/${dir ? 'tree' : 'blob'}/main/${path}">${text}</a>`
+}
+
 /** Hub card list: each linked page with its description. */
 export function cards(items: { slug: string; label: string; text: string }[]): string {
   return `<ul class="cards">${items.map(i => `<li><a href="/${i.slug}">${i.label}</a><p>${i.text}</p></li>`).join('')}</ul>`

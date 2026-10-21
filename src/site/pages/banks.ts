@@ -72,6 +72,7 @@ const chase = page({
   description:
     'Convert Chase checking and credit card statement PDFs to Excel: what the sections and MM/DD dates look like, signs to fix, and when Chase’s own CSV is easier.',
   answer:
+    // STATEMENT-YEARS
     'For the last two years, download the activity straight from chase.com as CSV, QFX or QBO. For older Chase statements, open the PDF in PDFCells and download Excel; Chase prints dates as MM/DD without the year and, on some statements, amounts without a sign, so plan to add the year and check signs by section.',
   layout: [
     h2('What a Chase statement looks like'),
@@ -102,10 +103,13 @@ const chase = page({
     ul([
       '<strong>Signs on checking:</strong> because deposits and withdrawals are printed unsigned in separate sections, both come out positive in Excel. Negate the withdrawal and check sections (multiply by −1) before adding them up.',
       '<strong>Signs on card statements:</strong> payments keep their minus sign, so a sum of the amount column equals purchases minus payments.',
+      // STATEMENT-YEARS
       '<strong>Amounts under $1:</strong> Chase card statements print them without a leading zero (<code>.99</code>). PDFCells doesn’t read that form as a number yet, so those cells are flagged as text in a number column; type <code>0.99</code> in the grid.',
       '<strong>Daily ending balance:</strong> printed as several Date/Balance pairs side by side. It isn’t a list of transactions; if it comes out as its own table, untick it, or check that its rows didn’t join the last section.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> OFX, QBO and the Xero CSV need a year on every date, so they aren’t offered for Chase statements yet. Use Chase’s own QBO/QFX download for the last two years.',
     ]),
+    // STATEMENT-YEARS
     yearFix('“Opening/Closing Date 12/29/16 - 01/28/17”'),
   ].join(''),
   own: [
@@ -117,6 +121,7 @@ const chase = page({
   faq: [
     {
       q: 'How do I convert a Chase statement to Excel?',
+      // STATEMENT-YEARS
       a: 'For activity in the last two years, download CSV from chase.com on a computer. For older statements, open the PDF in PDFCells, check the tables and download Excel, then add the year to the MM/DD dates.',
     },
     {
@@ -125,6 +130,7 @@ const chase = page({
     },
     {
       q: 'Can I get a QBO file from an old Chase statement PDF?',
+      // STATEMENT-YEARS
       a: 'Not from PDFCells yet: its QBO export needs a year on every transaction date, and Chase prints MM/DD. Chase itself offers QBO downloads for the last two years.',
     },
   ],
@@ -181,6 +187,7 @@ const bofa = page({
       '<strong>Signs</strong> are printed, so withdrawals and fees stay negative and a sum of all sections gives the net change.',
       '<strong>Section totals:</strong> “Total deposits and other additions” and “Total withdrawals and other subtractions” are checked against the rows above them, and the table is marked Footed when they match.',
       '<strong>Checks section:</strong> side-by-side tables are the weakest layout in PDFCells’ own tests. Compare it with the page before you rely on it.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> PDFCells’ OFX/QBO export reads one transaction table, and Bank of America splits deposits and withdrawals into separate sections, so the statement can’t be tied and those formats stay off. Excel and table CSV work.',
     ]),
   ].join(''),
@@ -196,6 +203,7 @@ const bofa = page({
       a: 'No. Bank of America prints MM/DD/YY, so dates convert straight to Excel dates.',
     },
     {
+      // STATEMENT-YEARS
       q: 'What if deposits and withdrawals come out as separate tables?',
       a: 'Bank of America prints them as separate sections, each with its own header and total, so they may come out as separate tables. Choose the one-sheet layout to put every table on one sheet.',
     },
@@ -244,8 +252,10 @@ const wellsFargo = page({
       '<strong>Balance check:</strong> because Wells Fargo prints a balance only at the end of each day, rows without one carry their amounts into the next printed balance. Once the balances tie over a run of rows, each printed daily balance is checked; when one doesn’t tie, PDFCells flags that day’s balance and lists the amounts that could explain it, and names the exact cell when only one fits.',
       '<strong>Signs:</strong> Deposits/Credits and Withdrawals/Debits are separate columns, so keep them separate in Excel or compute <code>Deposits − Withdrawals</code>.',
       '<strong>Summary of checks written</strong> repeats the checks already in Transaction history. Untick that table so checks aren’t counted twice.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> the M/D dates have no year, so OFX, QBO and the Xero CSV aren’t offered for these statements yet.',
     ]),
+    // STATEMENT-YEARS
     yearFix('“January 1, 2016 - January 31, 2016”'),
   ].join(''),
   own: [
@@ -280,7 +290,7 @@ const amex = page({
   description:
     'Convert Amex card statement PDFs to Excel: Payments and Credits vs New Charges, MM/DD/YY dates, the * posting-date marker and wrapped merchant lines.',
   answer:
-    'For the current period and the last six statements, download from your Amex online account as CSV or for Quicken/QuickBooks. For older statements, open the PDF in PDFCells and download Excel: dates are full MM/DD/YY, payments carry a minus sign, and merchant lines that wrap are joined into one row.',
+    'For the last two years, download your transactions from your Amex online account as Excel, CSV or PDF. For older statements, open the PDF in PDFCells and download Excel: dates are full MM/DD/YY, payments carry a minus sign, and merchant lines that wrap are joined into one row.',
   layout: [
     h2('What an American Express statement looks like'),
     table(
@@ -316,16 +326,18 @@ const amex = page({
     h2('Converting it with PDFCells'),
     steps('American Express', 'Statements & Activity'),
     ul([
+      // STATEMENT-YEARS
       '<strong>Dates</strong> become Excel dates, except rows marked with <code>*</code>, which stay as text. Delete the asterisk in the grid before exporting if you want every row as a date.',
       '<strong>Wrapped lines</strong> (location, phone, category) join onto the transaction above. The cleaned payee is built from that joined description, so check it if you use payees for bank rules.',
       '<strong>Signs:</strong> payments are already negative and charges positive, so the sum of the amounts equals New Charges minus Payments/Credits.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> the separate Payments and New Charges sections and the <code>*</code> date marker mean PDFCells can’t tie the statement as one card account yet, so OFX and QBO stay off. Excel and table CSV work.',
     ]),
   ].join(''),
   own: [
     h2('American Express’s own download'),
     p(
-      `Amex says you can download recent activity and the past six billing statements to Quicken, QuickBooks or as a CSV file from your online account (${ext('https://www.americanexpress.com/us/customer-service/faq.download-export-transactions-software.html', 'americanexpress.com')}, checked October 2026). For anything older, the PDF statement is the source.`,
+      `Amex says your previous two years of transactions can be viewed online and downloaded as a PDF, Excel or CSV file (${ext('https://www.americanexpress.com/us/customer-service/faq.transaction-billing-statements-history.html', 'transaction history FAQ')}), and that recent activity and the past six billing statements can be downloaded for Quicken or QuickBooks (${ext('https://www.americanexpress.com/us/customer-service/faq.download-export-transactions-software.html', 'download FAQ')}); both checked October 2026. Older statements, including archived ones, are available as PDFs, which is where a converter comes in.`,
     ),
   ].join(''),
   faq: [
@@ -334,8 +346,8 @@ const amex = page({
       a: 'Amex marks a posting date with *, usually on payments. The other rows show the transaction date.',
     },
     {
-      q: 'Can I get more than six months of Amex transactions as CSV?',
-      a: 'Amex’s own download covers recent activity and the past six statements. For older periods, convert the PDF statements.',
+      q: 'How far back can I download Amex transactions?',
+      a: 'Amex says two years of transactions can be downloaded as Excel, CSV or PDF, and the past six statements for Quicken or QuickBooks. For older periods, convert the archived PDF statements.',
     },
   ],
   related: [
@@ -354,6 +366,7 @@ const citi = page({
   description:
     'Convert Citi credit card statement PDFs to Excel: transaction and post date columns, MM/DD dates without a year and how payments are signed.',
   answer:
+    // STATEMENT-YEARS
     'Open the Citi card statement PDF in PDFCells, check the transaction tables and download Excel. Citi prints both a transaction date and a post date as MM/DD without the year, and payments with a minus sign, so add the year from the billing period and the amounts are ready to sum.',
   layout: [
     h2('What a Citi card statement looks like'),
@@ -381,10 +394,13 @@ const citi = page({
     h2('Converting it with PDFCells'),
     steps('Citi', 'Statements'),
     ul([
+      // STATEMENT-YEARS
       '<strong>Two date columns:</strong> both come out as text such as <code>01/17</code>. Keep the one your books use (usually the post date) and add the year.',
       '<strong>Currency symbols</strong> are stripped and <code>-$133.00</code> becomes −133, so amounts are real numbers.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> the dates have no year, so OFX, QBO and the Xero CSV aren’t offered yet.',
     ]),
+    // STATEMENT-YEARS
     yearFix('the billing period, for example 12/23/14-01/22/15'),
   ].join(''),
   own: [
@@ -415,6 +431,7 @@ const capitalOne = page({
   description:
     'Convert Capital One card statement PDFs to Excel: Trans Date and Post Date as “Aug 6”, credits as “- $12.84”, and how to add the year in Excel.',
   answer:
+    // STATEMENT-YEARS
     'Open the Capital One card statement PDF in PDFCells and download Excel. Capital One prints dates as a month name and day without the year (Aug 6) and credits as “- $12.84”, so the amounts become signed numbers and the dates need the year from the billing cycle.',
   layout: [
     h2('What a Capital One card statement looks like'),
@@ -444,7 +461,9 @@ const capitalOne = page({
     ul([
       '<strong>Signs:</strong> <code>- $12.84</code> is read as −12.84, so credits stay negative and charges positive.',
       '<strong>Fees total:</strong> “Total Fees for This Period” is checked against the fee rows.',
+      // STATEMENT-YEARS
       '<strong>Dates</strong> such as <code>Aug 6</code> come out as text. In Excel, <code>=DATEVALUE(A2&amp;" 2024")</code> turns one into a date in US-English Excel; use the previous year for December rows on a January statement.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> without a year on each date, OFX, QBO and the Xero CSV aren’t offered yet.',
     ]),
   ].join(''),
@@ -457,6 +476,7 @@ const capitalOne = page({
   faq: [
     {
       q: 'Why are Capital One dates text in Excel?',
+      // STATEMENT-YEARS
       a: 'They print as a month and day without a year (Aug 6). Add the year from the billing cycle with DATEVALUE.',
     },
   ],
@@ -476,6 +496,7 @@ const pnc = page({
   description:
     'Convert PNC Virtual Wallet statement PDFs to Excel: Activity Detail sections, amount-before-description columns, unsigned amounts and trailing-minus balances.',
   answer:
+    // STATEMENT-YEARS
     'Open the PNC statement PDF in PDFCells and download Excel. PNC lists activity in sections (deposits, card purchases, electronic deductions) with the amount before the description and no sign, so after converting, negate the withdrawal sections and add the year to the MM/DD dates.',
   layout: [
     h2('What a PNC Virtual Wallet statement looks like'),
@@ -509,8 +530,10 @@ const pnc = page({
       '<strong>Signs:</strong> withdrawals and deductions come out positive, as printed. Multiply those sections by −1 before summing.',
       '<strong>Trailing minus</strong> balances such as <code>33.06-</code> are read as −33.06.',
       '<strong>Daily Balance Detail</strong> is a side-by-side table of balances, not transactions; if it comes out as its own table, untick it, or check that its rows didn’t join the last section.',
+      // STATEMENT-YEARS
       '<strong>Statement formats:</strong> MM/DD dates without a year mean OFX, QBO and the Xero CSV aren’t offered yet.',
     ]),
+    // STATEMENT-YEARS
     yearFix('“For the period 09/25/2025 to 10/24/2025”'),
   ].join(''),
   own: [
@@ -560,10 +583,10 @@ export const BANK_DOWNLOADS: string[][] = [
   ],
   [
     'American Express',
-    'CSV, Quicken, QuickBooks',
-    'Recent activity and the past six statements',
+    'Excel, CSV, PDF; Quicken and QuickBooks',
+    'Two years of transactions; Quicken/QuickBooks for recent activity and the past six statements',
     ext(
-      'https://www.americanexpress.com/us/customer-service/faq.download-export-transactions-software.html',
+      'https://www.americanexpress.com/us/customer-service/faq.transaction-billing-statements-history.html',
       'americanexpress.com',
     ),
   ],
