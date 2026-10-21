@@ -75,6 +75,27 @@ describe('naming never sends text outside marked areas', () => {
     expect(plan[0]?.req).toEqual({ header: ['Fee', ''], rows: [['9', 'Amount']] })
   })
 
+  it('never rebuilds an outside cell from words that only appear apart inside the areas', () => {
+    // An old AI table still holds "1234 5678" from outside the area; inside,
+    // "1234" and "5678" are on different lines.
+    const inside = [w('1234', 10, 50), w('Fee', 100, 50), w('5678', 10, 70)]
+    const d = doc([
+      {
+        regions: [ignoreTop],
+        tables: [
+          table([
+            ['1234 5678', 'Fee'],
+            ['5678', '1234 Fee'],
+          ]),
+        ],
+      },
+    ])
+    const plan = namingPlan(d, () => [w('1234 5678', 10, 5), ...inside])
+    const sent = JSON.stringify(plan.map(p => p.req))
+    expect(sent).not.toContain('1234 5678')
+    expect(plan[0]?.req).toEqual({ header: ['', 'Fee'], rows: [['5678', '1234 Fee']] })
+  })
+
   it('sends nothing from a page whose areas match nothing, or that has no words to check', () => {
     const p = { n: 1, regions: [section] } as PageState
     expect(allowedWords(p, words)).toBeNull()

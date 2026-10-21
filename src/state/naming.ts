@@ -1,14 +1,15 @@
 // Naming untitled tables with one cheap, text-only AI call per document.
 //
 // Privacy: no page image is ever sent, only each table's header and up to
-// three rows. On a page with marked areas, a cell is sent only when every
-// word of it is among the words inside those areas (the same filter aiHint
-// uses); any other cell is sent blank. A page with areas whose words can't be
+// three rows. On a page with marked areas, a cell is sent only when its
+// whole text is a run of words on a line inside those areas (the text aiHint
+// sends); any other cell is sent blank. A page with areas whose words can't be
 // checked (a scan without OCR words, a marker that isn't on the page) sends
 // nothing at all, like NOTHING_MARKED. Notes and the page text never go.
 
 import { request } from '@/lib/api'
 import type { DocSource } from '@/lib/document'
+import { linesToText } from '@/lib/layout'
 import { applyRegions, regionApplies } from '@/lib/region'
 import type { Table, Word } from '@/lib/types'
 
@@ -42,31 +43,45 @@ export const nameApi: NameApi = tables =>
     { byok: true },
   )
 
-const tokens = (s: string) => s.split(/\s+/).filter(Boolean)
+const norm = (s: string) => s.replace(/\s+/g, ' ').trim()
 
 /**
- * The words a page may send: every word ('all') when it has no areas, the
- * words inside its areas when it has some, or null when it has areas but no
- * words to check them against (nothing may be sent).
+ * What a page may send: anything ('all') when it has no areas; with areas,
+ * the lines of text inside them, exactly as aiHint would send them; or null
+ * when it has areas but no words to check against (nothing may be sent).
  */
-export function allowedWords(page: PageState, words: Word[]): Set<string> | 'all' | null {
+export type Allowed = 'all' | null | { lines: string[] }
+
+export function allowedWords(page: PageState, words: Word[]): Allowed {
   const regions = (page.regions ?? []).filter(r => regionApplies(r, page.n))
   if (!regions.length) return 'all'
   if (!words.length) return null
   const kept = applyRegions(words, regions, page.n, new Set(page.openSections)).words
   if (!kept.length) return null
-  return new Set(kept.flatMap(w => tokens(w.text)))
+  return {
+    lines: linesToText(kept)
+      .split('\n')
+      .map(l => ` ${norm(l)} `),
+  }
 }
 
 const clip = (s: string) => {
-  const one = s.replace(/\s+/g, ' ').trim()
+  const one = norm(s)
   return one.length > NAME_MAX_CELL ? one.slice(0, NAME_MAX_CELL) : one
 }
 
-/** A table as a naming request, or null when nothing of it may be sent. */
-export function nameRequestFor(t: Table, allowed: Set<string> | 'all' | null): NameTable | null {
+/**
+ * A table as a naming request, or null when nothing of it may be sent. On a
+ * page with areas a cell goes only when its whole text, as one run of words,
+ * is on a line inside the areas: every string sent is part of what aiHint
+ * would send. Words that only appear separately don't count.
+ */
+export function nameRequestFor(t: Table, allowed: Allowed): NameTable | null {
   if (allowed === null) return null
-  const cell = (c: string) => (allowed === 'all' || tokens(c).every(w => allowed.has(w)) ? c : '')
+  const cell = (c: string) => {
+    const s = norm(c)
+    return allowed === 'all' || !s || allowed.lines.some(l => l.includes(` ${s} `)) ? c : ''
+  }
   const width = Math.min(NAME_MAX_COLUMNS, Math.max(0, ...t.rows.map(r => r.length)))
   const cols = (r: string[]) => Array.from({ length: width }, (_, i) => clip(cell(r[i] ?? '')))
   const head = t.rows.slice(0, t.headerRows)
@@ -103,7 +118,7 @@ export function namingPlan(
   doc: DocState,
   wordsOf: (p: PageState) => Word[],
 ): { index: number; table: Table; req: NameTable }[] {
-  const allowed = new Map<number, Set<string> | 'all' | null>()
+  const allowed = new Map<number, Allowed>()
   return untitled(doc)
     .flatMap(({ index, table }) => {
       const page = doc.pages[index]

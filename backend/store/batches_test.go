@@ -43,7 +43,7 @@ func paidPages(n int, hold int64) []BatchPage {
 func submitted(t *testing.T, s *Store, u string, q FreeQuota, pages []BatchPage) (string, *BatchReservation) {
 	t.Helper()
 	ctx := context.Background()
-	r, err := s.ReserveBatch(ctx, u, "fast", q, pages)
+	r, err := s.ReserveBatch(ctx, u, "fast", "", q, pages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestBatchHoldSurvivesStaleHoldSweep(t *testing.T) {
 func TestBatchReservesAllOrNothing(t *testing.T) {
 	s, u := funded(t, 250_000)
 	ctx := context.Background()
-	if _, err := s.ReserveBatch(ctx, u, "accurate", noFree, paidPages(3, 100_000)); !errors.Is(err, ErrInsufficientCredits) {
+	if _, err := s.ReserveBatch(ctx, u, "accurate", "", noFree, paidPages(3, 100_000)); !errors.Is(err, ErrInsufficientCredits) {
 		t.Fatalf("3 × 100000 against 250000: err=%v", err)
 	}
 	if got := balanceOf(t, s, u); got != 250_000 {
@@ -105,7 +105,7 @@ func TestBatchReservesAllOrNothing(t *testing.T) {
 	if k := ledgerKinds(t, s, u); k["batch_hold"] != 0 {
 		t.Fatalf("refused batch left holds: %v", k)
 	}
-	r, err := s.ReserveBatch(ctx, u, "accurate", noFree, paidPages(2, 100_000))
+	r, err := s.ReserveBatch(ctx, u, "accurate", "", noFree, paidPages(2, 100_000))
 	if err != nil || r.Balance != 50_000 || len(r.Pages) != 2 || r.Pages[0].Source != "credits" {
 		t.Fatalf("2 pages: %+v %v", r, err)
 	}
@@ -119,7 +119,7 @@ func TestConcurrentBatchesCannotOverspend(t *testing.T) {
 	ok := 0
 	for range 10 {
 		wg.Go(func() {
-			_, err := s.ReserveBatch(ctx, u, "max", noFree, paidPages(3, 100_000))
+			_, err := s.ReserveBatch(ctx, u, "max", "", noFree, paidPages(3, 100_000))
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
@@ -263,7 +263,7 @@ func TestBatchFreeQuotaAndNegativeBalance(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE accounts SET balance_micros = -1 WHERE user_id = $1`, u); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ReserveBatch(ctx, u, "fast", q, pages[:1]); !errors.Is(err, ErrFreePaused) {
+	if _, err := s.ReserveBatch(ctx, u, "fast", "", q, pages[:1]); !errors.Is(err, ErrFreePaused) {
 		t.Fatalf("negative balance: %v", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestBatchFreeQuotaAndNegativeBalance(t *testing.T) {
 func TestUnsubmittedBatchIsReleased(t *testing.T) {
 	s, u := funded(t, 300_000)
 	ctx := context.Background()
-	r, err := s.ReserveBatch(ctx, u, "accurate", noFree, paidPages(2, 100_000))
+	r, err := s.ReserveBatch(ctx, u, "accurate", "", noFree, paidPages(2, 100_000))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,18 +283,64 @@ func TestUnsubmittedBatchIsReleased(t *testing.T) {
 		t.Fatalf("after fail %d", got)
 	}
 	// A crash between reserving and submitting: released after reservedTTL.
-	if _, err = s.ReserveBatch(ctx, u, "accurate", noFree, paidPages(2, 100_000)); err != nil {
+	if _, err = s.ReserveBatch(ctx, u, "accurate", "", noFree, paidPages(2, 100_000)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE ai_batches SET created_at = now() - interval '16 minutes' WHERE user_id = $1 AND state = 'reserved'`, u); err != nil {
 		t.Fatal(err)
 	}
-	r3, err := s.ReserveBatch(ctx, u, "accurate", noFree, paidPages(3, 100_000))
-	if err != nil || r3.Balance != 0 {
-		t.Fatalf("stale reservation not released before the next batch: %+v %v", r3, err)
+	// Released by ordinary account recovery (/api/me), with no new batch.
+	if released, err := s.ReleaseStaleReservations(ctx, u); err != nil || released != 200_000 {
+		t.Fatalf("released %d %v", released, err)
+	}
+	if got := balanceOf(t, s, u); got != 300_000 {
+		t.Fatalf("after stale release %d", got)
+	}
+	if released, _ := s.ReleaseStaleReservations(ctx, u); released != 0 {
+		t.Fatalf("released twice: %d", released)
 	}
 	if err := s.MarkBatchSubmitted(ctx, u, r.BatchID, "msgbatch_late_"+u); !errors.Is(err, ErrNoBatch) {
 		t.Fatalf("a failed batch can't be marked submitted: %v", err)
+	}
+}
+
+// A retry after a lost response holds nothing new, even when retries race.
+func TestDuplicateSubmissionHoldsOnce(t *testing.T) {
+	s, u := funded(t, 1_000_000)
+	ctx := context.Background()
+	pages := paidPages(2, 100_000)
+	pages[0].Key, pages[1].Key = "p1", "p2"
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	ok, dup := 0, 0
+	for range 5 {
+		wg.Go(func() {
+			_, err := s.ReserveBatch(ctx, u, "accurate", "sub-"+u, noFree, pages)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				ok++
+			case errors.Is(err, ErrDuplicateSubmission):
+				dup++
+			default:
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if ok != 1 || dup != 4 {
+		t.Fatalf("ok %d dup %d", ok, dup)
+	}
+	if got := balanceOf(t, s, u); got != 800_000 {
+		t.Fatalf("balance %d, want one hold of 200000", got)
+	}
+	sub, err := s.BatchBySubmission(ctx, u, "sub-"+u)
+	if err != nil || sub.State != "reserved" || len(sub.Pages) != 2 || sub.Pages[1].Key != "p2" {
+		t.Fatalf("%+v %v", sub, err)
+	}
+	if _, err := s.BatchBySubmission(ctx, u+"_other", "sub-"+u); !errors.Is(err, ErrNoBatch) {
+		t.Fatalf("another user's submission: %v", err)
 	}
 }
 

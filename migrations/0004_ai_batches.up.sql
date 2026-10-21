@@ -15,16 +15,23 @@ CREATE TABLE IF NOT EXISTS ai_batches (
     -- failed: never accepted, every hold released
     state              text        NOT NULL DEFAULT 'reserved'
         CHECK (state IN ('reserved', 'submitted', 'settled', 'failed')),
+    -- The browser's id for this submission, so a retry after a lost response
+    -- finds the batch it already paid for instead of sending the pages twice.
+    submission_id      text        NOT NULL DEFAULT '',
     created_at         timestamptz NOT NULL DEFAULT now(),
     settled_at         timestamptz
 );
 CREATE INDEX IF NOT EXISTS ai_batches_user_state ON ai_batches (user_id, state, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ai_batches_submission ON ai_batches (user_id, submission_id)
+    WHERE submission_id <> '';
 
 CREATE TABLE IF NOT EXISTS ai_batch_items (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     batch_id       bigint  NOT NULL REFERENCES ai_batches (id) ON DELETE CASCADE,
     -- Server-generated, unique within the batch; Anthropic echoes it back.
     custom_id      text    NOT NULL,
+    -- The browser's key for the page (opaque, e.g. "p12").
+    item_key       text    NOT NULL DEFAULT '',
     page_number    integer NOT NULL DEFAULT 0,
     source         text    NOT NULL CHECK (source IN ('free', 'credits')),
     -- The page's 'batch_hold' or 'free' ledger row. No foreign key, so these

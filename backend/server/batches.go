@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -28,6 +29,7 @@ import (
 func (s *Server) mountAI(r chi.Router, auth func(http.Handler) http.Handler) {
 	r.With(secure(120*time.Second), requireJSON, auth).Post("/batches", s.submitBatch)
 	r.With(secure(120*time.Second), auth).Get("/batches/{id}", s.batchStatus)
+	r.With(secure(60*time.Second), auth).Get("/batches/submission/{sid}", s.submissionStatus)
 	r.With(secure(60*time.Second), requireJSON, auth).Post("/name-tables", s.nameTables)
 }
 
@@ -39,7 +41,12 @@ type batchPageIn struct {
 type batchSubmitIn struct {
 	Tier  extract.Tier  `json:"tier"`
 	Pages []batchPageIn `json:"pages"`
+	// The browser's id for this submission. A retry with the same id (after a
+	// lost response) returns the batch already paid for instead of a new one.
+	Submission string `json:"submission"`
 }
+
+var submissionPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{0,64}$`)
 
 type batchPageOut struct {
 	Key      string `json:"key"`
@@ -89,6 +96,10 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid", fmt.Sprintf("unknown tier %q", in.Tier))
 		return
 	}
+	if !submissionPattern.MatchString(in.Submission) {
+		writeErr(w, http.StatusBadRequest, "invalid", "bad submission id")
+		return
+	}
 	if len(in.Pages) == 0 || len(in.Pages) > extract.BatchMaxItems {
 		writeErr(w, http.StatusBadRequest, "invalid", fmt.Sprintf("send 1 to %d pages at a time", extract.BatchMaxItems))
 		return
@@ -136,7 +147,9 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	// Not cancelled when the browser goes away: once credits are held the
+	// submission must finish and be recorded (a retry then finds it).
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 90*time.Second)
 	defer cancel()
 
 	if st == nil {
@@ -164,15 +177,23 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pages[i] = store.BatchPage{
-			CustomID: v.customID, PageNumber: v.req.PageNumber,
+			CustomID: v.customID, Key: v.key, PageNumber: v.req.PageNumber,
 			TryFree: in.Tier == extract.TierFast, PaidHold: pricing.WithMarkup(worst, s.cfg.MarkupBps),
 		}
 	}
-	res, err := st.ReserveBatch(r.Context(), uid, string(in.Tier), store.FreeQuota{
+	// Credits of a crashed earlier submission come back first, in their own
+	// transaction, so they count towards this one.
+	if _, err := st.ReleaseStaleReservations(r.Context(), uid); err != nil {
+		s.log.Error("release stale batch reservations", "err", err)
+	}
+	res, err := st.ReserveBatch(r.Context(), uid, string(in.Tier), in.Submission, store.FreeQuota{
 		PerUser: s.cfg.FreePagesPerDay, PerIP: s.cfg.FreePagesPerIP, Global: s.cfg.FreePagesGlobal,
 		IPHash: ipHash(s.cfg.IPHashSecret, clientIP(r)),
 	}, pages)
 	switch {
+	case errors.Is(err, store.ErrDuplicateSubmission):
+		s.writeSubmission(w, r, st, uid, in.Submission)
+		return
 	case errors.Is(err, store.ErrFreePaused):
 		writeErr(w, http.StatusPaymentRequired, "balance_negative", "free AI pages are paused while your credit balance is negative; add credits to settle it")
 		return
@@ -193,10 +214,11 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 		items[i] = batchItemIn{customID: v.customID, req: v.req}
 		out.Pages = append(out.Pages, batchPageOut{Key: v.key, CustomID: v.customID, Source: rp.Source, Held: rp.Held})
 	}
-	// Money is held from here: undo it on a fresh context if anything fails.
-	undo, undoCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 15*time.Second)
-	defer undoCancel()
 	id, err := submitItems(ctx, s.cfg.AnthropicKey, items)
+	// Money is held from here: record or undo it on a fresh context, started
+	// only now so a slow submission can't use up its budget.
+	undo, undoCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 20*time.Second)
+	defer undoCancel()
 	if err != nil {
 		if ferr := st.FailBatch(undo, uid, res.BatchID); ferr != nil {
 			s.log.Error("release batch holds", "err", ferr, "batch", res.BatchID)
@@ -219,6 +241,56 @@ func (s *Server) submitBatch(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("batch submitted", "anthropic_batch", id, "pages", len(items), "tier", in.Tier,
 		"request_id", middleware.GetReqID(r.Context()))
 	out.ID, out.Balance = id, &res.Balance
+	writeJSON(w, http.StatusOK, out)
+}
+
+// submissionStatus tells the browser what became of a submission whose
+// response it never got: the batch it is in, still being sent (409), or not
+// sent at all (every page rejected, nothing held). Hosted only: a
+// bring-your-own-key submission isn't recorded.
+func (s *Server) submissionStatus(w http.ResponseWriter, r *http.Request) {
+	uid := userID(r)
+	if !s.hostedReady(w, r, uid) {
+		return
+	}
+	sid := chi.URLParam(r, "sid")
+	if sid == "" || !submissionPattern.MatchString(sid) {
+		notFound(w, r)
+		return
+	}
+	st, err := s.db(r.Context())
+	if err != nil {
+		s.internal(w, r, "database unavailable", err)
+		return
+	}
+	s.writeSubmission(w, r, st, uid, sid)
+}
+
+func (s *Server) writeSubmission(w http.ResponseWriter, r *http.Request, st *store.Store, uid, sid string) {
+	sub, err := st.BatchBySubmission(r.Context(), uid, sid)
+	if errors.Is(err, store.ErrNoBatch) {
+		notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.internal(w, r, "could not load submission", err)
+		return
+	}
+	out := batchSubmitOut{Pages: []batchPageOut{}, Rejected: []batchRejected{}}
+	switch sub.State {
+	case "reserved":
+		writeErr(w, http.StatusConflict, "submitting", "this submission is still being sent; ask again shortly")
+		return
+	case "failed":
+		for _, p := range sub.Pages {
+			out.Rejected = append(out.Rejected, batchRejected{Key: p.Key, Error: "it wasn’t sent, so nothing was charged"})
+		}
+	default:
+		out.ID = sub.AnthropicID
+		for _, p := range sub.Pages {
+			out.Pages = append(out.Pages, batchPageOut{Key: p.Key, CustomID: p.CustomID, Source: p.Source, Held: p.Held})
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -390,6 +462,9 @@ func (s *Server) settleBatch(ctx context.Context, st *store.Store, uid, id strin
 func (s *Server) sweepBatches(ctx context.Context, st *store.Store, uid string) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	if _, err := st.ReleaseStaleReservations(ctx, uid); err != nil {
+		s.log.Error("release stale batch reservations", "err", err)
+	}
 	ids, err := st.UnsettledBatches(ctx, uid, 30*time.Minute, 3)
 	if err != nil {
 		s.log.Error("list unsettled batches", "err", err)

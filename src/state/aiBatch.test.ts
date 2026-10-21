@@ -56,6 +56,7 @@ function fakeApi(over: Partial<BatchApi> = {}) {
       return Promise.resolve(res)
     },
     status: () => Promise.reject(new Error('unused')),
+    lookup: () => Promise.reject(new Error('unused')),
     ...over,
   }
   return { api, submits }
@@ -76,12 +77,17 @@ describe('sendPages', () => {
     expect(sent).toBe(SUBMIT_PAGES + 3)
     expect(submits.map(s => s.pages.length)).toEqual([SUBMIT_PAGES, 3])
     const batched = actions.filter(a => a.type === 'batched')
-    expect(batched).toHaveLength(SUBMIT_PAGES + 3)
-    expect(batched[0]).toEqual({
+    // Each page waits under its submission id first, then under its batch.
+    const pending = batched.filter(a => a.batch.id === '')
+    const known = batched.filter(a => a.batch.id !== '')
+    expect(pending).toHaveLength(SUBMIT_PAGES + 3)
+    expect(known).toHaveLength(SUBMIT_PAGES + 3)
+    expect(known[0]).toMatchObject({
       type: 'batched',
       index: 0,
       batch: { id: 'msgbatch_1', customId: 'p0', byok: false, tier: 'accurate' },
     })
+    expect(known[0]?.batch.submission).toBe(pending[0]?.batch.submission)
   })
 
   it('splits by size so a submission stays under the body limit', async () => {
@@ -183,6 +189,7 @@ describe('sendPages', () => {
             rejected: pages.map(p => ({ key: p.key, error: 'too small' })),
           }),
         status: () => Promise.reject(new Error('unused')),
+        lookup: () => Promise.reject(new Error('unused')),
       },
       byok: false,
     })
@@ -234,6 +241,7 @@ describe('pollBatches', () => {
   const statusApi = (res: StatusResponse | Error): BatchApi => ({
     submit: () => Promise.reject(new Error('unused')),
     status: () => (res instanceof Error ? Promise.reject(res) : Promise.resolve(res)),
+    lookup: () => Promise.reject(new Error('unused')),
   })
 
   it('leaves pages waiting while the batch runs', async () => {
@@ -304,6 +312,81 @@ describe('pollBatches', () => {
       api: statusApi(new ApiError(0, 'network', 'offline')),
     })
     expect(left).toBe(1)
+  })
+})
+
+describe('a submission whose answer never came', () => {
+  const lost = (n: number, sentAt: number): PageState =>
+    page(n, {
+      status: 'batched',
+      aiBatch: { id: '', customId: '', byok: false, tier: 'fast', submission: 'sX', sentAt },
+    })
+
+  it('keeps the pages waiting instead of failing them, so they are never sent again', async () => {
+    const actions: Action[] = []
+    const { api } = fakeApi({
+      submit: () => Promise.reject(new ApiError(0, 'network', 'offline')),
+    })
+    const sent = await sendPages([page(1), page(2)], {
+      tier: 'fast',
+      build: p => Promise.resolve(req(p.n)),
+      dispatch: a => actions.push(a),
+      api,
+      byok: false,
+    })
+    expect(sent).toBe(2)
+    expect(actions.some(a => a.type === 'status' && a.status === 'error')).toBe(false)
+    const d = batchWith([page(1), page(2)], 'reading').items[0]?.doc
+    if (!d) throw new Error('no doc')
+    const after = actions.reduce(reducer, d)
+    // Saved like this, a reload can't read them again.
+    const item = batchWith(after.pages, 'checked').items[0]
+    if (!item) throw new Error('no item')
+    expect(toRead(item, 'ai')).toEqual([])
+  })
+
+  it('finds the batch it went into after a reload', async () => {
+    let state = batchWith([lost(1, 0), lost(2, 0)], 'checked')
+    const looked: string[] = []
+    await pollBatches(state, a => (state = batchReducer(state, a)), {
+      now: () => 10 * 60_000,
+      api: {
+        submit: () => Promise.reject(new Error('never sent again')),
+        status: () => Promise.reject(new Error('unused')),
+        lookup: sid => {
+          looked.push(sid)
+          return Promise.resolve({
+            id: 'msgbatch_9',
+            pages: [
+              { key: 'p1', custom_id: 'p0', source: 'credits', held_micros: 1 },
+              { key: 'p2', custom_id: 'p1', source: 'credits', held_micros: 1 },
+            ],
+            rejected: [],
+          })
+        },
+      },
+    })
+    expect(looked).toEqual(['sX'])
+    const pages = state.items[0]?.doc.pages ?? []
+    expect(pages.map(p => [p.status, p.aiBatch?.id, p.aiBatch?.customId])).toEqual([
+      ['batched', 'msgbatch_9', 'p0'],
+      ['batched', 'msgbatch_9', 'p1'],
+    ])
+  })
+
+  it('says it was never sent when the server has no record, and waits while it might be in flight', async () => {
+    let state = batchWith([lost(1, 0)], 'checked')
+    const api: BatchApi = {
+      submit: () => Promise.reject(new Error('unused')),
+      status: () => Promise.reject(new Error('unused')),
+      lookup: () => Promise.reject(new ApiError(404, 'not_found', 'none')),
+    }
+    expect(
+      await pollBatches(state, a => (state = batchReducer(state, a)), { api, now: () => 1 }),
+    ).toBe(1)
+    expect(state.items[0]?.doc.pages[0]?.status).toBe('batched')
+    await pollBatches(state, a => (state = batchReducer(state, a)), { api, now: () => 10 * 60_000 })
+    expect(state.items[0]?.doc.pages[0]?.error).toBe(BATCH_ERROR.not_sent)
   })
 })
 

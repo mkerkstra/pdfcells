@@ -112,6 +112,44 @@ func batchBody(t *testing.T, tier string, n int) string {
 	return `{"tier":"` + tier + `","pages":[` + strings.Join(pages, ",") + `]}`
 }
 
+func withSubmission(body, sid string) string {
+	return strings.Replace(body, `{"tier"`, `{"submission":"`+sid+`","tier"`, 1)
+}
+
+// A retry after a lost response finds the batch already paid for: nothing
+// new is held or sent.
+func TestRetriedSubmissionIsNotSentTwice(t *testing.T) {
+	uid := "user_bd_" + time.Now().Format("150405.000000000")
+	h := hostedServer(t, Config{ExtractPerMinute: 30, BatchPagesPerMinute: 300}, uid)
+	f := newFakeBatches(t)
+	st := ledgerStore(t)
+	if _, err := st.CreditTopup(context.Background(), uid, "cs_"+uid, "pi_"+uid, 1_000_000); err != nil {
+		t.Fatal(err)
+	}
+	sid := "s" + strings.NewReplacer(".", "").Replace(uid)
+	if rec, _ := do(t, h, http.MethodGet, "/api/batches/submission/"+sid, ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown submission: %d", rec.Code)
+	}
+	body := withSubmission(batchBody(t, "accurate", 2), sid)
+	rec, first := do(t, h, http.MethodPost, "/api/batches", body)
+	if rec.Code != 200 || first["id"] != f.id {
+		t.Fatalf("first: %d %v", rec.Code, first)
+	}
+	after := balance(t, st, uid)
+	rec, again := do(t, h, http.MethodPost, "/api/batches", body)
+	if rec.Code != 200 || again["id"] != f.id || f.creates != 1 || balance(t, st, uid) != after {
+		t.Fatalf("retry: %d %v creates=%d", rec.Code, again, f.creates)
+	}
+	pages, _ := again["pages"].([]any)
+	if len(pages) != 2 || pages[0].(map[string]any)["key"] != "f1-p1" {
+		t.Fatalf("retry pages %v", again["pages"])
+	}
+	rec, looked := do(t, h, http.MethodGet, "/api/batches/submission/"+sid, "")
+	if rec.Code != 200 || looked["id"] != f.id {
+		t.Fatalf("lookup: %d %v", rec.Code, looked)
+	}
+}
+
 func ledgerStore(t *testing.T) *store.Store {
 	t.Helper()
 	st, err := store.Open(context.Background(), os.Getenv("TEST_DATABASE_URL"), "")

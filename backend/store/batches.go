@@ -30,9 +30,14 @@ var ErrNoBatch = errors.New("no such batch")
 // accepted (a crash between reserving and submitting).
 const reservedTTL = 15 * time.Minute
 
+// ErrDuplicateSubmission means this submission id was already reserved;
+// nothing new was held. Look it up with BatchBySubmission.
+var ErrDuplicateSubmission = errors.New("submission already received")
+
 // BatchPage is one page to reserve.
 type BatchPage struct {
 	CustomID   string
+	Key        string // the browser's key for the page
 	PageNumber int
 	// TryFree uses the daily free quota first (Fast pages), falling through
 	// to credits when a per-user, per-IP or global limit is used up.
@@ -56,14 +61,22 @@ type BatchReservation struct {
 }
 
 // ReserveBatch holds credits for every page of one submission, or for none.
-func (s *Store) ReserveBatch(ctx context.Context, userID, tier string, q FreeQuota, pages []BatchPage) (*BatchReservation, error) {
+// A non-empty submission id makes it idempotent: a second call with the same
+// id holds nothing and returns ErrDuplicateSubmission. Calls for one user
+// are serialized by the account lock, so concurrent retries can't both hold.
+func (s *Store) ReserveBatch(ctx context.Context, userID, tier, submission string, q FreeQuota, pages []BatchPage) (*BatchReservation, error) {
 	out := &BatchReservation{}
 	err := s.tx(ctx, userID, func(tx pgx.Tx, balance int64) error {
-		released, err := releaseReservedTx(ctx, tx, userID, reservedTTL)
-		if err != nil {
-			return err
+		if submission != "" {
+			var dup bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_batches WHERE user_id = $1 AND submission_id = $2)`,
+				userID, submission).Scan(&dup); err != nil {
+				return err
+			}
+			if dup {
+				return ErrDuplicateSubmission
+			}
 		}
-		balance += released
 		var held int64
 		ledgerIDs := make([]int64, len(pages))
 		for i, p := range pages {
@@ -94,17 +107,18 @@ func (s *Store) ReserveBatch(ctx context.Context, userID, tier string, q FreeQuo
 			}
 			out.Pages = append(out.Pages, rp)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE accounts SET balance_micros = balance_micros - $2 + $3 WHERE user_id = $1`, userID, held, released); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE accounts SET balance_micros = balance_micros - $2 WHERE user_id = $1`, userID, held); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO ai_batches (user_id, tier) VALUES ($1, $2) RETURNING id`, userID, tier).Scan(&out.BatchID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO ai_batches (user_id, tier, submission_id) VALUES ($1, $2, $3) RETURNING id`,
+			userID, tier, submission).Scan(&out.BatchID); err != nil {
 			return err
 		}
 		for i, p := range pages {
 			rp := out.Pages[i]
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO ai_batch_items (batch_id, custom_id, page_number, source, ledger_id, held_micros)
-				VALUES ($1, $2, $3, $4, $5, $6)`, out.BatchID, p.CustomID, p.PageNumber, rp.Source, ledgerIDs[i], rp.Held); err != nil {
+				INSERT INTO ai_batch_items (batch_id, custom_id, item_key, page_number, source, ledger_id, held_micros)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)`, out.BatchID, p.CustomID, p.Key, p.PageNumber, rp.Source, ledgerIDs[i], rp.Held); err != nil {
 				return err
 			}
 		}
@@ -144,6 +158,69 @@ func (s *Store) FailBatch(ctx context.Context, userID string, batchID int64) err
 		_, err = tx.Exec(ctx, `UPDATE accounts SET balance_micros = balance_micros + $2 WHERE user_id = $1`, userID, released)
 		return err
 	})
+}
+
+// ReleaseStaleReservations gives back the credits of the user's batches that
+// were reserved but never accepted by Anthropic within reservedTTL (a crash
+// between reserving and submitting). Called from /api/me and before every
+// submission, in its own transaction so a refused reservation can't undo it.
+func (s *Store) ReleaseStaleReservations(ctx context.Context, userID string) (int64, error) {
+	var released int64
+	err := s.tx(ctx, userID, func(tx pgx.Tx, _ int64) error {
+		var err error
+		if released, err = releaseReservedTx(ctx, tx, userID, reservedTTL); err != nil || released == 0 {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE accounts SET balance_micros = balance_micros + $2 WHERE user_id = $1`, userID, released)
+		return err
+	})
+	return released, err
+}
+
+// SubmissionPage is one page of a submission, by the browser's key.
+type SubmissionPage struct {
+	Key      string
+	CustomID string
+	Source   string
+	Held     int64
+}
+
+// Submission is what a submission id became.
+type Submission struct {
+	AnthropicID string // "" unless accepted
+	State       string // reserved | submitted | settled | failed
+	Pages       []SubmissionPage
+}
+
+// BatchBySubmission finds the user's batch for a submission id.
+func (s *Store) BatchBySubmission(ctx context.Context, userID, submission string) (*Submission, error) {
+	if submission == "" {
+		return nil, ErrNoBatch
+	}
+	sub := &Submission{}
+	var id int64
+	var anthropicID *string
+	err := s.pool.QueryRow(ctx, `SELECT id, anthropic_batch_id, state FROM ai_batches WHERE user_id = $1 AND submission_id = $2`,
+		userID, submission).Scan(&id, &anthropicID, &sub.State)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoBatch
+	}
+	if err != nil {
+		return nil, err
+	}
+	if anthropicID != nil {
+		sub.AnthropicID = *anthropicID
+	}
+	rows, err := s.pool.Query(ctx, `SELECT item_key, custom_id, source, held_micros FROM ai_batch_items WHERE batch_id = $1 ORDER BY id`, id)
+	if err != nil {
+		return nil, err
+	}
+	sub.Pages, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (SubmissionPage, error) {
+		var p SubmissionPage
+		err := r.Scan(&p.Key, &p.CustomID, &p.Source, &p.Held)
+		return p, err
+	})
+	return sub, err
 }
 
 // releaseReservedTx fails the user's batches still 'reserved' after ttl and

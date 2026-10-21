@@ -57,20 +57,35 @@ export interface StatusResponse {
 
 /** The two calls the batch path makes, injectable for tests. */
 export interface BatchApi {
-  submit(tier: Tier, pages: BatchPageIn[], byok: boolean): Promise<SubmitResponse>
+  submit(
+    tier: Tier,
+    pages: BatchPageIn[],
+    byok: boolean,
+    submission: string,
+  ): Promise<SubmitResponse>
   status(id: string, byok: boolean): Promise<StatusResponse>
+  /** What a hosted submission became; 404 when it never arrived, 409 while it's being sent. */
+  lookup(submission: string): Promise<SubmitResponse>
 }
 
 export const batchApi: BatchApi = {
-  submit: (tier, pages, byok) =>
+  submit: (tier, pages, byok, submission) =>
     request<SubmitResponse>(
       '/api/batches',
-      { method: 'POST', body: JSON.stringify({ tier, pages }) },
+      { method: 'POST', body: JSON.stringify({ tier, pages, submission }) },
       { byok },
     ),
   status: (id, byok) =>
     request<StatusResponse>(`/api/batches/${encodeURIComponent(id)}`, {}, { byok }),
+  lookup: submission =>
+    request<SubmitResponse>(`/api/batches/submission/${encodeURIComponent(submission)}`),
 }
+
+/** A response not heard back within this long is looked up. */
+export const LOOKUP_AFTER_MS = 5 * 60_000
+
+export const newSubmissionId = () =>
+  `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`
 
 /** What the person sees for a page the batch didn't read. */
 export const BATCH_ERROR: Record<string, string> = {
@@ -83,6 +98,9 @@ export const BATCH_ERROR: Record<string, string> = {
   truncated: 'This page has more table text than AI can return at once. Read it with OCR instead.',
   unreadable: 'The AI model’s answer for this page couldn’t be read. Read it again.',
   batch_gone: 'This batch’s results are no longer available. Read the page again.',
+  not_sent: 'This page wasn’t sent, so nothing was charged. Read it again.',
+  byok_unknown:
+    'The connection dropped while this page was being sent with your API key, so it may be in a batch on your Anthropic account. Read it again if you need it.',
 }
 
 const batchError = (code: string | undefined) =>
@@ -103,6 +121,7 @@ export interface SendOptions {
   onNeedCredits?: () => void
   /** Waits between retries after the server says to slow down. */
   wait?: (ms: number) => Promise<void>
+  now?: () => number
 }
 
 /**
@@ -114,6 +133,7 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
   const api = o.api ?? batchApi
   const byok = o.byok ?? getByok() !== ''
   const wait = o.wait ?? pause
+  const now = o.now ?? Date.now
   let chunk: { page: PageState; req: BatchPageIn }[] = []
   let bytes = 0
   let sent = 0
@@ -130,6 +150,16 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
       group.forEach(c => fail(c.page, stopped))
       return
     }
+    // Saved with the batch before sending: if the answer never arrives, the
+    // pages wait under this id and are looked up rather than sent again.
+    const submission = newSubmissionId()
+    if (!byok)
+      for (const c of group)
+        o.dispatch({
+          type: 'batched',
+          index: c.page.n - 1,
+          batch: { id: '', customId: '', byok, tier: o.tier, submission, sentAt: now() },
+        })
     let res: SubmitResponse | null = null
     for (let attempt = 0; !res; attempt++) {
       try {
@@ -137,6 +167,7 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
           o.tier,
           group.map(c => c.req),
           byok,
+          submission,
         )
       } catch (e) {
         if (e instanceof ApiError && e.code === 'rate_limited' && attempt < 5) {
@@ -144,6 +175,14 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
           continue
         }
         const msg = e instanceof Error ? e.message : String(e)
+        // No answer, or the server failed part-way: the pages may be in a
+        // batch. Hosted ones stay waiting and are looked up later.
+        const unknown =
+          !(e instanceof ApiError) || e.status === 0 || e.status >= 500 || e.status === 409
+        if (unknown && !byok) {
+          sent += group.length
+          return
+        }
         if (
           e instanceof ApiError &&
           (e.code === 'insufficient_credits' || e.code === 'balance_negative')
@@ -151,7 +190,7 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
           stopped = msg
           o.onNeedCredits?.()
         }
-        group.forEach(c => fail(c.page, msg))
+        group.forEach(c => fail(c.page, unknown ? batchError('byok_unknown') : msg))
         return
       }
     }
@@ -159,7 +198,13 @@ export async function sendPages(pages: PageState[], o: SendOptions): Promise<num
     for (const p of res.pages) {
       const page = byKey.get(p.key)
       if (!page) continue
-      const batch: AiBatchRef = { id: res.id, customId: p.custom_id, byok, tier: o.tier }
+      const batch: AiBatchRef = {
+        id: res.id,
+        customId: p.custom_id,
+        byok,
+        tier: o.tier,
+        submission,
+      }
       o.dispatch({ type: 'batched', index: page.n - 1, batch })
       sent++
     }
@@ -219,17 +264,65 @@ export function batchedPages(
 export async function pollBatches(
   state: BatchState,
   dispatch: (a: BatchAction) => void,
-  opts: { api?: BatchApi; onBalance?: (micros: number) => void } = {},
+  opts: { api?: BatchApi; onBalance?: (micros: number) => void; now?: () => number } = {},
 ): Promise<number> {
   const api = opts.api ?? batchApi
+  const now = opts.now ?? Date.now
   const waiting = batchedPages(state)
   const byBatch = new Map<string, typeof waiting>()
+  const unsure = new Map<string, typeof waiting>()
   for (const w of waiting) {
-    const key = `${w.ref.byok ? 'k' : 'h'}:${w.ref.id}`
-    byBatch.set(key, [...(byBatch.get(key) ?? []), w])
+    const map = w.ref.id ? byBatch : unsure
+    const key = w.ref.id ? `${w.ref.byok ? 'k' : 'h'}:${w.ref.id}` : (w.ref.submission ?? '')
+    map.set(key, [...(map.get(key) ?? []), w])
   }
   const resolved = new Set<string>()
   let left = waiting.length
+  const fail = (w: (typeof waiting)[number], code: string) => {
+    dispatch({
+      type: 'doc',
+      id: w.itemId,
+      action: { type: 'status', index: w.page.n - 1, status: 'error', error: batchError(code) },
+    })
+    resolved.add(`${w.itemId}/${w.page.n}`)
+    left--
+  }
+
+  // Pages sent without an answer: find out which batch they're in, if any.
+  for (const [submission, group] of unsure) {
+    const first = group[0]
+    if (!first) continue
+    if (first.ref.byok || !submission) {
+      group.forEach(w => fail(w, 'byok_unknown'))
+      continue
+    }
+    if (now() - (first.ref.sentAt ?? 0) < LOOKUP_AFTER_MS) continue
+    let res: SubmitResponse
+    try {
+      res = await api.lookup(submission)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) group.forEach(w => fail(w, 'not_sent'))
+      // Still being sent (409), offline, a hiccup: ask again next time.
+      continue
+    }
+    const byKey = new Map(res.pages.map(p => [p.key, p]))
+    for (const w of group) {
+      const p = byKey.get(`p${w.page.n}`)
+      if (!p || !res.id) {
+        fail(w, 'not_sent')
+        continue
+      }
+      dispatch({
+        type: 'doc',
+        id: w.itemId,
+        action: {
+          type: 'batched',
+          index: w.page.n - 1,
+          batch: { ...w.ref, id: res.id, customId: p.custom_id },
+        },
+      })
+    }
+  }
   for (const group of byBatch.values()) {
     const first = group[0]
     if (!first) continue

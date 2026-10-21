@@ -16,6 +16,13 @@ export interface AiBatchRef {
   /** Sent with the person's own API key (polled with it, never billed here). */
   byok: boolean
   tier: Tier
+  /**
+   * The browser's id for the submission. Set before sending, so a page whose
+   * response never arrived (a dropped connection, a closed tab) is looked up
+   * instead of being sent and paid for twice. id is '' until it's known.
+   */
+  submission?: string
+  sentAt?: number
 }
 
 export interface RunInfo {
