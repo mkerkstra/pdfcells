@@ -68,7 +68,7 @@
               "@type": "Offer",
               "price": "0",
               "priceCurrency": "USD",
-              "description": "Free and unlimited for PDF text and OCR. AI pages: 25 free a day, then Anthropic's token cost plus 15%."
+              "description": "Free for PDF text and OCR, with no page quota. AI pages: 25 free a day when signed in (Fast), then Anthropic's token cost plus 15%."
             }
           },
           {
@@ -79,7 +79,7 @@
                 "name": "Is PDFCells free?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Yes. Reading the PDF text and running OCR on scans are free and unlimited, because both run in your browser. Signed-in users also get 25 free AI pages a day. After that, AI pages cost Anthropic's token price plus 15%, usually well under a cent a page on Fast. You can also use your own Anthropic API key."
+                  "text": "Yes. Reading the PDF text and running OCR on scans are free, with no page quota, because both run in your browser. Signed-in users also get 25 free AI pages a day on Fast. After that, AI pages cost Anthropic's token price plus 15%, usually well under a cent a page on Fast. You can also use your own Anthropic API key."
                 }
               },
               {
@@ -87,7 +87,7 @@
                 "name": "Is my PDF uploaded?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "No. The PDF is opened and converted on your device. Only pages you choose to read with AI leave the browser, one rendered page image at a time, and they are not stored."
+                  "text": "No. The PDF is opened and converted on your device. Nothing leaves the browser unless you choose an AI feature: reading a page with AI sends that page as an image with its text, categorising with AI sends payee names, and naming tables sends table headers and a few rows. Our server passes them to Anthropic and does not store them."
                 }
               },
               {
@@ -142,9 +142,9 @@
       </p>
       <h2>Frequently asked questions</h2>
       <h3>Is PDFCells free?</h3>
-      <p>Yes. Reading the PDF text and running OCR on scans are free and unlimited, because both run in your browser. Signed-in users also get 25 free AI pages a day. After that, AI pages cost Anthropic's token price plus 15%, usually well under a cent a page on Fast. You can also use your own Anthropic API key.</p>
+      <p>Yes. Reading the PDF text and running OCR on scans are free, with no page quota, because both run in your browser. Signed-in users also get 25 free AI pages a day on Fast. After that, AI pages cost Anthropic's token price plus 15%, usually well under a cent a page on Fast. You can also use your own Anthropic API key.</p>
       <h3>Is my PDF uploaded?</h3>
-      <p>No. The PDF is opened and converted on your device. Only pages you choose to read with AI leave the browser, one rendered page image at a time, and they are not stored.</p>
+      <p>No. The PDF is opened and converted on your device. Nothing leaves the browser unless you choose an AI feature: reading a page with AI sends that page as an image with its text, categorising with AI sends payee names, and naming tables sends table headers and a few rows. Our server passes them to Anthropic and does not store them.</p>
       <h3>Can it convert scanned PDFs to Excel?</h3>
       <p>Yes. Every page is checked first. Scanned pages can be read with free OCR in your browser, or with AI (Claude), which handles skewed, low-quality and photographed pages better.</p>
       <h3>Can I convert a photo or screenshot of a table?</h3>
@@ -153,6 +153,16 @@
       <p>Every table opens in an editable grid next to the page. Cells that look wrong are flagged: totals that don't add up, text in a number column, or cells OCR was unsure of. You can edit cells, merge or split columns, or ask AI to fix a table in plain English.</p>
       <h3>Does it keep numbers as numbers in Excel?</h3>
       <p>Yes. Amounts, percentages, negatives in parentheses, currencies, decimal-comma formats and dates become real Excel values with consistent column formats. Header rows are frozen, and tables that continue across pages are joined into one sheet.</p>
+      <h2>Guides</h2>
+      <p>
+        Step by step: <a href="/bank-statement-to-excel">bank statement to Excel</a>, <a href="/bank-statement-to-csv">to CSV</a>,
+        <a href="/pdf-to-qbo">to QuickBooks (QBO)</a>, <a href="/pdf-to-ofx">to OFX and Xero</a>,
+        <a href="/credit-card-statement-to-excel">credit card statements</a>, <a href="/invoice-pdf-to-excel">invoices</a>,
+        <a href="/scanned-pdf-to-excel">scanned PDFs</a> and <a href="/bank-reconciliation">bank reconciliation</a>
+        (<a href="/convert">all guides</a>). Notes on <a href="/banks">statements from Chase, Bank of America, Wells Fargo, Amex and other banks</a>,
+        <a href="/accuracy">how accurate PDFCells is</a>, <a href="/private-pdf-to-excel">what stays on your device</a>, and
+        <a href="/compare">how it compares</a> with Excel, Acrobat, Tabula, DocuClipper and others.
+      </p>
       <p class="fine">
         <a href="/privacy">Privacy policy</a>&emsp;<a href="/terms">Terms</a>&emsp;<a href="https://github.com/mkerkstra/pdfcells">Source code</a><br /> Microsoft Excel is a trademark of
         Microsoft Corporation. PDFCells is not affiliated with or endorsed by Microsoft.

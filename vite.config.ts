@@ -7,6 +7,51 @@ import { fileURLToPath, URL } from 'node:url'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { LLMS_INTRO } from './src/site/llms.ts'
+import { SITE_HOME_UPDATED, SITE_PAGES } from './src/site/pages.ts'
+import { renderLlmsFull, renderPage, renderSitemap } from './src/site/render.ts'
+
+/**
+ * Static content pages (src/site/): rendered to <slug>.html at build time, so
+ * crawlers and answer engines get real HTML without running JS. Vercel's
+ * cleanUrls serves /<slug> from <slug>.html. sitemap.xml and llms-full.txt are
+ * written from the same data. The dev server serves the same files.
+ */
+function sitePages(): Plugin {
+  const files = (): Record<string, string> => {
+    const bySlug = new Map(SITE_PAGES.map(p => [p.slug, p]))
+    return {
+      ...Object.fromEntries(SITE_PAGES.map(p => [`${p.slug}.html`, renderPage(p, bySlug)])),
+      'sitemap.xml': renderSitemap(SITE_PAGES, SITE_HOME_UPDATED),
+      'llms-full.txt': renderLlmsFull(SITE_PAGES, LLMS_INTRO),
+    }
+  }
+  const types: Record<string, string> = {
+    html: 'text/html; charset=utf-8',
+    xml: 'application/xml',
+    txt: 'text/plain; charset=utf-8',
+  }
+  return {
+    name: 'pdfcells:site-pages',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url ?? '').split('?')[0]?.slice(1) ?? ''
+        const all = files()
+        const name = all[`${path}.html`] !== undefined ? `${path}.html` : path
+        const body = all[name]
+        if (!path || body === undefined) return next()
+        res.setHeader('Content-Type', types[name.split('.').pop() ?? ''] ?? 'text/plain')
+        res.end(body)
+      })
+    },
+    generateBundle() {
+      for (const [fileName, source] of Object.entries(files())) {
+        this.emitFile({ type: 'asset', fileName, source })
+      }
+    },
+  }
+}
+
 /**
  * Serves tesseract.js's worker, WASM core and English model from our own
  * origin (/tesseract/<version>/…) instead of jsDelivr, so OCR has no
@@ -49,7 +94,7 @@ function tesseractAssets(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), tesseractAssets()],
+  plugins: [react(), tailwindcss(), tesseractAssets(), sitePages()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: { proxy: { '/api': 'http://localhost:8080' } },
   // Found only when PP-OCR first loads (a lazy worker): pre-bundled up front so
