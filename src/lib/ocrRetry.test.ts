@@ -51,7 +51,21 @@ describe('retryReason', () => {
   it('offers on a failing check, no table, or low confidence', () => {
     expect(retryReason(ocrPage([unfooted]))).toBe('checks')
     expect(retryReason(ocrPage([]))).toBe('no-table')
+    // 2 of 8 cells under 70 %: a fifth or more.
     const unsure = table(footed.rows, {
+      cellConf: [
+        [99, 99],
+        [99, 40],
+        [60, 99],
+        [99, 99],
+      ],
+    })
+    expect(retryReason(ocrPage([unsure]))).toBe('low-confidence')
+  })
+
+  it('a stray unsure cell on a good page does not nag', () => {
+    // 1 of 8 cells under 70 %.
+    const stray = table(footed.rows, {
       cellConf: [
         [99, 99],
         [99, 40],
@@ -59,7 +73,7 @@ describe('retryReason', () => {
         [99, 99],
       ],
     })
-    expect(retryReason(ocrPage([unsure]))).toBe('low-confidence')
+    expect(retryReason(ocrPage([stray]))).toBeNull()
   })
 
   it('a failing check outranks low confidence', () => {

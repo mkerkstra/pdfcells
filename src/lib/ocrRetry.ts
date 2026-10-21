@@ -20,26 +20,36 @@ export interface RetryPage {
 export type RetryReason = 'no-table' | 'checks' | 'low-confidence'
 
 /**
+ * Share of a page's non-empty cells OCR must be under 70 % sure of (the
+ * review's low-confidence flag) before the retry is offered on that alone.
+ * On the eval corpus the pages PP-OCR fixed had 42 % and 100 %; every page it
+ * didn't help had 10 % or less (docs/research/ocr-sota-2026.md §5).
+ */
+export const LOW_CONFIDENCE_SHARE = 0.2
+
+/**
  * Why a page read with tesseract.js looks weak enough to offer PP-OCR, or
  * null when it doesn't (or wasn't read with tesseract). Uses what the review
  * already computes: no table found, a footing/balance/arithmetic/tie check
- * that fails, or cells OCR was under 70 % sure of. Type outliers, empty or
- * ragged columns alone don't count: they come from layout as often as from
+ * that fails, or many cells OCR was under 70 % sure of. Type outliers, empty
+ * or ragged columns don't count: they come from layout as often as from
  * misreads, and good pages have them.
  */
 export function retryReason(p: RetryPage): RetryReason | null {
   if (p.status !== 'done' || p.run?.engine !== 'ocr' || p.run.recognizer === 'ppocr') return null
   if (p.triage?.kind === 'blank') return null
   if (p.tables.length === 0) return 'no-table'
-  let lowConf = false
+  let low = 0
+  let cells = 0
   for (const t of p.tables) {
+    cells += t.rows.reduce((n, r) => n + r.filter(c => c.trim() !== '').length, 0)
     for (const i of review(t).issues) {
       if (!WEAK_KINDS.has(i.kind)) continue
       if (i.kind !== 'low-confidence') return 'checks'
-      lowConf = true
+      low++
     }
   }
-  return lowConf ? 'low-confidence' : null
+  return cells > 0 && low / cells >= LOW_CONFIDENCE_SHARE ? 'low-confidence' : null
 }
 
 /**
