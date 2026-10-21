@@ -36,16 +36,34 @@ function getWorker(): Promise<Worker> {
   return worker
 }
 
-/** OCR a rendered page; returns words in page space (divided by render scale). */
-export async function ocrWords(
+/** Which OCR engine read a page: tesseract.js (the default) or the experimental PP-OCR. */
+export type Recognizer = 'tesseract' | 'ppocr'
+
+/**
+ * OCR a rendered page; returns words in page space (divided by render scale)
+ * and the engine that read them. With no engine given, PP-OCR runs only when
+ * the ?ocr=ppocr flag is on, and falls back to tesseract.js if it fails. With
+ * 'ppocr' given (the retry offered on a weak page), a failure is thrown, so
+ * the caller can keep the tesseract result and say so.
+ */
+export async function readWords(
   canvas: HTMLCanvasElement,
   scale: number,
   progress?: (p: number) => void,
-): Promise<Word[]> {
+  recognizer?: Recognizer,
+): Promise<{ words: Word[]; recognizer: Recognizer }> {
+  if (recognizer === 'ppocr')
+    return {
+      words: await (await import('./ppocr/browser')).ppocrWords(canvas, scale, progress),
+      recognizer,
+    }
   // Opt-in experiment (src/lib/ppocr/flag.ts); tesseract.js stays the default.
-  if (ppocrEnabled()) {
+  if (recognizer === undefined && ppocrEnabled()) {
     try {
-      return await (await import('./ppocr/browser')).ppocrWords(canvas, scale, progress)
+      return {
+        words: await (await import('./ppocr/browser')).ppocrWords(canvas, scale, progress),
+        recognizer: 'ppocr',
+      }
     } catch (e) {
       console.warn('PP-OCR failed; reading the page with tesseract.js instead.', e)
     }
@@ -53,11 +71,23 @@ export async function ocrWords(
   onProgress = progress
   const w = await getWorker()
   const { data } = await w.recognize(canvas, { rotateAuto: true }, { blocks: true, text: false })
-  return wordsFromBlocks(data.blocks, scale, {
-    rotateRadians: data.rotateRadians,
-    width: canvas.width,
-    height: canvas.height,
-  })
+  return {
+    words: wordsFromBlocks(data.blocks, scale, {
+      rotateRadians: data.rotateRadians,
+      width: canvas.width,
+      height: canvas.height,
+    }),
+    recognizer: 'tesseract',
+  }
+}
+
+/** OCR a rendered page; returns words in page space (divided by render scale). */
+export async function ocrWords(
+  canvas: HTMLCanvasElement,
+  scale: number,
+  progress?: (p: number) => void,
+): Promise<Word[]> {
+  return (await readWords(canvas, scale, progress)).words
 }
 
 /**
